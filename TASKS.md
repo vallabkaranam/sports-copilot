@@ -20,8 +20,8 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 - [ ] initialize root package.json
 - [ ] configure workspace support
 - [ ] initialize tsconfig base
-- [ ] add linting + formatting
-- [ ] add test runner
+- [x] add linting + formatting
+- [x] add test runner
 - [ ] add basic scripts:
   - [ ] dev
   - [ ] build
