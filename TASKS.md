@@ -16,28 +16,28 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 ## P0 — Foundation
 
 ### Repo / Workspace
-- [ ] set up monorepo package structure
-- [ ] initialize root package.json
-- [ ] configure workspace support
-- [ ] initialize tsconfig base
+- [x] set up monorepo package structure
+- [x] initialize root package.json
+- [x] configure workspace support
+- [x] initialize tsconfig base
 - [x] add linting + formatting
 - [x] add test runner
-- [ ] add basic scripts:
-  - [ ] dev
-  - [ ] build
-  - [ ] test
-  - [ ] lint
+- [x] add basic scripts:
+  - [x] dev
+  - [x] build
+  - [x] test
+  - [x] lint
 
 ### Shared Contracts
-- [ ] define shared types for:
-  - [ ] GameEvent
-  - [ ] WorldState
-  - [ ] CommentatorState
-  - [ ] NarrativeState
-  - [ ] AssistCard
-  - [ ] SourceChip
-  - [ ] StyleMode
-- [ ] export shared schemas for frontend + backend use
+- [x] define shared types for:
+  - [x] GameEvent
+  - [x] WorldState
+  - [x] CommentatorState
+  - [x] NarrativeState
+  - [x] AssistCard
+  - [x] SourceChip
+  - [x] StyleMode
+- [x] export shared schemas for frontend + backend use
 
 ### Demo Data
 - [ ] create deterministic demo match fixture
