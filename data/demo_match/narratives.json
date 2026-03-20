@@ -1,0 +1,20 @@
+[
+  {
+    "id": "n1",
+    "type": "RIVALRY",
+    "title": "The 256th Official Clásico",
+    "description": "Real Madrid leads historical wins 104-100."
+  },
+  {
+    "id": "n2",
+    "type": "PLAYER_SPOTLIGHT",
+    "title": "Bellingham's Impact",
+    "description": "Jude Bellingham has scored 3 goals in his first 2 Clásicos."
+  },
+  {
+    "id": "n3",
+    "type": "MOMENTUM",
+    "title": "Barcelona's High Press",
+    "description": "Xavi's side is dominating the middle third, pinning Real back."
+  }
+]

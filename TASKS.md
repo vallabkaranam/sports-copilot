@@ -40,13 +40,13 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 - [x] export shared schemas for frontend + backend use
 
 ### Demo Data
-- [ ] create deterministic demo match fixture
-- [ ] populate:
-  - [ ] events.json
-  - [ ] roster.json
-  - [ ] narratives.json
-  - [ ] fake_social.json
-  - [ ] transcript_seed.json
+- [x] create deterministic demo match fixture
+- [x] populate:
+  - [x] events.json
+  - [x] roster.json
+  - [x] narratives.json
+  - [x] fake_social.json
+  - [x] transcript_seed.json
 
 ### App Scaffolding
 - [ ] scaffold web app

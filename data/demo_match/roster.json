@@ -1,0 +1,24 @@
+{
+  "home": {
+    "name": "FC Barcelona",
+    "shortName": "BAR",
+    "roster": [
+      { "id": "p1", "name": "Marc-André ter Stegen", "number": 1, "position": "GK" },
+      { "id": "p2", "name": "Pau Cubarsí", "number": 2, "position": "DF" },
+      { "id": "p3", "name": "Lamine Yamal", "number": 19, "position": "FW", "fact": "Youngest scorer in El Clásico history." },
+      { "id": "p4", "name": "Robert Lewandowski", "number": 9, "position": "FW", "fact": "Scored 20+ goals this season." },
+      { "id": "p5", "name": "Pedri", "number": 8, "position": "MF", "fact": "Golden Boy winner 2021." }
+    ]
+  },
+  "away": {
+    "name": "Real Madrid",
+    "shortName": "RMA",
+    "roster": [
+      { "id": "p6", "name": "Thibaut Courtois", "number": 1, "position": "GK" },
+      { "id": "p7", "name": "Vinícius Júnior", "number": 7, "position": "FW", "fact": "Hat-trick in the recent Supercopa." },
+      { "id": "p8", "name": "Jude Bellingham", "number": 5, "position": "MF", "fact": "Scored match-winner in both Clásicos this season." },
+      { "id": "p9", "name": "Federico Valverde", "number": 15, "position": "MF" },
+      { "id": "p10", "name": "Antonio Rüdiger", "number": 22, "position": "DF" }
+    ]
+  }
+}

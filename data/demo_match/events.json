@@ -1,0 +1,46 @@
+[
+  {
+    "id": "e1",
+    "timestamp": 0,
+    "matchTime": "00:00",
+    "type": "KICK_OFF",
+    "description": "Match begins at the Camp Nou.",
+    "highSalience": false
+  },
+  {
+    "id": "e2",
+    "timestamp": 45000,
+    "matchTime": "00:45",
+    "type": "POSSESSION",
+    "description": "Barcelona controlling the tempo in midfield.",
+    "highSalience": false,
+    "data": { "team": "BAR", "player": "Pedri" }
+  },
+  {
+    "id": "e3",
+    "timestamp": 65000,
+    "matchTime": "01:05",
+    "type": "CHANCE",
+    "description": "Pedri threads a needle! Lewandowski is clear through!",
+    "highSalience": true,
+    "data": { "team": "BAR", "player": "Lewandowski" }
+  },
+  {
+    "id": "e4",
+    "timestamp": 75000,
+    "matchTime": "01:15",
+    "type": "SAVE",
+    "description": "Courtois stands tall! Incredible reflex save to deny the opener.",
+    "highSalience": true,
+    "data": { "team": "RMA", "player": "Courtois" }
+  },
+  {
+    "id": "e5",
+    "timestamp": 90000,
+    "matchTime": "01:30",
+    "type": "COUNTER_ATTACK",
+    "description": "Real Madrid breaks with pace! Vinícius Jr flying down the wing.",
+    "highSalience": true,
+    "data": { "team": "RMA", "player": "Vinícius Júnior" }
+  }
+]
