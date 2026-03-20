@@ -1,5 +1,5 @@
 import fastify from 'fastify';
-import { WorldState } from '@sports-copilot/shared-types';
+import { WorldState, WorldStateSchema } from '@sports-copilot/shared-types';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -12,7 +12,10 @@ let worldState: Partial<WorldState> = {
   score: { home: 0, away: 0 },
   possession: 'BAR',
   recentEvents: [],
+  liveSignals: { social: [], vision: [] },
 };
+
+let controlState = { status: 'paused' }; // 'playing' | 'paused' | 'stopped'
 
 server.get('/health', async () => {
   return { status: 'ok', matchId: worldState.matchId };
@@ -22,7 +25,26 @@ server.get('/world-state', async () => {
   return worldState;
 });
 
-// Load seed data
+// Update state from workers
+server.post('/internal/state', async (request, reply) => {
+  try {
+    const update = request.body as Partial<WorldState>;
+    worldState = { ...worldState, ...update };
+    return { success: true };
+  } catch (err) {
+    reply.status(400).send({ error: 'Invalid state update' });
+  }
+});
+
+// Controls for the replay
+server.get('/controls', async () => controlState);
+
+server.post('/controls', async (request) => {
+  const { status } = request.body as any;
+  if (status) controlState.status = status;
+  return controlState;
+});
+
 const start = async () => {
   try {
     const rosterPath = path.resolve(__dirname, '../../../data/demo_match/roster.json');

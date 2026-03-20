@@ -1,0 +1,75 @@
+import fs from 'fs/promises';
+import path from 'path';
+import http from 'http';
+import { ReplayEngine } from './engine';
+import { GameEvent, WorldState } from '@sports-copilot/shared-types';
+
+async function syncState(state: Partial<WorldState>) {
+  return new Promise((resolve, reject) => {
+    const data = JSON.stringify(state);
+    const req = http.request({
+      hostname: 'localhost',
+      port: 3001,
+      path: '/internal/state',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': data.length
+      }
+    }, (res) => {
+      resolve(true);
+    });
+    req.on('error', reject);
+    req.write(data);
+    req.end();
+  });
+}
+
+async function getControls(): Promise<{ status: string }> {
+  return new Promise((resolve, reject) => {
+    http.get('http://localhost:3001/controls', (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => resolve(JSON.parse(data)));
+    }).on('error', reject);
+  });
+}
+
+async function run() {
+  const eventsPath = path.resolve(__dirname, '../../../data/demo_match/events.json');
+  const eventsData = await fs.readFile(eventsPath, 'utf8');
+  const events: GameEvent[] = JSON.parse(eventsData);
+
+  const engine = new ReplayEngine({ events, tickRateMs: 500 });
+  engine.play();
+
+  console.log('Replay Worker started.');
+
+  setInterval(async () => {
+    try {
+      // 1. Check for control updates (play/pause)
+      const controls = await getControls();
+      if (controls.status === 'playing') engine.play();
+      if (controls.status === 'paused') engine.pause();
+      if (controls.status === 'restart') engine.restart();
+
+      // 2. Tick engine
+      const newEvents = engine.tick(500);
+      const status = engine.getStatus();
+
+      // 3. Sync to API
+      await syncState({
+        ...status,
+        recentEvents: newEvents || [],
+      });
+      
+      if (newEvents) {
+        console.log(`[Replay] Clock: ${status.clock} - New events: ${newEvents.length}`);
+      }
+    } catch (err) {
+      console.error('Worker loop error:', err);
+    }
+  }, 500);
+}
+
+run().catch(console.error);
