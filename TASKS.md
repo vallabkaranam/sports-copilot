@@ -49,11 +49,11 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
   - [x] transcript_seed.json
 
 ### App Scaffolding
-- [ ] scaffold web app
-- [ ] scaffold api service
-- [ ] scaffold worker service
-- [ ] add shared UI package
-- [ ] add shared prompts package
+- [x] scaffold web app
+- [x] scaffold api service
+- [x] scaffold worker service
+- [x] add shared UI package
+- [x] add shared prompts package
 
 ---
 
