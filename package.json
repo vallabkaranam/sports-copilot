@@ -6,6 +6,9 @@
     "apps/*",
     "packages/*"
   ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",

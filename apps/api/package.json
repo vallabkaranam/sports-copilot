@@ -4,6 +4,7 @@
   "private": true,
   "main": "dist/index.js",
   "scripts": {
+    "test": "vitest run --passWithNoTests",
     "dev": "ts-node src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js"
