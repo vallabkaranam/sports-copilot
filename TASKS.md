@@ -186,30 +186,30 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 ## P5 — UI / Demo Experience
 
 ### Dashboard UI
-- [ ] video/replay panel
-- [ ] scoreboard strip
-- [ ] event timeline
-- [ ] active narrative panel
-- [ ] hesitation/confidence meter
-- [ ] active assist card
-- [ ] source chips
-- [ ] style mode indicator
+- [x] video/replay panel
+- [x] scoreboard strip
+- [x] event timeline
+- [x] active narrative panel
+- [x] hesitation/confidence meter
+- [x] active assist card
+- [x] source chips
+- [x] style mode indicator
 
 ### Assist Card UX
-- [ ] animate assist appearance
-- [ ] show type, text, confidence, why-now
-- [ ] support source chips
-- [ ] avoid chat-style layout
+- [x] animate assist appearance
+- [x] show type, text, confidence, why-now
+- [x] support source chips
+- [x] avoid chat-style layout
 
 ### Demo Controls
-- [ ] play / pause / restart
-- [ ] style mode switch
-- [ ] optional manual “force hesitation” control for demo backup
+- [x] play / pause / restart
+- [x] style mode switch
+- [x] optional manual “force hesitation” control for demo backup
 
 ### Tests
-- [ ] e2e test dashboard render
-- [ ] e2e test replay controls
-- [ ] e2e test assist card appearance
+- [x] e2e test dashboard render
+- [x] e2e test replay controls
+- [x] e2e test assist card appearance
 
 ---
 

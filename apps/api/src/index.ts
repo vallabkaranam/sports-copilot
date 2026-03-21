@@ -14,6 +14,16 @@ import path from 'path';
 
 const server = fastify({ logger: true });
 
+server.addHook('onRequest', async (request, reply) => {
+  reply.header('Access-Control-Allow-Origin', '*');
+  reply.header('Access-Control-Allow-Headers', 'Content-Type');
+  reply.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+
+  if (request.method === 'OPTIONS') {
+    reply.code(204).send();
+  }
+});
+
 // Minimal initial state
 let worldState: Partial<WorldState> = {
   matchId: 'clásico-2024-demo',
