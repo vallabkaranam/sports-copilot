@@ -130,12 +130,12 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 
 ### Narrative Agent
 - [ ] maintain active narratives:
-  - [ ] rivalry
-  - [ ] momentum shift
-  - [ ] player spotlight
-  - [ ] comeback pressure
-  - [ ] defensive lapse
-- [ ] surface top narrative to world state
+  - [x] rivalry
+  - [x] momentum shift
+  - [x] player spotlight
+  - [x] comeback pressure
+  - [x] defensive lapse
+- [x] surface top narrative to world state
 
 ### Live Feed Agent
 - [x] ingest fake_social.json
@@ -144,7 +144,7 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 
 ### Tests
 - [x] test retrieval priority
-- [ ] test narrative updates
+- [x] test narrative updates
 - [x] test source attribution presence
 
 ---

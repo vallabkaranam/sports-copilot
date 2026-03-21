@@ -3,6 +3,7 @@ import path from 'path';
 import http from 'http';
 import { ReplayEngine } from './engine';
 import { analyzeCommentary } from './commentator';
+import { buildNarrativeState } from './narrative';
 import { buildRetrievalState, ingestLiveSocialPosts, NarrativeFixture, RosterFixture } from './retrieval';
 import {
   GameEvent,
@@ -81,6 +82,11 @@ async function run() {
         events,
         transcript,
       });
+      const narrative = buildNarrativeState({
+        clockMs,
+        events,
+        narratives,
+      });
       const retrieval = buildRetrievalState({
         clockMs,
         events,
@@ -95,6 +101,7 @@ async function run() {
       await syncState({
         ...status,
         commentator,
+        narrative,
         retrieval,
         liveSignals: {
           social: ingestedSocialPosts,

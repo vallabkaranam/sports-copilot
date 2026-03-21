@@ -159,11 +159,21 @@ export function createEmptyRetrievalState(): RetrievalState {
  * Narrative state
  */
 export const NarrativeStateSchema = z.object({
+  topNarrative: z.string().nullable(),
   activeNarratives: z.array(z.string()),
   currentSentiment: z.string(),
   momentum: z.enum(['home', 'away', 'neutral']),
 });
 export type NarrativeState = z.infer<typeof NarrativeStateSchema>;
+
+export function createEmptyNarrativeState(): NarrativeState {
+  return {
+    topNarrative: null,
+    activeNarratives: [],
+    currentSentiment: 'neutral',
+    momentum: 'neutral',
+  };
+}
 
 /**
  * Global World State
