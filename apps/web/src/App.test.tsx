@@ -348,7 +348,7 @@ describe('App dashboard', () => {
     expect(container.textContent).toContain('And-One');
     expect(container.textContent).toContain('Booth Buddy');
     expect(container.textContent).toContain('Load Clip');
-    expect(container.textContent).toContain('Sidekick panel');
+    expect(container.textContent).toContain('Go live in one flow');
     expect(container.textContent).toContain('Show Details');
     expect(container.textContent).toContain('Bring in any local replay clip to rehearse live commentary');
   });
@@ -357,12 +357,12 @@ describe('App dashboard', () => {
     await renderApp();
 
     const playButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Start Broadcast'),
+      button.textContent?.includes('Start session'),
     );
-    expect(playButton?.textContent).toBe('Start Broadcast');
+    expect(playButton?.textContent).toBe('Start session');
     expect(playButton?.hasAttribute('disabled')).toBe(true);
-    expect(container.textContent).toContain('Waiting for clip upload');
-    expect(container.textContent).toContain('Enable Microphone');
+    expect(container.textContent).toContain('Bring in a replay clip first.');
+    expect(container.textContent).toContain('Enable microphone');
   });
 
   it('arms the mic before letting the booth go live and still posts control updates', async () => {
@@ -389,13 +389,13 @@ describe('App dashboard', () => {
     });
 
     const playButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Start Broadcast'),
+      button.textContent?.includes('Start session'),
     );
 
     expect(playButton?.hasAttribute('disabled')).toBe(true);
 
     const micButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Enable Microphone'),
+      button.textContent?.includes('Enable microphone'),
     );
 
     await act(async () => {

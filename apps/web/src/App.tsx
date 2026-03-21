@@ -876,10 +876,6 @@ function App() {
       : boothHasLiveInput
         ? ['Talk through the play. The copilot will watch for pauses, fillers, and repeated starts.']
         : systemHesitationReasons;
-  const visibleConfidenceReasons =
-    boothSignal.confidenceReasons.length > 0
-      ? boothSignal.confidenceReasons
-      : ['Confidence builds only when your delivery restarts and holds.'];
   const coachingTone = getCoachingTone({
     hasStartedBroadcast,
     boothHasLiveInput,
@@ -945,6 +941,18 @@ function App() {
     boothSignal.repeatedPhrases.length > 0 ? 'repeat-start' : null,
     boothSignal.unfinishedPhrase ? 'unfinished' : null,
   ].filter(Boolean) as string[];
+  const primaryActionLabel = isBroadcastLive ? 'End session' : 'Start session';
+  const primaryActionDisabled = !isBroadcastLive && (!isBroadcastReady || isUpdatingControls);
+  const readinessSummary = isBroadcastLive
+    ? 'Live and tracking'
+    : isBroadcastReady
+      ? 'Ready to go live'
+      : 'Finish setup';
+  const guidanceSummary = shouldSurfaceAssist
+    ? activeAssist.whyNow
+    : coachingTone.tone === 'steady'
+      ? 'You are stable. The sidekick stays quiet unless the delivery wobbles again.'
+      : coachingTone.copy;
 
   useEffect(() => {
     if (!hasStartedBroadcast) {
@@ -1040,9 +1048,9 @@ function App() {
 
         <div className="header-actions">
           <div className="header-status-card">
-            <p className="control-label">System</p>
-            <strong>{systemStatusLabel}</strong>
-            <span>{readyCount}/3 checks ready. {setupStatusLabel}</span>
+            <p className="control-label">Session status</p>
+            <strong>{readinessSummary}</strong>
+            <span>{readyCount}/3 checks ready. {systemStatusLabel === 'Ready' ? 'Hosted services are connected.' : setupStatusLabel}</span>
           </div>
           <button
             type="button"
@@ -1057,10 +1065,10 @@ function App() {
       {error ? <div className="warning-banner">{error}</div> : null}
 
       <div className="main-grid">
-        <section className="panel replay-panel">
-          <div className="panel-header">
+        <section className="panel replay-panel stage-panel">
+          <div className="panel-header panel-header--stage">
             <div>
-              <p className="panel-kicker">Feed</p>
+              <p className="panel-kicker">Live Feed</p>
               <h2>{feedHeading}</h2>
               <p className="panel-copy">{feedSubheading}</p>
             </div>
@@ -1135,7 +1143,7 @@ function App() {
               </div>
 
               {shouldSurfaceAssist ? (
-                <article className="replay-toast" key={replayToastSignature}>
+                <article className="replay-toast replay-toast--live" key={replayToastSignature}>
                   <p className="assist-type">{formatAssistType(activeAssist.type)}</p>
                   <h3>{activeAssist.text}</h3>
                   <p>{activeAssist.whyNow}</p>
@@ -1188,77 +1196,62 @@ function App() {
 
         <div className="side-column">
           <section className="panel control-panel">
-            <div className="panel-header">
+            <div className="panel-header panel-header--compact">
               <div>
-                <p className="panel-kicker">Booth</p>
-                <h2>Sidekick panel</h2>
-                <p className="panel-copy">A calmer control rail for preflight, live coaching, and that gentle step-back when you are back in rhythm.</p>
+                <p className="panel-kicker">Session Setup</p>
+                <h2>Go live in one flow</h2>
+                <p className="panel-copy">Everything you need before the call starts, without the rest of the debug surface fighting for attention.</p>
               </div>
             </div>
 
-            <article className="booth-summary booth-summary--preflight">
-              <div>
-                <p className="control-label">Preflight</p>
-                <strong>{readyCount}/3 ready</strong>
-              </div>
-              {readinessChecks.map((check) => (
-                <div key={check.label} className={`readiness-item ${check.done ? 'readiness-item--done' : ''}`}>
-                  <div className="readiness-item__row">
-                    <p className="control-label">{check.label}</p>
-                    <span className={`readiness-dot ${check.done ? 'readiness-dot--done' : ''}`} />
-                  </div>
-                  <strong>{check.done ? 'Ready' : 'Pending'}</strong>
-                  <span>{check.detail}</span>
+            <article className="setup-card">
+              <div className="setup-card__header">
+                <div>
+                  <p className="control-label">Readiness</p>
+                  <strong>{readinessSummary}</strong>
                 </div>
-              ))}
-            </article>
+                <span className={`setup-chip setup-chip--${coachingTone.tone}`}>{readyCount}/3 ready</span>
+              </div>
 
-            <div className="control-group">
-              <p className="control-label">Setup</p>
-              <div className="primary-controls primary-controls--split">
+              <div className="readiness-list">
+                {readinessChecks.map((check) => (
+                  <div key={check.label} className={`readiness-row ${check.done ? 'readiness-row--done' : ''}`}>
+                    <span className={`readiness-dot ${check.done ? 'readiness-dot--done' : ''}`} />
+                    <div className="readiness-copy">
+                      <strong>{check.label}</strong>
+                      <span>{check.detail}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="setup-actions">
                 <button
                   type="button"
                   className={isMicPrepared ? 'is-active' : ''}
                   disabled={isMicPreparing}
                   onClick={() => void prepareMicrophone()}
                 >
-                  {isMicPrepared ? 'Mic Ready' : isMicPreparing ? 'Checking Mic…' : 'Enable Microphone'}
+                  {isMicPrepared ? 'Microphone ready' : isMicPreparing ? 'Checking microphone…' : 'Enable microphone'}
                 </button>
                 <button
                   type="button"
                   className={isBroadcastLive ? 'is-active' : ''}
-                  disabled={!isBroadcastReady || isUpdatingControls}
+                  disabled={primaryActionDisabled}
                   onClick={() => void (isBroadcastLive ? stopBroadcast() : startBroadcast())}
                 >
-                  {isBroadcastLive ? 'End Session' : 'Start Broadcast'}
+                  {primaryActionLabel}
                 </button>
               </div>
               <p className="field-copy field-copy--tight">
-                The booth will not go live until the clip is loaded, the mic is armed, and the hosted system is connected.
+                The primary action stays locked until clip, microphone, and backend are all ready. This avoids false starts and surprise errors.
               </p>
-            </div>
-
-            <div className="control-group">
-              <p className="control-label">Session</p>
-              <div className="primary-controls">
-                <button type="button" className={`tone-button tone-button--${coachingTone.tone}`}>
-                  {coachingTone.label}
-                </button>
-              </div>
-              <div className="inline-actions">
-                <button type="button" className="text-button" onClick={() => void resetBroadcast()}>
-                  Reset session
-                </button>
-                <button type="button" className="text-button" onClick={clearBoothTranscript}>
-                  Clear transcript
-                </button>
-              </div>
-            </div>
+            </article>
 
             <article className={`booth-card booth-card--${coachingTone.tone}`}>
               <div className="booth-card__header">
                 <div>
-                  <p className="control-label">Coaching zone</p>
+                  <p className="control-label">Live support</p>
                   <strong>{coachingTone.headline}</strong>
                 </div>
                 <div className={`metric-badge metric-badge--${coachingTone.tone}`}>
@@ -1266,10 +1259,10 @@ function App() {
                 </div>
               </div>
 
-              <p className="field-copy">{coachingTone.copy}</p>
+              <p className="field-copy">{guidanceSummary}</p>
 
               <div className="signal-duo">
-                <div>
+                <div className="metric-card">
                   <div className="meter-label-row">
                     <span>Hesitation</span>
                     <strong>{boothHesitationPercent}</strong>
@@ -1279,7 +1272,7 @@ function App() {
                   </div>
                 </div>
 
-                <div>
+                <div className="metric-card">
                   <div className="meter-label-row">
                     <span>Confidence</span>
                     <strong>{boothConfidencePercent}</strong>
@@ -1290,28 +1283,48 @@ function App() {
                 </div>
               </div>
 
-              <div className="meter-label-row">
-                <span>Mic activity</span>
-                <strong>{Math.round(boothSignal.audioLevel * 100)}%</strong>
+              <div className="signal-meta">
+                <div className="signal-meta__item">
+                  <span>Mic activity</span>
+                  <strong>{Math.round(boothSignal.audioLevel * 100)}%</strong>
+                </div>
+                <div className="signal-meta__item">
+                  <span>Assist mode</span>
+                  <strong>{shouldSurfaceAssist ? 'Visible' : coachingTone.tone === 'steady' ? 'Weaning off' : 'Standing by'}</strong>
+                </div>
               </div>
 
-              <div className="meter-label-row">
-                <span>Training wheels</span>
-                <strong>{shouldSurfaceAssist ? 'On screen' : coachingTone.tone === 'steady' ? 'Weaning off' : 'Hovering nearby'}</strong>
+              <div className="inline-actions inline-actions--compact">
+                <button type="button" className="text-button" onClick={() => void resetBroadcast()}>
+                  Reset session
+                </button>
+                <button type="button" className="text-button" onClick={clearBoothTranscript}>
+                  Clear transcript
+                </button>
               </div>
+            </article>
 
-              <div className="reason-list">
-                {visibleReasons.map((reason) => (
-                  <p key={reason}>{reason}</p>
-                ))}
-                {visibleConfidenceReasons.map((reason) => (
-                  <p key={reason}>{reason}</p>
-                ))}
+            <article className="panel explanation-panel">
+              <div className="panel-header panel-header--compact">
+                <div>
+                  <p className="panel-kicker">Why it works</p>
+                  <h2>Calm, not clingy</h2>
+                </div>
               </div>
-
-              <p className="field-copy">
-                The clip stays muted by default so the booth tracks your voice, not the program feed. Green means we trust you, yellow means we hover, and red means we step in until you are stable again.
-              </p>
+              <div className="principles-list">
+                <div className="principle-item">
+                  <strong>Only one primary action</strong>
+                  <p>The right rail is designed around a single clear next step so the user never has to scan a wall of controls.</p>
+                </div>
+                <div className="principle-item">
+                  <strong>Green, yellow, red coaching</strong>
+                  <p>Color is reserved for support level so the user can read trust, caution, and step-in urgency instantly.</p>
+                </div>
+                <div className="principle-item">
+                  <strong>Progressive disclosure</strong>
+                  <p>Analytics, transcript history, and system details stay tucked away until you ask for them, keeping the live surface focused.</p>
+                </div>
+              </div>
               {boothError ? <p className="inline-warning">{boothError}</p> : null}
             </article>
           </section>
