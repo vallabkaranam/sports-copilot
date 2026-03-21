@@ -118,13 +118,16 @@ server.get('/booth-sessions', async (): Promise<BoothSessionsResponse> => {
 });
 
 server.post('/booth/interpret', async (request, reply): Promise<BoothInterpretation | void> => {
+  const sessionStore = requireBoothSessionStore();
   const parsed = InterpretBoothInputSchema.safeParse(request.body);
   if (!parsed.success) {
     reply.status(400).send({ error: 'Invalid booth interpretation payload' });
     return;
   }
 
-  return interpretBoothWithOpenAI(parsed.data.features);
+  const profile = parsed.data.profile ?? (await sessionStore.getSpeakerProfile());
+
+  return interpretBoothWithOpenAI(parsed.data.features, profile);
 });
 
 server.post('/booth/transcribe', async (request, reply): Promise<TranscribeBoothAudioResponse | void> => {

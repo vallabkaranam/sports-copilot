@@ -82,6 +82,32 @@ function formatFormRecord(
   return `${form.record.wins}-${form.record.draws}-${form.record.losses} (${form.lastFive.length})`;
 }
 
+function buildContextSummary(worldState: ReturnType<typeof createInitialWorldState>) {
+  const latestEvent = worldState.recentEvents[worldState.recentEvents.length - 1];
+  const parts = [
+    worldState.gameStateSummary,
+    worldState.narrative.topNarrative,
+    latestEvent ? `${latestEvent.matchTime} ${latestEvent.description}` : null,
+  ].filter(Boolean);
+
+  return parts.join(' | ');
+}
+
+function buildExpectedTopics(worldState: ReturnType<typeof createInitialWorldState>) {
+  const topics = [
+    worldState.narrative.topNarrative,
+    ...worldState.narrative.activeNarratives,
+    ...worldState.retrieval.supportingFacts.slice(0, 3).map((fact) => fact.text),
+    ...worldState.recentEvents.slice(-3).map((event) => event.description),
+    worldState.liveMatch.homeTeam.name,
+    worldState.liveMatch.awayTeam.name,
+  ]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+
+  return [...new Set(topics)].slice(0, 8);
+}
+
 function getSupportedRecorderMimeType() {
   if (typeof window === 'undefined' || typeof window.MediaRecorder === 'undefined') {
     return null;
@@ -732,8 +758,6 @@ function App() {
   const substitutions = [...worldState.liveMatch.substitutions].reverse();
   const lineupSummary = worldState.liveMatch.lineups;
   const statSummary = worldState.liveMatch.stats.slice(0, 8);
-  const latestSocial =
-    worldState.liveSignals.social[worldState.liveSignals.social.length - 1];
   const recentEvents = [...worldState.recentEvents].reverse();
   const surfacedAssists = [...worldState.sessionMemory.surfacedAssists].reverse();
   const isMicSupported =
@@ -774,10 +798,11 @@ function App() {
   const workerAssistShouldSurface =
     assist.type !== 'none' &&
     (controls.forceHesitation ||
-      !boothHasLiveInput ||
-      boothInterpretation?.shouldSurfaceAssist ||
-      worldState.commentator.hesitationScore >= LIVE_HESITATION_GATE);
-  const boothAssistShouldSurface = boothHasLiveInput && boothAssist.type !== 'none';
+      (!boothHasLiveInput && worldState.commentator.hesitationScore >= LIVE_HESITATION_GATE));
+  const boothAssistShouldSurface =
+    boothHasLiveInput &&
+    boothInterpretation?.shouldSurfaceAssist === true &&
+    boothAssist.type !== 'none';
   const nextTriggeredAssist = boothAssistShouldSurface
     ? boothAssist
     : workerAssistShouldSurface
@@ -789,18 +814,10 @@ function App() {
   const boothHesitationPercent = boothInterpretation
     ? formatPercent(boothInterpretation.hesitationScore)
     : '--';
-  const boothConfidencePercent = boothInterpretation
-    ? formatPercent(boothInterpretation.recoveryScore)
-    : '--';
   const visibleReasons =
     boothInterpretation?.reasons && boothInterpretation.reasons.length > 0
       ? boothInterpretation.reasons
       : ['Waiting for the live booth model to classify the current moment.'];
-  const visibleConfidenceReasons = [
-    boothInterpretation?.summary
-      ? `Recovery signal: ${boothInterpretation.summary}`
-      : 'Recovery state will appear after the live booth model scores this moment.',
-  ];
   const coachingTone = getCoachingTone({
     hasStartedBroadcast,
     boothHasLiveInput,
@@ -841,8 +858,10 @@ function App() {
   const replayToastSignature = `${activeAssist.type}:${activeAssist.text}:${shouldSurfaceAssist}:${controls.restartToken}`;
   const activeTriggerBadges = [
     boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS ? 'pause' : null,
+    boothSignal.fillerCount > 0 ? 'filler' : null,
+    boothSignal.repeatedOpeningCount > 0 ? 'repeat-start' : null,
+    boothSignal.unfinishedPhrase ? 'unfinished' : null,
   ].filter(Boolean) as string[];
-  const preMatchSummary = worldState.preMatch.aiOpener ?? worldState.preMatch.deterministicOpener;
   const primaryActionLabel = isBroadcastLive ? 'End session' : 'Start session';
   const primaryActionDisabled = !isBroadcastLive && (!isBroadcastReady || isUpdatingControls);
   const guidanceSummary = shouldSurfaceAssist
@@ -942,6 +961,32 @@ function App() {
       isSpeaking: boothSignal.isSpeaking,
       triggerBadges: activeTriggerBadges,
       activeAssistText: shouldSurfaceAssist ? activeAssist.text : null,
+      featureSnapshot: {
+        timestamp: boothClockMs,
+        hesitationScore: boothInterpretation?.hesitationScore ?? 0,
+        confidenceScore: boothInterpretation?.recoveryScore ?? 0,
+        pauseDurationMs: Math.round(boothSignal.pauseDurationMs),
+        speechStreakMs: Math.round(boothSignal.speechStreakMs),
+        silenceStreakMs: Math.round(boothSignal.silenceStreakMs),
+        audioLevel: boothSignal.audioLevel,
+        isSpeaking: boothSignal.isSpeaking,
+        hasVoiceActivity: boothSignal.hasVoiceActivity,
+        fillerCount: boothSignal.fillerCount,
+        fillerDensity: boothSignal.fillerDensity,
+        fillerWords: boothSignal.fillerWords,
+        repeatedOpeningCount: boothSignal.repeatedOpeningCount,
+        repeatedPhrases: boothSignal.repeatedPhrases,
+        unfinishedPhrase: boothSignal.unfinishedPhrase,
+        transcriptWordCount: boothSignal.transcriptWordCount,
+        transcriptStabilityScore: boothSignal.transcriptStabilityScore,
+        hesitationReasons: boothSignal.hesitationReasons,
+        transcriptWindow: boothTranscript.slice(-LOCAL_TRANSCRIPT_LIMIT),
+        interimTranscript: boothInterimTranscript,
+        contextSummary: buildContextSummary(worldState),
+        expectedTopics: buildExpectedTopics(worldState),
+        previousState: boothInterpretation?.state,
+      },
+      interpretation: boothInterpretation ?? undefined,
     }).catch(() => {
       setBoothError('Live booth metrics could not be saved to the local store.');
     });
@@ -949,15 +994,33 @@ function App() {
     activeAssist.text,
     activeBoothSessionId,
     activeTriggerBadges,
+    boothClockMs,
+    boothInterimTranscript,
     boothSignal.audioLevel,
     boothSignal.confidenceScore,
     boothSignal.hesitationScore,
     boothSignal.isSpeaking,
     boothSignal.pauseDurationMs,
+    boothSignal.fillerCount,
+    boothSignal.fillerDensity,
+    boothSignal.fillerWords,
+    boothSignal.hasVoiceActivity,
+    boothSignal.hesitationReasons,
+    boothSignal.repeatedOpeningCount,
+    boothSignal.repeatedPhrases,
+    boothSignal.silenceStreakMs,
+    boothSignal.speechStreakMs,
+    boothSignal.transcriptStabilityScore,
+    boothSignal.transcriptWordCount,
+    boothSignal.unfinishedPhrase,
+    boothTranscript,
     boothInterpretation?.hesitationScore,
     boothInterpretation?.recoveryScore,
+    boothInterpretation?.state,
+    boothInterpretation,
     hasStartedBroadcast,
     shouldSurfaceAssist,
+    worldState,
   ]);
 
   useEffect(() => {
@@ -996,6 +1059,8 @@ function App() {
       hesitationReasons: boothSignal.hesitationReasons,
       transcriptWindow: boothTranscript.slice(-LOCAL_TRANSCRIPT_LIMIT),
       interimTranscript: boothInterimTranscript,
+      contextSummary: buildContextSummary(worldState),
+      expectedTopics: buildExpectedTopics(worldState),
       previousState: boothInterpretation?.state,
     };
 
@@ -1031,12 +1096,13 @@ function App() {
     boothSignal.silenceStreakMs,
     boothSignal.speechStreakMs,
     boothSignal.transcriptStabilityScore,
-    boothSignal.transcriptWordCount,
-    boothSignal.unfinishedPhrase,
-    boothTranscript,
-    hasStartedBroadcast,
-    isMicListening,
-    boothInterpretation?.state,
+      boothSignal.transcriptWordCount,
+      boothSignal.unfinishedPhrase,
+      boothTranscript,
+      worldState,
+      hasStartedBroadcast,
+      isMicListening,
+      boothInterpretation?.state,
   ]);
 
   return (
@@ -1059,73 +1125,6 @@ function App() {
       </header>
 
       {error ? <div className="warning-banner">{error}</div> : null}
-
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-            <p className="panel-kicker">Session Opener</p>
-            <h2>Pre-match brief</h2>
-          </div>
-          <span className="panel-tag">{worldState.preMatch.loadStatus}</span>
-        </div>
-
-        <div className="narrative-focus">
-          <p className="narrative-label">Opening read</p>
-          <h3>{preMatchSummary}</h3>
-          <p>
-            {worldState.preMatch.aiOpener
-              ? 'AI-polished from the same structured packet.'
-              : 'Deterministic summary from structured match context.'}
-          </p>
-        </div>
-
-        <div className="narrative-stack">
-          <span className="stack-chip">
-            {worldState.liveMatch.homeTeam.shortCode || 'HOME'} form {formatFormRecord(worldState.preMatch.homeRecentForm)}
-          </span>
-          <span className="stack-chip">
-            {worldState.liveMatch.awayTeam.shortCode || 'AWAY'} form {formatFormRecord(worldState.preMatch.awayRecentForm)}
-          </span>
-          <span className="stack-chip">{worldState.preMatch.venue.name}</span>
-          <span className="stack-chip">
-            {worldState.preMatch.weather?.summary ?? 'Weather unavailable'}
-          </span>
-        </div>
-
-        <div className="memory-strip">
-          <p className="memory-title">Session context</p>
-          <div className="session-context-grid">
-            <article className="context-card context-card--wide">
-              <p className="context-label">Head to head</p>
-              <p className="context-value">{worldState.preMatch.headToHead.summary}</p>
-            </article>
-            <article className="context-card">
-              <p className="context-label">Venue</p>
-              <p className="context-value">
-                {[
-                  worldState.preMatch.venue.name,
-                  worldState.preMatch.venue.city,
-                  worldState.preMatch.venue.country,
-                ]
-                  .filter(Boolean)
-                  .join(', ')}
-              </p>
-            </article>
-            <article className="context-card">
-              <p className="context-label">Weather</p>
-              <p className="context-value">
-                {worldState.preMatch.weather
-                  ? `${worldState.preMatch.weather.summary}${
-                      worldState.preMatch.weather.temperatureC !== null
-                        ? ` · ${Math.round(worldState.preMatch.weather.temperatureC)}C`
-                        : ''
-                    }`
-                  : 'Unavailable'}
-              </p>
-            </article>
-          </div>
-        </div>
-      </section>
 
       <div className="main-grid">
         <section className="panel replay-panel stage-panel">
@@ -1237,13 +1236,7 @@ function App() {
                 <div className="progress-track" aria-label="Replay progress">
                   <span style={{ width: `${clipProgress}%` }} />
                 </div>
-                <p className="pulse-copy">
-                  {boothInterimTranscript ||
-                    boothTranscript[boothTranscript.length - 1]?.text ||
-                    latestSocial?.text ||
-                    worldState.liveMatch.degradedReason ||
-                    'Live transcript and hesitation cues will appear as you speak.'}
-                </p>
+                <p className="pulse-copy">{guidanceSummary}</p>
               </div>
             </div>
           </div>
@@ -1328,48 +1321,17 @@ function App() {
                   <strong>{shouldSurfaceAssist ? 'Visible' : coachingTone.tone === 'steady' ? 'Standby' : 'Waiting'}</strong>
                 </div>
               </div>
-              <div className="meter-label-row">
-                <span>Mic activity</span>
-                <strong>{Math.round(boothSignal.audioLevel * 100)}%</strong>
-              </div>
-
-              <div className="meter-label-row">
-                <span>Confidence</span>
-                <strong>{boothConfidencePercent}</strong>
-              </div>
 
               <div className="reason-list">
-                {visibleReasons.map((reason) => (
-                  <p key={reason}>{reason}</p>
-                ))}
-                {visibleConfidenceReasons.map((reason) => (
+                {visibleReasons.slice(0, 2).map((reason) => (
                   <p key={reason}>{reason}</p>
                 ))}
               </div>
 
               <p className="field-copy">
-                The clip stays muted by default so the booth tracks your voice, not the program feed. Confidence should recover only when your call does.
+                The clip stays muted by default so the booth tracks your voice, not the program feed.
               </p>
               {boothError ? <p className="inline-warning">{boothError}</p> : null}
-
-              <div className="transcript-list">
-                {boothTranscript.length > 0 ? (
-                  boothTranscript.slice(-3).map((entry) => (
-                    <p className="transcript-line" key={`${entry.timestamp}-${entry.text}`}>
-                      {entry.text}
-                    </p>
-                  ))
-                ) : (
-                  <p className="transcript-line transcript-line--muted">
-                    {isMicSupported
-                      ? 'Start the mic and talk through the match to see live booth transcript here.'
-                      : 'This browser cannot run the API-backed booth transcript path.'}
-                  </p>
-                )}
-                {boothInterimTranscript ? (
-                  <p className="transcript-line transcript-line--interim">{boothInterimTranscript}</p>
-                ) : null}
-              </div>
             </article>
 
             <div className="inline-actions inline-actions--compact">
@@ -1387,7 +1349,70 @@ function App() {
 
       {showDetails ? (
         <div className="bottom-grid">
-          <section className="panel">
+        <section className="panel">
+          <div className="panel-header">
+            <div>
+              <p className="panel-kicker">Context stash</p>
+              <h2>Prematch and retrieval context</h2>
+            </div>
+            <span className="panel-tag">{worldState.preMatch.loadStatus}</span>
+          </div>
+
+          <div className="narrative-focus">
+            <p className="narrative-label">Opening read</p>
+            <h3>{worldState.preMatch.aiOpener ?? worldState.preMatch.deterministicOpener}</h3>
+            <p>Kept here for context and later hint generation, not on the live operator surface.</p>
+          </div>
+
+          <div className="narrative-stack">
+            <span className="stack-chip">
+              {worldState.liveMatch.homeTeam.shortCode || 'HOME'} form {formatFormRecord(worldState.preMatch.homeRecentForm)}
+            </span>
+            <span className="stack-chip">
+              {worldState.liveMatch.awayTeam.shortCode || 'AWAY'} form {formatFormRecord(worldState.preMatch.awayRecentForm)}
+            </span>
+            <span className="stack-chip">{worldState.preMatch.venue.name}</span>
+            <span className="stack-chip">
+              {worldState.preMatch.weather?.summary ?? 'Weather unavailable'}
+            </span>
+          </div>
+
+          <div className="memory-strip">
+            <p className="memory-title">Stored context</p>
+            <div className="session-context-grid">
+              <article className="context-card context-card--wide">
+                <p className="context-label">Head to head</p>
+                <p className="context-value">{worldState.preMatch.headToHead.summary}</p>
+              </article>
+              <article className="context-card">
+                <p className="context-label">Venue</p>
+                <p className="context-value">
+                  {[
+                    worldState.preMatch.venue.name,
+                    worldState.preMatch.venue.city,
+                    worldState.preMatch.venue.country,
+                  ]
+                    .filter(Boolean)
+                    .join(', ')}
+                </p>
+              </article>
+              <article className="context-card">
+                <p className="context-label">Weather</p>
+                <p className="context-value">
+                  {worldState.preMatch.weather
+                    ? `${worldState.preMatch.weather.summary}${
+                        worldState.preMatch.weather.temperatureC !== null
+                          ? ` · ${Math.round(worldState.preMatch.weather.temperatureC)}C`
+                          : ''
+                      }`
+                    : 'Unavailable'}
+                </p>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section className="panel">
           <div className="panel-header">
             <div>
               <p className="panel-kicker">Details</p>

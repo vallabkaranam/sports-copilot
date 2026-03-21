@@ -271,12 +271,15 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 - [x] remove browser transcription fallback from the primary booth path
 - [x] strengthen transcript-instability features beyond pause dominance
 - [x] add explicit step-in / monitoring / weaning-off state transitions across the booth loop
+- [x] persist booth feature snapshots and interpreted states for session analytics
+- [x] compare live booth moments against stored speaker-profile baselines
+- [x] keep prematch context available in details while removing it from the live surface
 
 ### Tests
-- [x] test heuristic booth interpretation fallback
+- [x] test unavailable booth interpretation fallback
 - [x] test OpenAI response parsing for booth interpretation
 - [x] test OpenAI transcription response parsing
-- [ ] test live booth state transitions end to end
+- [x] test live booth state transitions end to end
 
 ---
 

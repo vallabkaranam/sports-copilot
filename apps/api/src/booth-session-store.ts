@@ -6,6 +6,7 @@ import {
   BoothSessionAnalytics,
   BoothSessionRecord,
   BoothSessionSample,
+  BoothSpeakerProfile,
   BoothSessionSummary,
 } from '@sports-copilot/shared-types';
 
@@ -32,6 +33,8 @@ type SampleRow = {
   is_speaking: number | string | boolean;
   trigger_badges: unknown;
   active_assist_text: string | null;
+  feature_snapshot?: unknown;
+  interpretation?: unknown;
 };
 
 export interface BoothSessionStore {
@@ -41,6 +44,7 @@ export interface BoothSessionStore {
   listSessions: (limit?: number) => Promise<BoothSessionSummary[]>;
   getSession: (sessionId: string) => Promise<BoothSessionRecord | null>;
   getAnalytics: () => Promise<BoothSessionAnalytics>;
+  getSpeakerProfile: () => Promise<BoothSpeakerProfile>;
   close?: () => Promise<void>;
 }
 
@@ -51,6 +55,21 @@ function createEmptyAnalytics(): BoothSessionAnalytics {
     averageMaxHesitationScore: 0,
     averageLongestPauseMs: 0,
     totalAssistCount: 0,
+  };
+}
+
+function createEmptySpeakerProfile(): BoothSpeakerProfile {
+  return {
+    totalSessions: 0,
+    totalSamples: 0,
+    averageMaxHesitationScore: 0,
+    averageRecoveryScore: 0,
+    averagePauseDurationMs: 0,
+    averageSpeechStreakMs: 0,
+    averageFillerDensity: 0,
+    averageRepeatedOpenings: 0,
+    averageTranscriptStability: 1,
+    wakePhrase: process.env.BOOTH_WAKE_PHRASE ?? null,
   };
 }
 
@@ -90,6 +109,18 @@ function parseStringArray(value: unknown): string[] {
   return [];
 }
 
+function parseJsonValue(value: unknown) {
+  if (typeof value === 'string' && value.trim().length > 0) {
+    try {
+      return JSON.parse(value) as unknown;
+    } catch (_error) {
+      return undefined;
+    }
+  }
+
+  return value ?? undefined;
+}
+
 function mapSessionRow(row: SessionRow): BoothSessionSummary {
   return {
     id: row.id,
@@ -117,6 +148,8 @@ function mapSampleRow(row: SampleRow): BoothSessionSample {
       typeof row.is_speaking === 'boolean' ? row.is_speaking : Boolean(toNumber(row.is_speaking)),
     triggerBadges: parseStringArray(row.trigger_badges),
     activeAssistText: row.active_assist_text,
+    featureSnapshot: parseJsonValue(row.feature_snapshot),
+    interpretation: parseJsonValue(row.interpretation),
   };
 }
 
@@ -163,7 +196,9 @@ async function createPostgresBoothSessionStore(connectionString: string): Promis
       audio_level DOUBLE PRECISION NOT NULL,
       is_speaking BOOLEAN NOT NULL,
       trigger_badges JSONB NOT NULL DEFAULT '[]'::jsonb,
-      active_assist_text TEXT
+      active_assist_text TEXT,
+      feature_snapshot JSONB,
+      interpretation JSONB
     );
 
     CREATE INDEX IF NOT EXISTS booth_session_samples_session_id_idx
@@ -205,8 +240,8 @@ async function createPostgresBoothSessionStore(connectionString: string): Promis
           `
             INSERT INTO booth_session_samples (
               session_id, timestamp, hesitation_score, confidence_score, pause_duration_ms,
-              audio_level, is_speaking, trigger_badges, active_assist_text
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
+              audio_level, is_speaking, trigger_badges, active_assist_text, feature_snapshot, interpretation
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10::jsonb, $11::jsonb)
           `,
           [
             sessionId,
@@ -218,6 +253,8 @@ async function createPostgresBoothSessionStore(connectionString: string): Promis
             sample.isSpeaking,
             JSON.stringify(sample.triggerBadges),
             sample.activeAssistText,
+            sample.featureSnapshot ? JSON.stringify(sample.featureSnapshot) : null,
+            sample.interpretation ? JSON.stringify(sample.interpretation) : null,
           ],
         );
 
@@ -313,7 +350,7 @@ async function createPostgresBoothSessionStore(connectionString: string): Promis
       const sampleResult = await pool.query<SampleRow>(
         `
           SELECT timestamp, hesitation_score, confidence_score, pause_duration_ms, audio_level,
-                 is_speaking, trigger_badges, active_assist_text
+                 is_speaking, trigger_badges, active_assist_text, feature_snapshot, interpretation
           FROM booth_session_samples
           WHERE session_id = $1
           ORDER BY timestamp ASC
@@ -358,6 +395,51 @@ async function createPostgresBoothSessionStore(connectionString: string): Promis
       };
     },
 
+    async getSpeakerProfile() {
+      const result = await pool.query<{
+        total_sessions: number | string;
+        total_samples: number | string;
+        average_max_hesitation_score: number | string;
+        average_recovery_score: number | string;
+        average_pause_duration_ms: number | string;
+        average_speech_streak_ms: number | string;
+        average_filler_density: number | string;
+        average_repeated_openings: number | string;
+        average_transcript_stability: number | string;
+      }>(`
+        SELECT
+          COUNT(DISTINCT s.id) AS total_sessions,
+          COUNT(ss.id) AS total_samples,
+          COALESCE(AVG(s.max_hesitation_score), 0) AS average_max_hesitation_score,
+          COALESCE(AVG(ss.confidence_score), 0) AS average_recovery_score,
+          COALESCE(AVG(ss.pause_duration_ms), 0) AS average_pause_duration_ms,
+          COALESCE(AVG(COALESCE((ss.feature_snapshot->>'speechStreakMs')::double precision, 0)), 0) AS average_speech_streak_ms,
+          COALESCE(AVG(COALESCE((ss.feature_snapshot->>'fillerDensity')::double precision, 0)), 0) AS average_filler_density,
+          COALESCE(AVG(COALESCE((ss.feature_snapshot->>'repeatedOpeningCount')::double precision, 0)), 0) AS average_repeated_openings,
+          COALESCE(AVG(COALESCE((ss.feature_snapshot->>'transcriptStabilityScore')::double precision, 1)), 1) AS average_transcript_stability
+        FROM booth_sessions s
+        LEFT JOIN booth_session_samples ss ON ss.session_id = s.id
+      `);
+
+      const row = result.rows[0];
+      if (!row) {
+        return createEmptySpeakerProfile();
+      }
+
+      return {
+        totalSessions: toNumber(row.total_sessions),
+        totalSamples: toNumber(row.total_samples),
+        averageMaxHesitationScore: toNumber(row.average_max_hesitation_score),
+        averageRecoveryScore: toNumber(row.average_recovery_score),
+        averagePauseDurationMs: Math.round(toNumber(row.average_pause_duration_ms)),
+        averageSpeechStreakMs: Math.round(toNumber(row.average_speech_streak_ms)),
+        averageFillerDensity: toNumber(row.average_filler_density),
+        averageRepeatedOpenings: toNumber(row.average_repeated_openings),
+        averageTranscriptStability: toNumber(row.average_transcript_stability),
+        wakePhrase: process.env.BOOTH_WAKE_PHRASE ?? null,
+      };
+    },
+
     async close() {
       await pool.end();
     },
@@ -395,6 +477,8 @@ function createSqliteBoothSessionStore(databaseFile?: string): BoothSessionStore
       is_speaking INTEGER NOT NULL,
       trigger_badges TEXT NOT NULL,
       active_assist_text TEXT,
+      feature_snapshot TEXT,
+      interpretation TEXT,
       FOREIGN KEY(session_id) REFERENCES booth_sessions(id) ON DELETE CASCADE
     );
   `);
@@ -413,10 +497,10 @@ function createSqliteBoothSessionStore(databaseFile?: string): BoothSessionStore
   const insertSample = database.prepare(`
     INSERT INTO booth_session_samples (
       session_id, timestamp, hesitation_score, confidence_score, pause_duration_ms,
-      audio_level, is_speaking, trigger_badges, active_assist_text
+      audio_level, is_speaking, trigger_badges, active_assist_text, feature_snapshot, interpretation
     ) VALUES (
       @session_id, @timestamp, @hesitation_score, @confidence_score, @pause_duration_ms,
-      @audio_level, @is_speaking, @trigger_badges, @active_assist_text
+      @audio_level, @is_speaking, @trigger_badges, @active_assist_text, @feature_snapshot, @interpretation
     )
   `);
 
@@ -453,7 +537,7 @@ function createSqliteBoothSessionStore(databaseFile?: string): BoothSessionStore
 
   const listSampleRows = database.prepare(`
     SELECT timestamp, hesitation_score, confidence_score, pause_duration_ms, audio_level,
-           is_speaking, trigger_badges, active_assist_text
+           is_speaking, trigger_badges, active_assist_text, feature_snapshot, interpretation
     FROM booth_session_samples
     WHERE session_id = ?
     ORDER BY timestamp ASC
@@ -492,6 +576,8 @@ function createSqliteBoothSessionStore(databaseFile?: string): BoothSessionStore
         is_speaking: sample.isSpeaking ? 1 : 0,
         trigger_badges: JSON.stringify(sample.triggerBadges),
         active_assist_text: sample.activeAssistText,
+        feature_snapshot: sample.featureSnapshot ? JSON.stringify(sample.featureSnapshot) : null,
+        interpretation: sample.interpretation ? JSON.stringify(sample.interpretation) : null,
       });
 
       updateSession.run({
@@ -567,6 +653,46 @@ function createSqliteBoothSessionStore(databaseFile?: string): BoothSessionStore
         averageMaxHesitationScore: row.average_max_hesitation_score,
         averageLongestPauseMs: Math.round(row.average_longest_pause_ms),
         totalAssistCount: row.total_assist_count,
+      };
+    },
+
+    async getSpeakerProfile() {
+      const sessions = await this.listSessions(200);
+      const records = await Promise.all(sessions.map((session) => this.getSession(session.id)));
+      const samples = records.flatMap((record) => record?.samples ?? []);
+
+      if (sessions.length === 0 || samples.length === 0) {
+        return createEmptySpeakerProfile();
+      }
+
+      const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
+      const numericFeature = (key: string, fallback = 0) =>
+        samples.map((sample) => {
+          const snapshot = sample.featureSnapshot as Record<string, unknown> | undefined;
+          const value = snapshot?.[key];
+          return typeof value === 'number' ? value : fallback;
+        });
+
+      return {
+        totalSessions: sessions.length,
+        totalSamples: samples.length,
+        averageMaxHesitationScore:
+          sum(sessions.map((session) => session.maxHesitationScore)) / Math.max(1, sessions.length),
+        averageRecoveryScore:
+          sum(samples.map((sample) => sample.confidenceScore)) / Math.max(1, samples.length),
+        averagePauseDurationMs: Math.round(
+          sum(samples.map((sample) => sample.pauseDurationMs)) / Math.max(1, samples.length),
+        ),
+        averageSpeechStreakMs: Math.round(
+          sum(numericFeature('speechStreakMs')) / Math.max(1, samples.length),
+        ),
+        averageFillerDensity:
+          sum(numericFeature('fillerDensity')) / Math.max(1, samples.length),
+        averageRepeatedOpenings:
+          sum(numericFeature('repeatedOpeningCount')) / Math.max(1, samples.length),
+        averageTranscriptStability:
+          sum(numericFeature('transcriptStabilityScore', 1)) / Math.max(1, samples.length),
+        wakePhrase: process.env.BOOTH_WAKE_PHRASE ?? null,
       };
     },
 

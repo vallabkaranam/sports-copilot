@@ -512,13 +512,12 @@ describe('App dashboard', () => {
     await renderApp();
 
     expect(container.textContent).toContain('Live Commentary Copilot');
-    expect(container.textContent).toContain('Pre-match brief');
-    expect(container.textContent).toContain('Barcelona arrive with strong recent form');
     expect(container.textContent).toContain('And-One');
     expect(container.textContent).toContain('Load Clip');
     expect(container.textContent).toContain('Go live');
     expect(container.textContent).toContain('Show Details');
     expect(container.textContent).toContain('Attach a video input');
+    expect(container.textContent).not.toContain('Pre-match brief');
   });
 
   it('keeps the booth in setup mode until a clip is loaded', async () => {
@@ -602,9 +601,24 @@ describe('App dashboard', () => {
     expect(createObjectUrl).toHaveBeenCalled();
   });
 
-  it('prefers the worker assist in the main overlay when one is available', async () => {
+  it('keeps worker context off the live overlay until booth interpretation asks for help', async () => {
     currentWorldState = createWorldState({
-      assist: createEmptyAssistCard(),
+      assist: {
+        type: 'hype',
+        text: 'Courtois keeps Madrid alive with an enormous reflex stop.',
+        styleMode: 'hype',
+        urgency: 'high',
+        confidence: 0.88,
+        whyNow: 'The replay is hot and the silence window is open.',
+        sourceChips: [
+          {
+            id: 'fact-1',
+            label: 'THIBAUT COURTOIS IS WORLD CLASS.',
+            source: 'live:social:@MadridXtra',
+            relevance: 0.96,
+          },
+        ],
+      },
       sessionMemory: createEmptySessionMemory(),
     });
 
@@ -650,32 +664,13 @@ describe('App dashboard', () => {
       await Promise.resolve();
     });
 
-    currentWorldState = createWorldState({
-      assist: {
-        type: 'hype',
-        text: 'Courtois keeps Madrid alive with an enormous reflex stop.',
-        styleMode: 'hype',
-        urgency: 'high',
-        confidence: 0.88,
-        whyNow: 'The replay is hot and the silence window is open.',
-        sourceChips: [
-          {
-            id: 'fact-1',
-            label: 'THIBAUT COURTOIS IS WORLD CLASS.',
-            source: 'live:social:@MadridXtra',
-            relevance: 0.96,
-          },
-        ],
-      },
-    });
-
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_000);
       await Promise.resolve();
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('Courtois keeps Madrid alive with an enormous reflex stop.');
+    expect(container.textContent).not.toContain('Courtois keeps Madrid alive with an enormous reflex stop.');
     expect(container.textContent).toContain('Show Details');
   });
 });

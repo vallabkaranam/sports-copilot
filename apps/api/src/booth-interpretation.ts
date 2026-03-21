@@ -2,6 +2,7 @@ import {
   BoothFeatureSnapshot,
   BoothInterpretation,
   BoothInterpretationSignal,
+  BoothSpeakerProfile,
 } from '@sports-copilot/shared-types';
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/responses';
@@ -70,70 +71,24 @@ function buildSignals(features: BoothFeatureSnapshot): BoothInterpretationSignal
   ];
 }
 
-function buildHeuristicState(features: BoothFeatureSnapshot): BoothInterpretation['state'] {
-  if (
-    (!features.isSpeaking && features.pauseDurationMs >= 1_200) ||
-    features.hesitationScore >= 0.62 ||
-    features.fillerDensity >= 0.22 ||
-    features.repeatedOpeningCount >= 2 ||
-    (features.unfinishedPhrase && features.pauseDurationMs >= 900)
-  ) {
-    return 'step-in';
-  }
-
-  if (
-    features.previousState === 'step-in' &&
-    features.isSpeaking &&
-    features.speechStreakMs >= 1_600 &&
-    features.confidenceScore >= 0.52 &&
-    features.transcriptStabilityScore >= 0.68
-  ) {
-    return 'weaning-off';
-  }
-
-  if (
-    features.previousState === 'weaning-off' &&
-    features.isSpeaking &&
-    features.speechStreakMs >= 2_400 &&
-    features.hesitationScore <= 0.12
-  ) {
-    return 'monitoring';
-  }
-
-  if (features.isSpeaking || features.hasVoiceActivity || features.previousState === 'weaning-off') {
-    return 'monitoring';
-  }
-
-  return 'standby';
-}
-
-export function buildHeuristicBoothInterpretation(
+function buildUnavailableBoothInterpretation(
   features: BoothFeatureSnapshot,
+  profile?: BoothSpeakerProfile,
 ): BoothInterpretation {
-  const state = buildHeuristicState(features);
-  const recoveryScore =
-    state === 'weaning-off' ? clamp(features.confidenceScore) : clamp(features.confidenceScore * 0.6);
-  const reasons =
-    features.hesitationReasons.length > 0
-      ? features.hesitationReasons
-      : ['No strong hesitation cue is active in the current booth window.'];
-
-  const summaryByState: Record<BoothInterpretation['state'], string> = {
-    standby: 'Standing by until the commentator starts the call.',
-    monitoring: 'Tracking the live call without stepping in yet.',
-    'step-in': 'A real hesitation window is open and the prompt should stay visible.',
-    'weaning-off': 'The call has steadied, so the prompt can fade back.',
-  };
-
   return {
-    state,
-    hesitationScore: clamp(features.hesitationScore),
-    recoveryScore,
-    shouldSurfaceAssist: state === 'step-in',
-    summary: summaryByState[state],
-    reasons,
+    state: features.previousState ?? 'standby',
+    hesitationScore: 0,
+    recoveryScore: 0,
+    shouldSurfaceAssist: false,
+    summary: 'Live booth interpretation is unavailable until the model path responds.',
+    reasons: [
+      'The API transcription or interpretation path is unavailable right now.',
+      profile && profile.totalSamples > 0
+        ? `Historical profile is loaded from ${profile.totalSamples} samples, but live model inference is not available.`
+        : 'No historical booth profile is available yet.',
+    ],
     signals: buildSignals(features),
-    source: 'heuristic',
+    source: 'unavailable',
   };
 }
 
@@ -158,22 +113,23 @@ function extractResponseText(payload: unknown) {
 
 export async function interpretBoothWithOpenAI(
   features: BoothFeatureSnapshot,
+  profile?: BoothSpeakerProfile,
 ): Promise<BoothInterpretation> {
   if (!process.env.OPENAI_API_KEY) {
-    return buildHeuristicBoothInterpretation(features);
+    return buildUnavailableBoothInterpretation(features, profile);
   }
 
   const prompt = [
     'You are classifying a live sports commentator booth state.',
-    'Use only the observed signal data. Do not invent facts.',
+    'Use only the observed signal data, speaker profile, and supplied live context. Do not invent facts.',
     'Return strict JSON with keys: state, hesitationScore, recoveryScore, shouldSurfaceAssist, summary, reasons, signals.',
     'Valid state values: standby, monitoring, step-in, weaning-off.',
     'Interpret hesitation as loss of delivery momentum. Interpret recovery as regained stable speaking.',
-    'Use pause after active speech as the strongest signal.',
-    'Transcript instability signals: fillers, repeated openings, unfinished thought, interim churn.',
-    'Be conservative. Only choose step-in when help is clearly needed now.',
+    'Use pause after active speech, filler density, repeated ideas, repeated openings, unfinished thought, wake phrase, and context drift as possible signals.',
+    'Compare the current moment against the historical speaker profile when deciding whether this behavior is actually unusual for this commentator.',
+    'Be conservative. Only choose step-in when help is clearly needed now. Prefer monitoring or weaning-off when the user is recovering.',
     '',
-    JSON.stringify(features),
+    JSON.stringify({ features, profile }),
   ].join('\n');
 
   const response = await fetch(OPENAI_API_URL, {
@@ -189,14 +145,14 @@ export async function interpretBoothWithOpenAI(
   });
 
   if (!response.ok) {
-    return buildHeuristicBoothInterpretation(features);
+    return buildUnavailableBoothInterpretation(features, profile);
   }
 
   const payload = (await response.json()) as unknown;
   const text = extractResponseText(payload);
 
   if (!text) {
-    return buildHeuristicBoothInterpretation(features);
+    return buildUnavailableBoothInterpretation(features, profile);
   }
 
   try {
@@ -233,8 +189,8 @@ export async function interpretBoothWithOpenAI(
           };
     }
   } catch (_error) {
-    // Fall through to heuristic fallback.
+    // Fall through to unavailable response.
   }
 
-  return buildHeuristicBoothInterpretation(features);
+  return buildUnavailableBoothInterpretation(features, profile);
 }

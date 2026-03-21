@@ -67,8 +67,10 @@ Notes:
 ## Demo Notes
 - The replay is deterministic and runs from local JSON fixtures in [data/demo_match](/Users/vallabkaranam/Desktop/sports-copilot/data/demo_match).
 - The current landing screen is a practice-first booth for testing hesitation on arbitrary local clips.
-- The browser booth mode is local-first: clip loading is done from your machine, pause detection uses live mic activity, and transcript text comes from the API-backed OpenAI transcription path.
+- The browser booth mode is local-first: clip loading is done from your machine, pause detection uses live mic activity, and transcript text comes only from the API-backed OpenAI transcription path.
 - Booth sessions and analytics now persist to hosted Postgres when `DATABASE_URL` is configured, or to local SQLite at `data/app/sports-copilot.sqlite` as a fallback.
+- The live operator surface hides prematch/retrieval context by default; that context now lives in `Show Details` so it can still power later hint generation without crowding the booth.
+- Live booth assists only surface when the interpreted booth state says the commentator actually needs help; stored world/retrieval context is still used to shape the assist itself.
 - Chrome or Edge currently give the best microphone support for the live booth flow.
 - Deterministic fixtures still exist in the repo for the original demo path, but the next work phase is replacing the primary path with real free-input integrations.
 

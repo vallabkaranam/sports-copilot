@@ -571,6 +571,8 @@ export const BoothSessionSampleSchema = z.object({
   isSpeaking: z.boolean(),
   triggerBadges: z.array(z.string()),
   activeAssistText: z.string().nullable(),
+  featureSnapshot: z.unknown().optional(),
+  interpretation: z.unknown().optional(),
 });
 export type BoothSessionSample = z.infer<typeof BoothSessionSampleSchema>;
 
@@ -640,6 +642,20 @@ export const BoothInterpretationStateSchema = z.enum([
 ]);
 export type BoothInterpretationState = z.infer<typeof BoothInterpretationStateSchema>;
 
+export const BoothSpeakerProfileSchema = z.object({
+  totalSessions: z.number().int().nonnegative(),
+  totalSamples: z.number().int().nonnegative(),
+  averageMaxHesitationScore: z.number().min(0).max(1),
+  averageRecoveryScore: z.number().min(0).max(1),
+  averagePauseDurationMs: z.number().int().nonnegative(),
+  averageSpeechStreakMs: z.number().int().nonnegative(),
+  averageFillerDensity: z.number().min(0).max(1),
+  averageRepeatedOpenings: z.number().min(0).max(1),
+  averageTranscriptStability: z.number().min(0).max(1),
+  wakePhrase: z.string().nullable(),
+});
+export type BoothSpeakerProfile = z.infer<typeof BoothSpeakerProfileSchema>;
+
 export const BoothFeatureSnapshotSchema = z.object({
   timestamp: z.number().int().nonnegative(),
   hesitationScore: z.number().min(0).max(1),
@@ -661,6 +677,9 @@ export const BoothFeatureSnapshotSchema = z.object({
   hesitationReasons: z.array(z.string()),
   transcriptWindow: z.array(TranscriptEntrySchema),
   interimTranscript: z.string(),
+  contextSummary: z.string().optional(),
+  expectedTopics: z.array(z.string()).optional(),
+  wakePhraseDetected: z.boolean().optional(),
   previousState: BoothInterpretationStateSchema.optional(),
 });
 export type BoothFeatureSnapshot = z.infer<typeof BoothFeatureSnapshotSchema>;
@@ -691,12 +710,13 @@ export const BoothInterpretationSchema = z.object({
   summary: z.string(),
   reasons: z.array(z.string()),
   signals: z.array(BoothInterpretationSignalSchema),
-  source: z.enum(['heuristic', 'openai']),
+  source: z.enum(['openai', 'unavailable']),
 });
 export type BoothInterpretation = z.infer<typeof BoothInterpretationSchema>;
 
 export const InterpretBoothInputSchema = z.object({
   features: BoothFeatureSnapshotSchema,
+  profile: BoothSpeakerProfileSchema.optional(),
 });
 export type InterpretBoothInput = z.infer<typeof InterpretBoothInputSchema>;
 
