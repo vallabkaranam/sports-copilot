@@ -780,6 +780,13 @@ function App() {
     : !hasStartedBroadcast
       ? 'Clip loaded. Booth standing by'
       : boothStatusLabel;
+  const systemStatusLabel = error ? 'Reconnecting' : isHydrated ? 'Ready' : 'Booting';
+  const feedHeading = loadedClipName || 'Load a clip to begin';
+  const feedSubheading = loadedClipUrl
+    ? hasStartedBroadcast
+      ? 'Call the play naturally. The booth watches for hesitation and backs off when confidence returns.'
+      : 'Your clip is loaded and muted. Start when you want the booth to listen.'
+    : 'Bring in any local replay clip to practice hesitation recovery without the old demo scaffolding.';
   const replayToastSignature = `${activeAssist.type}:${activeAssist.text}:${shouldSurfaceAssist}:${controls.restartToken}`;
   const activeTriggerBadges = [
     boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS ? 'pause' : null,
@@ -827,15 +834,28 @@ function App() {
 
   return (
     <div className="app-shell">
-      <header className="hero">
-        <div>
-          <p className="eyebrow">{isPracticeMode ? 'Practice Booth' : 'Controlled El Clasico Replay'}</p>
-          <h1>Sports Copilot</h1>
+      <header className="app-header">
+        <div className="brand-lockup">
+          <p className="eyebrow">{isPracticeMode ? 'Sports Copilot' : 'Sports Copilot'}</p>
+          <h1>Commentary Booth</h1>
           <p className="hero-copy">
-            {isPracticeMode
-              ? 'Test hesitation tracking, confidence, and assist timing against your own commentary on any clip.'
-              : 'A replay-aware commentator booth with a real clip window, live hesitation tracking, and grounded assist timing.'}
+            A focused practice surface for live hesitation detection, confidence recovery, and just-in-time commentary support.
           </p>
+        </div>
+
+        <div className="header-actions">
+          <div className="header-status-card">
+            <p className="control-label">System</p>
+            <strong>{systemStatusLabel}</strong>
+            <span>{setupStatusLabel}</span>
+          </div>
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={() => setShowDetails((current) => !current)}
+          >
+            {showDetails ? 'Hide Details' : 'Show Details'}
+          </button>
         </div>
       </header>
 
@@ -845,17 +865,19 @@ function App() {
         <section className="panel replay-panel">
           <div className="panel-header">
             <div>
-              <p className="panel-kicker">Practice Booth</p>
-              <h2>Test hesitation on any clip</h2>
+              <p className="panel-kicker">Feed</p>
+              <h2>{feedHeading}</h2>
+              <p className="panel-copy">{feedSubheading}</p>
             </div>
-            <span className="panel-tag">
-              {loadedClipUrl ? `${clipClockLabel} / ${clipDurationLabel}` : 'Load a clip to begin'}
-            </span>
+            <div className="panel-chip-row">
+              <span className="panel-tag">{loadedClipUrl ? `${clipClockLabel} / ${clipDurationLabel}` : 'Awaiting upload'}</span>
+              <span className="panel-tag">{isBroadcastLive ? 'Broadcast live' : 'Broadcast idle'}</span>
+            </div>
           </div>
 
           <div className="media-toolbar">
             <label className="file-chip">
-              <span>{loadedClipUrl ? 'Replace Clip' : 'Load Replay Clip'}</span>
+              <span>{loadedClipUrl ? 'Replace Clip' : 'Load Clip'}</span>
               <input type="file" accept="video/*" onChange={handleClipChange} />
             </label>
             <div className="media-meta">
@@ -904,17 +926,16 @@ function App() {
 
             <div className="replay-stage__content">
               <div className="replay-copy">
-                <span className="live-chip">{loadedClipUrl ? 'Practice clip ready' : 'Ready for upload'}</span>
+                <span className="live-chip">{loadedClipUrl ? 'Clip ready' : 'Ready for upload'}</span>
                 <h3>
                   {loadedClipUrl
                     ? hasStartedBroadcast
-                      ? 'Talk through the clip and let the booth react.'
-                      : 'Clip loaded. Start the booth when you are ready.'
-                    : 'Upload a clip, then start the booth.'}
+                      ? 'Stay on the call. The booth only steps in when you fade.'
+                      : 'Set the feed, then go live when you are ready.'
+                    : 'Upload a clip, then take the booth live.'}
                 </h3>
                 <p>
-                  Speak naturally, leave a beat, repeat yourself, or use filler words to test the
-                  hesitation tracker.
+                  Speak as if you are on air. Pauses, filler-heavy resets, and broken openings should all show up as hesitation.
                 </p>
               </div>
 
@@ -926,15 +947,15 @@ function App() {
                 </article>
               ) : boothHasLiveInput ? (
                 <div className="replay-toast replay-toast--hint">
-                  <p className="assist-type">Booth monitor</p>
-                  <h3>{latestBoothLine ?? 'Talk through the play.'}</h3>
-                  <p>Leave a beat and the grounded assist will surface when the hesitation is real.</p>
+                  <p className="assist-type">Monitoring</p>
+                  <h3>{latestBoothLine ?? 'Keep calling the action.'}</h3>
+                  <p>The booth is listening. If hesitation becomes real, one clean assist will come in.</p>
                 </div>
               ) : loadedClipUrl && !hasStartedBroadcast ? (
                 <div className="replay-toast replay-toast--hint">
-                  <p className="assist-type">Booth ready</p>
-                  <h3>Start broadcast when you want the booth to listen.</h3>
-                  <p>The clip is loaded and muted. Nothing will react until you deliberately start.</p>
+                  <p className="assist-type">Standing by</p>
+                  <h3>Go live when you want booth tracking to begin.</h3>
+                  <p>The feed is set and muted. Nothing is scored until you start the session.</p>
                 </div>
               ) : null}
 
@@ -967,8 +988,9 @@ function App() {
           <section className="panel control-panel">
             <div className="panel-header">
               <div>
-                <p className="panel-kicker">Broadcast Control</p>
-                <h2>Start the booth</h2>
+                <p className="panel-kicker">Booth</p>
+                <h2>Live session</h2>
+                <p className="panel-copy">One place to run the booth, watch the live signal, and keep the surface calm.</p>
               </div>
             </div>
 
@@ -988,7 +1010,7 @@ function App() {
             </article>
 
             <div className="control-group">
-              <p className="control-label">Broadcast</p>
+              <p className="control-label">Controls</p>
               <div className="primary-controls">
                 <button
                   type="button"
@@ -996,12 +1018,12 @@ function App() {
                   disabled={!loadedClipUrl}
                   onClick={() => void (isBroadcastLive ? stopBroadcast() : startBroadcast())}
                 >
-                  {isBroadcastLive ? 'Stop Broadcast' : 'Start Broadcast'}
+                  {isBroadcastLive ? 'End Session' : 'Start Broadcast'}
                 </button>
               </div>
               <div className="inline-actions">
                 <button type="button" className="text-button" onClick={() => void resetBroadcast()}>
-                  Reset broadcast
+                  Reset session
                 </button>
                 <button type="button" className="text-button" onClick={clearBoothTranscript}>
                   Clear transcript
@@ -1012,7 +1034,7 @@ function App() {
             <article className="booth-card">
               <div className="booth-card__header">
                 <div>
-                  <p className="control-label">Live hesitation</p>
+                  <p className="control-label">Hesitation</p>
                   <strong>{boothHesitationPercent}</strong>
                 </div>
                 <div className="metric-badge">
@@ -1030,7 +1052,7 @@ function App() {
               </div>
 
               <div className="meter-label-row">
-                <span>Delivery confidence</span>
+                <span>Confidence</span>
                 <strong>{boothConfidencePercent}</strong>
               </div>
 
@@ -1041,25 +1063,13 @@ function App() {
               </div>
 
               <p className="field-copy">
-                The clip is muted by default so the booth mic tracks your voice instead of the
-                program feed. Pause detection follows live mic activity, and confidence comes back
-                up as soon as you settle back into the call.
+                The clip stays muted by default so the booth tracks your voice, not the program feed. Confidence should recover only when your call does.
               </p>
               {boothError ? <p className="inline-warning">{boothError}</p> : null}
             </article>
           </section>
 
         </div>
-      </div>
-
-      <div className="details-toggle-row">
-        <button
-          type="button"
-          className="text-button"
-          onClick={() => setShowDetails((current) => !current)}
-        >
-          {showDetails ? 'Hide system details' : 'Show system details'}
-        </button>
       </div>
 
       {showDetails ? (

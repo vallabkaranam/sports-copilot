@@ -313,17 +313,19 @@ describe('App dashboard', () => {
     await renderApp();
 
     expect(container.textContent).toContain('Sports Copilot');
-    expect(container.textContent).toContain('Practice Booth');
-    expect(container.textContent).toContain('Load Replay Clip');
-    expect(container.textContent).toContain('Start the booth');
-    expect(container.textContent).toContain('Show system details');
-    expect(container.textContent).toContain('Upload a clip, then start the booth.');
+    expect(container.textContent).toContain('Commentary Booth');
+    expect(container.textContent).toContain('Load Clip');
+    expect(container.textContent).toContain('Live session');
+    expect(container.textContent).toContain('Show Details');
+    expect(container.textContent).toContain('Bring in any local replay clip');
   });
 
   it('keeps the booth in setup mode until a clip is loaded', async () => {
     await renderApp();
 
-    const playButton = container.querySelector('button');
+    const playButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Start Broadcast'),
+    );
     expect(playButton?.textContent).toBe('Start Broadcast');
     expect(playButton?.hasAttribute('disabled')).toBe(true);
     expect(container.textContent).toContain('Waiting for clip upload');
@@ -364,7 +366,7 @@ describe('App dashboard', () => {
     });
 
     const resetButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Reset broadcast'),
+      button.textContent?.includes('Reset session'),
     );
 
     await act(async () => {
@@ -378,6 +380,7 @@ describe('App dashboard', () => {
 
     expect(postBodies).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({ clipName: 'test.mp4' }),
         expect.objectContaining({ playbackStatus: 'playing' }),
         expect.objectContaining({ restart: true }),
       ]),
@@ -420,6 +423,6 @@ describe('App dashboard', () => {
     });
 
     expect(container.textContent).not.toContain('Courtois keeps Madrid alive with an enormous reflex stop.');
-    expect(container.textContent).toContain('Show system details');
+    expect(container.textContent).toContain('Show Details');
   });
 });
