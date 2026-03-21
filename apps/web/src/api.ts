@@ -1,6 +1,7 @@
 import {
   BoothFeatureSnapshot,
   BoothInterpretation,
+  BoothSessionRecord,
   BoothSessionSample,
   BoothSessionsResponse,
   BoothSessionSummary,
@@ -49,6 +50,10 @@ export function updateControlState(
 
 export function fetchBoothSessions() {
   return requestJson<BoothSessionsResponse>('/booth-sessions');
+}
+
+export function fetchBoothSession(sessionId: string) {
+  return requestJson<{ session: BoothSessionRecord }>(`/booth-sessions/${sessionId}`);
 }
 
 export function startBoothSession(clipName: string) {

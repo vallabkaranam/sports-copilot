@@ -342,6 +342,14 @@
     linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(248, 244, 238, 0.8));
 }
 
+.session-review-card {
+  margin-top: 14px;
+  padding: 18px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: rgba(255, 252, 248, 0.92);
+}
+
 .media-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -1240,6 +1248,10 @@
   display: block;
   font-size: 0.96rem;
   color: var(--ink);
+}
+
+.commentary-metadata--review {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 @keyframes assist-pop {

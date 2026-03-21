@@ -122,6 +122,18 @@ server.get('/booth-sessions', async (): Promise<BoothSessionsResponse> => {
   };
 });
 
+server.get('/booth-sessions/:sessionId', async (request, reply) => {
+  const sessionStore = requireBoothSessionStore();
+  const session = await sessionStore.getSession((request.params as { sessionId: string }).sessionId);
+
+  if (!session) {
+    reply.status(404).send({ error: 'Booth session not found' });
+    return;
+  }
+
+  return { session };
+});
+
 server.post('/booth/interpret', async (request, reply): Promise<BoothInterpretation | void> => {
   const sessionStore = requireBoothSessionStore();
   const parsed = InterpretBoothInputSchema.safeParse(request.body);

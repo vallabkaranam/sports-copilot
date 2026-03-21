@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import {
+  BoothSessionRecord,
   BoothSessionsResponse,
   ReplayControlState,
   WorldState,
@@ -297,6 +298,121 @@ function createBoothSessionsResponse(): BoothSessionsResponse {
   };
 }
 
+function createBoothSessionRecord(overrides: Partial<BoothSessionRecord> = {}): BoothSessionRecord {
+  return {
+    id: 'session-1',
+    clipName: 'test.mp4',
+    startedAt: '2026-03-20T00:00:00.000Z',
+    endedAt: '2026-03-20T00:01:00.000Z',
+    status: 'completed',
+    sampleCount: 3,
+    maxHesitationScore: 0.82,
+    maxConfidenceScore: 0.71,
+    longestPauseMs: 4_200,
+    assistCount: 2,
+    lastTriggerBadges: ['pause', 'filler'],
+    samples: [
+      {
+        timestamp: 1_000,
+        hesitationScore: 0.22,
+        confidenceScore: 0.34,
+        pauseDurationMs: 800,
+        audioLevel: 0.08,
+        isSpeaking: true,
+        triggerBadges: [],
+        activeAssistText: null,
+        featureSnapshot: {
+          timestamp: 1_000,
+          hesitationScore: 0.22,
+          confidenceScore: 0.34,
+          pauseDurationMs: 800,
+          speechStreakMs: 1_100,
+          silenceStreakMs: 0,
+          audioLevel: 0.08,
+          isSpeaking: true,
+          hasVoiceActivity: true,
+          fillerCount: 0,
+          fillerDensity: 0,
+          fillerWords: [],
+          repeatedOpeningCount: 0,
+          repeatedPhrases: [],
+          unfinishedPhrase: false,
+          transcriptWordCount: 8,
+          transcriptStabilityScore: 0.92,
+          hesitationReasons: [],
+          transcriptWindow: [],
+          interimTranscript: '',
+        },
+      },
+      {
+        timestamp: 2_000,
+        hesitationScore: 0.82,
+        confidenceScore: 0.1,
+        pauseDurationMs: 4_200,
+        audioLevel: 0.01,
+        isSpeaking: false,
+        triggerBadges: ['pause', 'filler'],
+        activeAssistText: 'Courtois is keeping Madrid alive.',
+        featureSnapshot: {
+          timestamp: 2_000,
+          hesitationScore: 0.82,
+          confidenceScore: 0.1,
+          pauseDurationMs: 4_200,
+          speechStreakMs: 0,
+          silenceStreakMs: 4_200,
+          audioLevel: 0.01,
+          isSpeaking: false,
+          hasVoiceActivity: false,
+          fillerCount: 2,
+          fillerDensity: 0.18,
+          fillerWords: ['um', 'uh'],
+          repeatedOpeningCount: 1,
+          repeatedPhrases: ['vinicius is'],
+          unfinishedPhrase: true,
+          transcriptWordCount: 11,
+          transcriptStabilityScore: 0.54,
+          hesitationReasons: ['You paused for 4.2s after the last thought.'],
+          transcriptWindow: [],
+          interimTranscript: 'uh vinicius is...',
+        },
+      },
+      {
+        timestamp: 3_000,
+        hesitationScore: 0.14,
+        confidenceScore: 0.71,
+        pauseDurationMs: 0,
+        audioLevel: 0.12,
+        isSpeaking: true,
+        triggerBadges: [],
+        activeAssistText: null,
+        featureSnapshot: {
+          timestamp: 3_000,
+          hesitationScore: 0.14,
+          confidenceScore: 0.71,
+          pauseDurationMs: 0,
+          speechStreakMs: 2_400,
+          silenceStreakMs: 0,
+          audioLevel: 0.12,
+          isSpeaking: true,
+          hasVoiceActivity: true,
+          fillerCount: 0,
+          fillerDensity: 0,
+          fillerWords: [],
+          repeatedOpeningCount: 0,
+          repeatedPhrases: [],
+          unfinishedPhrase: false,
+          transcriptWordCount: 10,
+          transcriptStabilityScore: 0.95,
+          hesitationReasons: [],
+          transcriptWindow: [],
+          interimTranscript: '',
+        },
+      },
+    ],
+    ...overrides,
+  };
+}
+
 describe('App dashboard', () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -304,6 +420,7 @@ describe('App dashboard', () => {
   let currentWorldState: WorldState;
   let currentControls: ReplayControlState;
   let currentBoothSessions: BoothSessionsResponse;
+  let currentBoothSessionRecord: BoothSessionRecord;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -315,6 +432,7 @@ describe('App dashboard', () => {
     currentWorldState = createWorldState();
     currentControls = createControls();
     currentBoothSessions = createBoothSessionsResponse();
+    currentBoothSessionRecord = createBoothSessionRecord();
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
     const fakeStream = {
@@ -405,6 +523,9 @@ describe('App dashboard', () => {
       }
 
       if (url.includes('/booth-sessions') && (!init?.method || init.method === 'GET')) {
+        if (url.includes('/booth-sessions/session-1')) {
+          return jsonResponse({ session: currentBoothSessionRecord });
+        }
         return jsonResponse(currentBoothSessions);
       }
 
@@ -637,6 +758,63 @@ describe('App dashboard', () => {
       ]),
     );
     expect(createObjectUrl).toHaveBeenCalled();
+  });
+
+  it('clears the live booth state and shows a saved session review after ending the session', async () => {
+    await renderApp();
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null;
+    const file = new File(['video'], 'test.mp4', { type: 'video/mp4' });
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL: vi.fn(() => 'blob:test'),
+      revokeObjectURL: vi.fn(),
+    });
+
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      });
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    const micButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Enable microphone'),
+    );
+    const startButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Start session'),
+    );
+
+    await act(async () => {
+      micButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      startButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const endButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('End session'),
+    );
+
+    await act(async () => {
+      endButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Session review is ready.');
+    expect(container.textContent).toContain('Post-session analytics');
+    expect(container.textContent).toContain('Stored in DB');
+    expect(container.textContent).toContain('Peak hesitation');
+    expect(container.textContent).not.toContain('Assist live on this beat.');
   });
 
   it('keeps worker context off the live overlay until booth interpretation asks for help', async () => {

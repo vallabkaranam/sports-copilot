@@ -3,6 +3,7 @@ import {
   BoothFeatureSnapshot,
   BoothInterpretation,
   BoothSessionAnalytics,
+  BoothSessionRecord,
   BoothSessionSummary,
   ReplayControlState,
   TranscriptEntry,
@@ -13,6 +14,7 @@ import { BRAND } from './brand';
 import {
   appendBoothSessionSample,
   connectRealtimeBoothSession,
+  fetchBoothSession,
   fetchBoothSessions,
   fetchControlState,
   fetchWorldState,
@@ -148,6 +150,81 @@ function buildExpectedTopics(worldState: ReturnType<typeof createInitialWorldSta
   return [...new Set(topics)].slice(0, 8);
 }
 
+function average(values: number[]) {
+  if (values.length === 0) {
+    return 0;
+  }
+
+  return values.reduce((total, value) => total + value, 0) / values.length;
+}
+
+function derivePostSessionReview(session: BoothSessionRecord | null) {
+  if (!session) {
+    return null;
+  }
+
+  const snapshots = session.samples
+    .map((sample) => sample.featureSnapshot as BoothFeatureSnapshot | undefined)
+    .filter((snapshot): snapshot is BoothFeatureSnapshot => Boolean(snapshot));
+
+  const fillerTotals = snapshots.flatMap((snapshot) => snapshot.fillerWords);
+  const fillerCounts = new Map<string, number>();
+  for (const filler of fillerTotals) {
+    fillerCounts.set(filler, (fillerCounts.get(filler) ?? 0) + 1);
+  }
+
+  const topFiller = [...fillerCounts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] ?? null;
+  const topTriggerCounts = new Map<string, number>();
+  for (const sample of session.samples) {
+    for (const badge of sample.triggerBadges) {
+      topTriggerCounts.set(badge, (topTriggerCounts.get(badge) ?? 0) + 1);
+    }
+  }
+
+  const topTrigger =
+    [...topTriggerCounts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] ?? 'pause';
+
+  const recoveryMoments = session.samples.filter((sample) => {
+    const interpretation = sample.interpretation as BoothInterpretation | undefined;
+    return (
+      interpretation?.state === 'weaning-off' ||
+      (typeof interpretation?.recoveryScore === 'number' && interpretation.recoveryScore >= 0.65)
+    );
+  }).length;
+
+  const averageStability = average(snapshots.map((snapshot) => snapshot.transcriptStabilityScore || 1));
+  const averagePause = average(session.samples.map((sample) => sample.pauseDurationMs));
+  const averageFillerDensity = average(snapshots.map((snapshot) => snapshot.fillerDensity || 0));
+
+  const learningNotes = [
+    topTrigger === 'pause'
+      ? 'Long pauses are still the strongest cue. The handoff should arrive earlier as silence grows.'
+      : `The booth most often reacted to ${topTrigger} moments in this session.`,
+    topFiller
+      ? `Your most common filler was "${topFiller}". That is now part of the personal hesitation profile.`
+      : 'Filler language stayed relatively clean in this run.',
+    recoveryMoments > 0
+      ? `And-One detected ${recoveryMoments} recovery moment${recoveryMoments === 1 ? '' : 's'} where it could back off.`
+      : 'Recovery never stabilized long enough to trigger a confident back-off moment.',
+  ];
+
+  return {
+    headline: 'Session review is ready.',
+    summary: `Saved ${session.sampleCount} live samples and ${session.assistCount} assist moment${
+      session.assistCount === 1 ? '' : 's'
+    } for this run.`,
+    metrics: [
+      { label: 'Peak hesitation', value: formatPercent(session.maxHesitationScore) },
+      { label: 'Longest pause', value: formatDurationMs(session.longestPauseMs) },
+      { label: 'Avg live pause', value: formatDurationMs(Math.round(averagePause)) },
+      { label: 'Avg transcript stability', value: formatPercent(averageStability) },
+      { label: 'Avg filler density', value: formatPercent(averageFillerDensity) },
+      { label: 'Recovery moments', value: String(recoveryMoments) },
+    ],
+    learningNotes,
+  };
+}
+
 function getCoachingTone({
   hasStartedBroadcast,
   boothHasLiveInput,
@@ -223,6 +300,7 @@ function App() {
     totalAssistCount: 0,
   });
   const [, setRecentBoothSessions] = useState<BoothSessionSummary[]>([]);
+  const [latestCompletedSession, setLatestCompletedSession] = useState<BoothSessionRecord | null>(null);
   const [activeBoothSessionId, setActiveBoothSessionId] = useState<string | null>(null);
   const [loadedClipName, setLoadedClipName] = useState('');
   const [loadedClipUrl, setLoadedClipUrl] = useState<string | null>(null);
@@ -455,7 +533,9 @@ function App() {
     }
 
     try {
-      await finishBoothSession(activeBoothSessionId);
+      const response = await finishBoothSession(activeBoothSessionId);
+      const completedSession = await fetchBoothSession(response.session.id);
+      setLatestCompletedSession(completedSession.session);
       await refreshBoothSessions();
     } catch (_error) {
       setBoothError('The booth session could not be finalized in the local store.');
@@ -805,6 +885,13 @@ function App() {
     setBoothError(null);
   }
 
+  function clearLiveBoothState() {
+    clearBoothTranscript();
+    setBoothInterpretation(null);
+    setLatchedAssist(createEmptyAssistCard());
+    setAssistVisibilityPhase('hidden');
+  }
+
   async function startBroadcast() {
     if (!loadedClipUrl) {
       setBoothError('Load a clip before starting the booth.');
@@ -826,6 +913,7 @@ function App() {
       }
     }
 
+    setLatestCompletedSession(null);
     setHasStartedBroadcast(true);
 
     if (controls.playbackStatus !== 'playing') {
@@ -844,6 +932,8 @@ function App() {
       stopMicrophone();
     }
 
+    clearLiveBoothState();
+
     if (controls.playbackStatus !== 'paused') {
       await sendControlPatch({ playbackStatus: 'paused' });
     }
@@ -853,7 +943,6 @@ function App() {
 
   async function resetBroadcast() {
     await stopBroadcast();
-    clearBoothTranscript();
     await sendControlPatch({ restart: true });
   }
 
@@ -1008,6 +1097,7 @@ function App() {
     : coachingTone.tone === 'steady'
       ? 'Standby'
       : 'Waiting';
+  const postSessionReview = derivePostSessionReview(latestCompletedSession);
 
   useEffect(() => {
     if (!hasStartedBroadcast) {
@@ -1358,6 +1448,8 @@ function App() {
                   {loadedClipUrl
                     ? hasStartedBroadcast
                       ? coachingTone.headline
+                      : postSessionReview
+                        ? postSessionReview.headline
                       : 'Arm the mic, then start the session.'
                     : 'Attach a video input to begin.'}
                 </h3>
@@ -1502,6 +1594,35 @@ function App() {
               </p>
               {boothError ? <p className="inline-warning">{boothError}</p> : null}
             </article>
+
+            {!hasStartedBroadcast && postSessionReview ? (
+              <article className="session-review-card">
+                <div className="panel-header panel-header--compact">
+                  <div>
+                    <p className="control-label">Saved review</p>
+                    <h3>Post-session analytics</h3>
+                  </div>
+                  <span className="panel-tag">Stored in DB</span>
+                </div>
+
+                <p className="field-copy field-copy--tight">{postSessionReview.summary}</p>
+
+                <div className="commentary-metadata commentary-metadata--review">
+                  {postSessionReview.metrics.map((metric) => (
+                    <div key={metric.label}>
+                      <p className="control-label">{metric.label}</p>
+                      <strong>{metric.value}</strong>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="reason-list">
+                  {postSessionReview.learningNotes.map((note) => (
+                    <p key={note}>{note}</p>
+                  ))}
+                </div>
+              </article>
+            ) : null}
 
             <div className="inline-actions inline-actions--compact">
               <button type="button" className="text-button" onClick={() => void resetBroadcast()}>
