@@ -665,6 +665,24 @@ export const BoothFeatureSnapshotSchema = z.object({
 });
 export type BoothFeatureSnapshot = z.infer<typeof BoothFeatureSnapshotSchema>;
 
+export const BoothInterpretationSignalSchema = z.object({
+  key: z.enum([
+    'pauseDurationMs',
+    'speechStreakMs',
+    'silenceStreakMs',
+    'audioLevel',
+    'fillerCount',
+    'fillerDensity',
+    'repeatedOpeningCount',
+    'unfinishedPhrase',
+    'transcriptStabilityScore',
+  ]),
+  label: z.string(),
+  value: z.union([z.number(), z.boolean()]),
+  detail: z.string(),
+});
+export type BoothInterpretationSignal = z.infer<typeof BoothInterpretationSignalSchema>;
+
 export const BoothInterpretationSchema = z.object({
   state: BoothInterpretationStateSchema,
   hesitationScore: z.number().min(0).max(1),
@@ -672,6 +690,7 @@ export const BoothInterpretationSchema = z.object({
   shouldSurfaceAssist: z.boolean(),
   summary: z.string(),
   reasons: z.array(z.string()),
+  signals: z.array(BoothInterpretationSignalSchema),
   source: z.enum(['heuristic', 'openai']),
 });
 export type BoothInterpretation = z.infer<typeof BoothInterpretationSchema>;

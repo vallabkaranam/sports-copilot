@@ -1,10 +1,73 @@
-import { BoothFeatureSnapshot, BoothInterpretation } from '@sports-copilot/shared-types';
+import {
+  BoothFeatureSnapshot,
+  BoothInterpretation,
+  BoothInterpretationSignal,
+} from '@sports-copilot/shared-types';
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/responses';
 const OPENAI_MODEL = process.env.OPENAI_HESITATION_MODEL ?? 'gpt-5.4';
 
 function clamp(value: number, minimum = 0, maximum = 1) {
   return Math.min(maximum, Math.max(minimum, value));
+}
+
+function buildSignals(features: BoothFeatureSnapshot): BoothInterpretationSignal[] {
+  return [
+    {
+      key: 'pauseDurationMs',
+      label: 'Pause after speech',
+      value: features.pauseDurationMs,
+      detail: `${(features.pauseDurationMs / 1000).toFixed(1)}s`,
+    },
+    {
+      key: 'speechStreakMs',
+      label: 'Current speech streak',
+      value: features.speechStreakMs,
+      detail: `${(features.speechStreakMs / 1000).toFixed(1)}s`,
+    },
+    {
+      key: 'silenceStreakMs',
+      label: 'Current silence streak',
+      value: features.silenceStreakMs,
+      detail: `${(features.silenceStreakMs / 1000).toFixed(1)}s`,
+    },
+    {
+      key: 'audioLevel',
+      label: 'Mic energy',
+      value: features.audioLevel,
+      detail: `${Math.round(features.audioLevel * 100)}%`,
+    },
+    {
+      key: 'fillerCount',
+      label: 'Filler count',
+      value: features.fillerCount,
+      detail: `${features.fillerCount}`,
+    },
+    {
+      key: 'fillerDensity',
+      label: 'Filler density',
+      value: features.fillerDensity,
+      detail: `${Math.round(features.fillerDensity * 100)}%`,
+    },
+    {
+      key: 'repeatedOpeningCount',
+      label: 'Repeated openings',
+      value: features.repeatedOpeningCount,
+      detail: `${features.repeatedOpeningCount}`,
+    },
+    {
+      key: 'unfinishedPhrase',
+      label: 'Unfinished thought',
+      value: features.unfinishedPhrase,
+      detail: features.unfinishedPhrase ? 'detected' : 'not detected',
+    },
+    {
+      key: 'transcriptStabilityScore',
+      label: 'Transcript stability',
+      value: features.transcriptStabilityScore,
+      detail: `${Math.round(features.transcriptStabilityScore * 100)}%`,
+    },
+  ];
 }
 
 function buildHeuristicState(features: BoothFeatureSnapshot): BoothInterpretation['state'] {
@@ -69,6 +132,7 @@ export function buildHeuristicBoothInterpretation(
     shouldSurfaceAssist: state === 'step-in',
     summary: summaryByState[state],
     reasons,
+    signals: buildSignals(features),
     source: 'heuristic',
   };
 }
@@ -102,7 +166,7 @@ export async function interpretBoothWithOpenAI(
   const prompt = [
     'You are classifying a live sports commentator booth state.',
     'Use only the observed signal data. Do not invent facts.',
-    'Return strict JSON with keys: state, hesitationScore, recoveryScore, shouldSurfaceAssist, summary, reasons.',
+    'Return strict JSON with keys: state, hesitationScore, recoveryScore, shouldSurfaceAssist, summary, reasons, signals.',
     'Valid state values: standby, monitoring, step-in, weaning-off.',
     'Interpret hesitation as loss of delivery momentum. Interpret recovery as regained stable speaking.',
     'Use pause after active speech as the strongest signal.',
@@ -152,9 +216,21 @@ export async function interpretBoothWithOpenAI(
         recoveryScore: clamp(parsedJson.recoveryScore),
         shouldSurfaceAssist: parsedJson.shouldSurfaceAssist,
         summary: parsedJson.summary,
-        reasons: parsedJson.reasons.filter((reason): reason is string => typeof reason === 'string'),
-        source: 'openai',
-      };
+            reasons: parsedJson.reasons.filter((reason): reason is string => typeof reason === 'string'),
+            signals: Array.isArray(parsedJson.signals)
+              ? parsedJson.signals.filter(
+                  (signal): signal is BoothInterpretationSignal =>
+                    Boolean(signal) &&
+                    typeof signal === 'object' &&
+                    typeof (signal as BoothInterpretationSignal).key === 'string' &&
+                    typeof (signal as BoothInterpretationSignal).label === 'string' &&
+                    typeof (signal as BoothInterpretationSignal).detail === 'string' &&
+                    (typeof (signal as BoothInterpretationSignal).value === 'number' ||
+                      typeof (signal as BoothInterpretationSignal).value === 'boolean'),
+                )
+              : buildSignals(features),
+            source: 'openai',
+          };
     }
   } catch (_error) {
     // Fall through to heuristic fallback.

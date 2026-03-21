@@ -43,6 +43,7 @@ describe('booth interpretation', () => {
     expect(interpretation.source).toBe('heuristic');
     expect(interpretation.state).toBe('step-in');
     expect(interpretation.shouldSurfaceAssist).toBe(true);
+    expect(interpretation.signals.length).toBeGreaterThan(0);
   });
 
   it('classifies recovery as weaning off heuristically', () => {
@@ -100,6 +101,14 @@ describe('booth interpretation', () => {
             shouldSurfaceAssist: false,
             summary: 'Tracking the booth without stepping in.',
             reasons: ['The pause is not yet long enough to justify help.'],
+            signals: [
+              {
+                key: 'pauseDurationMs',
+                label: 'Pause after speech',
+                value: 2800,
+                detail: '2.8s',
+              },
+            ],
           }),
         }),
       }),
@@ -110,5 +119,6 @@ describe('booth interpretation', () => {
     expect(interpretation.source).toBe('openai');
     expect(interpretation.state).toBe('monitoring');
     expect(interpretation.shouldSurfaceAssist).toBe(false);
+    expect(interpretation.signals[0]?.key).toBe('pauseDurationMs');
   });
 });

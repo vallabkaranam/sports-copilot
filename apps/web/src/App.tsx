@@ -775,7 +775,6 @@ function App() {
     assist.type !== 'none' &&
     (controls.forceHesitation ||
       !boothHasLiveInput ||
-      boothSignal.shouldSurfaceAssist ||
       boothInterpretation?.shouldSurfaceAssist ||
       worldState.commentator.hesitationScore >= LIVE_HESITATION_GATE);
   const boothAssistShouldSurface = boothHasLiveInput && boothAssist.type !== 'none';
@@ -787,30 +786,28 @@ function App() {
   const activeAssist = latchedAssist;
   const shouldSurfaceAssist = activeAssist.type !== 'none';
   const assistConfidencePercent = formatPercent(shouldSurfaceAssist ? activeAssist.confidence : 0);
-  const boothHesitationPercent = formatPercent(
-    boothInterpretation?.hesitationScore ?? boothSignal.hesitationScore,
-  );
-  const boothConfidencePercent = formatPercent(
-    boothInterpretation?.recoveryScore ?? boothSignal.confidenceScore,
-  );
+  const boothHesitationPercent = boothInterpretation
+    ? formatPercent(boothInterpretation.hesitationScore)
+    : '--';
+  const boothConfidencePercent = boothInterpretation
+    ? formatPercent(boothInterpretation.recoveryScore)
+    : '--';
   const visibleReasons =
     boothInterpretation?.reasons && boothInterpretation.reasons.length > 0
       ? boothInterpretation.reasons
-      : boothSignal.hesitationReasons.length > 0
-        ? boothSignal.hesitationReasons
-      : ['Hesitation is currently driven by live silence after active speech.'];
+      : ['Waiting for the live booth model to classify the current moment.'];
   const visibleConfidenceReasons = [
     boothInterpretation?.summary
       ? `Recovery signal: ${boothInterpretation.summary}`
-      : 'Confidence builds only when your delivery restarts and holds.',
+      : 'Recovery state will appear after the live booth model scores this moment.',
   ];
   const coachingTone = getCoachingTone({
     hasStartedBroadcast,
     boothHasLiveInput,
     boothSignal: {
       ...boothSignal,
-      hesitationScore: boothInterpretation?.hesitationScore ?? boothSignal.hesitationScore,
-      confidenceScore: boothInterpretation?.recoveryScore ?? boothSignal.confidenceScore,
+      hesitationScore: boothInterpretation?.hesitationScore ?? 0,
+      confidenceScore: boothInterpretation?.recoveryScore ?? 0,
     },
     shouldSurfaceAssist,
   });
@@ -980,8 +977,8 @@ function App() {
 
     const features: BoothFeatureSnapshot = {
       timestamp: boothClockMs,
-      hesitationScore: boothSignal.hesitationScore,
-      confidenceScore: boothSignal.confidenceScore,
+      hesitationScore: 0,
+      confidenceScore: 0,
       pauseDurationMs: Math.round(boothSignal.pauseDurationMs),
       speechStreakMs: Math.round(boothSignal.speechStreakMs),
       silenceStreakMs: Math.round(boothSignal.silenceStreakMs),
@@ -1554,6 +1551,17 @@ function App() {
               <p key={reason}>{reason}</p>
             ))}
           </div>
+
+          {boothInterpretation?.signals && boothInterpretation.signals.length > 0 ? (
+            <div className="commentary-metadata">
+              {boothInterpretation.signals.map((signal) => (
+                <div key={signal.key}>
+                  <p className="control-label">{signal.label}</p>
+                  <strong>{signal.detail}</strong>
+                </div>
+              ))}
+            </div>
+          ) : null}
 
           <div className="commentary-metadata">
             <div>
