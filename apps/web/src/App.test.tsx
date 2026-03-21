@@ -349,7 +349,7 @@ describe('App dashboard', () => {
     expect(container.textContent).toContain('Load Clip');
     expect(container.textContent).toContain('Go live');
     expect(container.textContent).toContain('Show Details');
-    expect(container.textContent).toContain('Use a local video for now as a stand-in for the live program feed.');
+    expect(container.textContent).toContain('Attach a video input');
   });
 
   it('keeps the booth in setup mode until a clip is loaded', async () => {

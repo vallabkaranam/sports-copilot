@@ -202,7 +202,7 @@ function App() {
     averageLongestPauseMs: 0,
     totalAssistCount: 0,
   });
-  const [recentBoothSessions, setRecentBoothSessions] = useState<BoothSessionSummary[]>([]);
+  const [, setRecentBoothSessions] = useState<BoothSessionSummary[]>([]);
   const [activeBoothSessionId, setActiveBoothSessionId] = useState<string | null>(null);
   const [loadedClipName, setLoadedClipName] = useState('');
   const [loadedClipUrl, setLoadedClipUrl] = useState<string | null>(null);
@@ -772,7 +772,6 @@ function App() {
     await sendControlPatch({ restart: true });
   }
 
-  const surfacedAssists = [...worldState.sessionMemory.surfacedAssists].reverse();
   const isMicSupported =
     microphoneAvailability !== 'unsupported' &&
     (Boolean(getSpeechRecognitionConstructor()) || supportsAudioMonitoring());
@@ -843,37 +842,12 @@ function App() {
       detail: isSystemReady ? 'The hosted backend is reachable.' : 'Waiting for the backend connection.',
     },
   ];
-  const readyCount = readinessChecks.filter((check) => check.done).length;
   const clipClockLabel = formatDurationMs(clipPositionMs);
   const clipDurationLabel = clipDurationMs > 0 ? formatDurationMs(clipDurationMs) : '--:--';
   const clipProgress = clipDurationMs > 0 ? Math.min(100, Math.round((clipPositionMs / clipDurationMs) * 100)) : 0;
-  const boothStatusLabel = !loadedClipUrl
-    ? 'Attach video first'
-    : !hasStartedBroadcast
-      ? 'Ready'
-      : isMicListening
-        ? boothSignal.isSpeaking
-          ? 'Mic live'
-          : 'Listening for the next beat'
-        : isMicSupported
-          ? microphoneAvailability === 'degraded'
-            ? 'Mic degraded'
-            : 'Mic ready'
-          : 'Mic unavailable';
   const isBroadcastLive =
     hasStartedBroadcast && (controls.playbackStatus === 'playing' || isMicListening);
-  const setupStatusLabel = !loadedClipUrl
-    ? 'Waiting for clip upload'
-    : !hasStartedBroadcast
-      ? 'Clip loaded. Booth standing by'
-      : boothStatusLabel;
-  const systemStatusLabel = error ? 'Reconnecting' : isHydrated ? 'Ready' : 'Booting';
   const feedHeading = loadedClipName || 'Attach a video input';
-  const feedSubheading = loadedClipUrl
-    ? hasStartedBroadcast
-      ? 'Call the action naturally. And-One stays out of the way until a real pause opens up.'
-      : 'Video is ready and muted. Arm the mic, then start the session.'
-    : 'Use a local video for now as a stand-in for the live program feed.';
   const replayToastSignature = `${activeAssist.type}:${activeAssist.text}:${shouldSurfaceAssist}:${controls.restartToken}`;
   const activeTriggerBadges = [
     boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS ? 'pause' : null,
@@ -984,15 +958,9 @@ function App() {
         <div className="brand-lockup">
           <p className="eyebrow">{BRAND.eyebrow}</p>
           <h1>{BRAND.heroTitle}</h1>
-          <p className="hero-copy">{BRAND.heroCopy}</p>
         </div>
 
         <div className="header-actions">
-          <div className="header-status-card">
-            <p className="control-label">System status</p>
-            <strong>{readinessSummary}</strong>
-            <span>{readyCount}/3 checks ready. {systemStatusLabel === 'Ready' ? 'Hosted services are connected.' : setupStatusLabel}</span>
-          </div>
           <button
             type="button"
             className="ghost-button"
@@ -1011,7 +979,6 @@ function App() {
             <div>
               <p className="panel-kicker">Live Feed</p>
               <h2>{feedHeading}</h2>
-              <p className="panel-copy">{feedSubheading}</p>
             </div>
             <div className="panel-chip-row">
               <span className="panel-tag">{loadedClipUrl ? `${clipClockLabel} / ${clipDurationLabel}` : 'Awaiting upload'}</span>
@@ -1078,7 +1045,6 @@ function App() {
                       : 'Arm the mic, then start the session.'
                     : 'Attach a video input to begin.'}
                 </h3>
-                <p>{coachingTone.copy}</p>
               </div>
 
               {shouldSurfaceAssist ? (
@@ -1091,13 +1057,11 @@ function App() {
                 <div className="replay-toast replay-toast--hint">
                   <p className="assist-type">Monitoring</p>
                   <h3>Mic is live.</h3>
-                  <p>No prompt is on screen while the call is still flowing.</p>
                 </div>
               ) : loadedClipUrl && !hasStartedBroadcast ? (
                 <div className="replay-toast replay-toast--hint">
                   <p className="assist-type">Preflight</p>
                   <h3>Finish setup, then start.</h3>
-                  <p>The video stays idle until the mic is armed and the session begins.</p>
                 </div>
               ) : null}
 
@@ -1116,10 +1080,7 @@ function App() {
               <div className="replay-footer">
                 <div className={`coach-lane coach-lane--${coachingTone.tone}`}>
                   <span className="coach-lane__signal">{coachingTone.label}</span>
-                  <div>
-                    <strong>{coachingTone.headline}</strong>
-                    <p>{coachingTone.copy}</p>
-                  </div>
+                  <strong>{coachingTone.headline}</strong>
                 </div>
                 <div className="progress-track" aria-label="Replay progress">
                   <span style={{ width: `${clipProgress}%` }} />
@@ -1130,56 +1091,47 @@ function App() {
         </section>
 
         <div className="side-column">
-          <section className="panel control-panel">
+          <section className={`panel control-panel control-panel--${coachingTone.tone}`}>
             <div className="panel-header panel-header--compact">
               <div>
                 <p className="panel-kicker">Control</p>
                 <h2>Go live</h2>
-                <p className="panel-copy">Attach video, arm the mic, then start the session.</p>
               </div>
+              <span className="panel-tag">{readinessSummary}</span>
             </div>
 
-            <article className="setup-card">
-              <div className="setup-card__header">
-                <div>
-                  <p className="control-label">Readiness</p>
-                  <strong>{readinessSummary}</strong>
-                </div>
-                <span className={`setup-chip setup-chip--${coachingTone.tone}`}>{readyCount}/3 ready</span>
-              </div>
-
-              <div className="readiness-list">
-                {readinessChecks.map((check) => (
-                  <div key={check.label} className={`readiness-row ${check.done ? 'readiness-row--done' : ''}`}>
-                    <span className={`readiness-dot ${check.done ? 'readiness-dot--done' : ''}`} />
-                    <div className="readiness-copy">
-                      <strong>{check.label}</strong>
-                      <span>{check.detail}</span>
-                    </div>
+            <div className="readiness-list">
+              {readinessChecks.map((check) => (
+                <div key={check.label} className={`readiness-row ${check.done ? 'readiness-row--done' : ''}`}>
+                  <span className={`readiness-dot ${check.done ? 'readiness-dot--done' : ''}`} />
+                  <div className="readiness-copy">
+                    <strong>{check.label}</strong>
+                    <span>{check.detail}</span>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
+            </div>
 
-              <div className="setup-actions">
-                <button
-                  type="button"
-                  className={isMicPrepared ? 'is-active' : ''}
-                  disabled={isMicPreparing}
-                  onClick={() => void prepareMicrophone()}
-                >
-                  {isMicPrepared ? 'Microphone ready' : isMicPreparing ? 'Checking microphone…' : 'Enable microphone'}
-                </button>
-                <button
-                  type="button"
-                  className={isBroadcastLive ? 'is-active' : ''}
-                  disabled={primaryActionDisabled}
-                  onClick={() => void (isBroadcastLive ? stopBroadcast() : startBroadcast())}
-                >
-                  {primaryActionLabel}
-                </button>
-              </div>
-              {boothError ? <p className="inline-warning">{boothError}</p> : null}
-            </article>
+            <div className="setup-actions">
+              <button
+                type="button"
+                className={isMicPrepared ? 'is-active' : ''}
+                disabled={isMicPreparing}
+                onClick={() => void prepareMicrophone()}
+              >
+                {isMicPrepared ? 'Microphone ready' : isMicPreparing ? 'Checking microphone…' : 'Enable microphone'}
+              </button>
+              <button
+                type="button"
+                className={isBroadcastLive ? 'is-active' : ''}
+                disabled={primaryActionDisabled}
+                onClick={() => void (isBroadcastLive ? stopBroadcast() : startBroadcast())}
+              >
+                {primaryActionLabel}
+              </button>
+            </div>
+
+            {boothError ? <p className="inline-warning">{boothError}</p> : null}
 
             <article className={`booth-card booth-card--${coachingTone.tone}`}>
               <div className="booth-card__header">
@@ -1192,7 +1144,7 @@ function App() {
                 </div>
               </div>
 
-              <p className="field-copy">{guidanceSummary}</p>
+              <p className="field-copy field-copy--tight">{guidanceSummary}</p>
 
               <div className="metric-card">
                 <div className="meter-label-row">
@@ -1221,16 +1173,16 @@ function App() {
                   <strong>{shouldSurfaceAssist ? 'Visible' : coachingTone.tone === 'steady' ? 'Standby' : 'Waiting'}</strong>
                 </div>
               </div>
-
-              <div className="inline-actions inline-actions--compact">
-                <button type="button" className="text-button" onClick={() => void resetBroadcast()}>
-                  Reset session
-                </button>
-                <button type="button" className="text-button" onClick={clearBoothTranscript}>
-                  Clear transcript
-                </button>
-              </div>
             </article>
+
+            <div className="inline-actions inline-actions--compact">
+              <button type="button" className="text-button" onClick={() => void resetBroadcast()}>
+                Reset session
+              </button>
+              <button type="button" className="text-button" onClick={clearBoothTranscript}>
+                Clear transcript
+              </button>
+            </div>
           </section>
 
         </div>
@@ -1239,85 +1191,31 @@ function App() {
       {showDetails ? (
         <div className="bottom-grid">
           <section className="panel">
-            <div className="panel-header">
-              <div>
-                <p className="panel-kicker">Booth Sessions</p>
-                <h2>Saved analytics</h2>
-              </div>
-              <span className="panel-tag">{boothAnalytics.totalSessions} runs</span>
-            </div>
-
-            <div className="commentary-metadata">
-              <div>
-                <p className="control-label">Completed</p>
-                <strong>{boothAnalytics.completedSessions}</strong>
-              </div>
-              <div>
-                <p className="control-label">Avg max hesitation</p>
-                <strong>{formatPercent(boothAnalytics.averageMaxHesitationScore)}</strong>
-              </div>
-              <div>
-                <p className="control-label">Avg longest pause</p>
-                <strong>{formatDurationMs(boothAnalytics.averageLongestPauseMs)}</strong>
-              </div>
-              <div>
-                <p className="control-label">Assists surfaced</p>
-                <strong>{boothAnalytics.totalAssistCount}</strong>
-              </div>
-            </div>
-
-            <div className="timeline-list">
-              {recentBoothSessions.length > 0 ? (
-                recentBoothSessions.slice(0, 5).map((session) => (
-                  <article className="timeline-item" key={session.id}>
-                    <div className="timeline-time">
-                      <span>{session.clipName}</span>
-                      <small>{session.status}</small>
-                    </div>
-                    <p>
-                      Max hesitation {formatPercent(session.maxHesitationScore)}, longest pause{' '}
-                      {formatDurationMs(session.longestPauseMs)}, assists {session.assistCount}.
-                    </p>
-                  </article>
-                ))
-              ) : (
-                <p className="empty-copy">
-                  Saved session analytics will appear here after you run And-One live.
-                </p>
-              )}
-            </div>
-          </section>
-
-          <section className="panel">
-            <div className="panel-header">
-              <div>
-                <p className="panel-kicker">Assist History</p>
-                <h2>Recent prompts</h2>
-              </div>
-              <span className="panel-tag">{surfacedAssists.length} saved</span>
-            </div>
-
-            <div className="memory-strip">
-            <p className="memory-title">Recent assist memory</p>
-            {surfacedAssists.length > 0 ? (
-              surfacedAssists.slice(0, 3).map((savedAssist) => (
-                <p className="memory-line" key={`${savedAssist.type}:${savedAssist.text}`}>
-                  {savedAssist.text}
-                </p>
-              ))
-            ) : (
-              <p className="memory-line">No assists have been surfaced yet.</p>
-            )}
-            </div>
-          </section>
-
-          <section className="panel">
           <div className="panel-header">
             <div>
-              <p className="panel-kicker">Signal Debug</p>
-              <h2>Live hesitation trace</h2>
+              <p className="panel-kicker">Details</p>
+              <h2>Live trace</h2>
             </div>
             <span className="panel-tag">{boothHesitationPercent}</span>
+          </div>
+
+          <div className="commentary-metadata">
+            <div>
+              <p className="control-label">Runs</p>
+              <strong>{boothAnalytics.totalSessions}</strong>
+            </div>
+            <div>
+              <p className="control-label">Avg hesitation</p>
+              <strong>{formatPercent(boothAnalytics.averageMaxHesitationScore)}</strong>
+            </div>
+            <div>
+              <p className="control-label">Longest pause</p>
+              <strong>{formatDurationMs(boothAnalytics.averageLongestPauseMs)}</strong>
+            </div>
+            <div>
+              <p className="control-label">Assists</p>
+              <strong>{boothAnalytics.totalAssistCount}</strong>
+            </div>
           </div>
 
           <div className="meter-cluster">
@@ -1365,7 +1263,7 @@ function App() {
           </div>
 
           <div className="memory-strip">
-            <p className="memory-title">Booth transcript</p>
+            <p className="memory-title">Transcript</p>
             <div className="transcript-list">
               {boothTranscript.length > 0 ? (
                 boothTranscript.slice(-5).map((entry) => (
