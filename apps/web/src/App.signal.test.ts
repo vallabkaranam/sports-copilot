@@ -9,6 +9,7 @@ describe('booth signal audio activity', () => {
       isMicListening: true,
       lastSpeechAtMs: -1,
       lastVoiceActivityAtMs: 10_000,
+      speechStreakStartedAtMs: 9_200,
       audioLevel: 0.12,
       nowMs: 10_400,
     });
@@ -17,7 +18,7 @@ describe('booth signal audio activity', () => {
     expect(signal.activeSpeaker).toBe('lead');
     expect(signal.pauseDurationMs).toBe(0);
     expect(signal.hasVoiceActivity).toBe(true);
-    expect(signal.confidenceScore).toBeGreaterThan(0.7);
+    expect(signal.confidenceScore).toBeGreaterThan(0.3);
   });
 
   it('raises hesitation after voice activity stops even without transcript recognition', () => {
@@ -27,6 +28,7 @@ describe('booth signal audio activity', () => {
       isMicListening: true,
       lastSpeechAtMs: -1,
       lastVoiceActivityAtMs: 10_000,
+      silenceStreakStartedAtMs: 10_000,
       audioLevel: 0.01,
       nowMs: 12_400,
     });
@@ -36,7 +38,7 @@ describe('booth signal audio activity', () => {
     expect(signal.hesitationScore).toBeGreaterThan(0.3);
     expect(signal.hesitationReasons[0]).toContain('paused');
     expect(signal.shouldSurfaceAssist).toBe(true);
-    expect(signal.confidenceScore).toBeLessThan(0.45);
+    expect(signal.confidenceScore).toBe(0);
   });
 
   it('weans hesitation off and restores confidence once speech resumes', () => {
@@ -46,6 +48,7 @@ describe('booth signal audio activity', () => {
       isMicListening: true,
       lastSpeechAtMs: -1,
       lastVoiceActivityAtMs: 10_000,
+      silenceStreakStartedAtMs: 10_000,
       audioLevel: 0.01,
       nowMs: 12_600,
     });
@@ -55,6 +58,7 @@ describe('booth signal audio activity', () => {
       isMicListening: true,
       lastSpeechAtMs: -1,
       lastVoiceActivityAtMs: 12_700,
+      speechStreakStartedAtMs: 12_700,
       audioLevel: 0.14,
       nowMs: 12_900,
     });
@@ -71,6 +75,7 @@ describe('booth signal audio activity', () => {
       isMicListening: true,
       lastSpeechAtMs: -1,
       lastVoiceActivityAtMs: 10_000,
+      silenceStreakStartedAtMs: 10_000,
       audioLevel: 0.01,
       nowMs: 12_800,
     });
@@ -80,6 +85,7 @@ describe('booth signal audio activity', () => {
       isMicListening: true,
       lastSpeechAtMs: -1,
       lastVoiceActivityAtMs: 10_000,
+      silenceStreakStartedAtMs: 10_000,
       audioLevel: 0.01,
       nowMs: 20_000,
     });
@@ -96,6 +102,7 @@ describe('booth signal audio activity', () => {
       isMicListening: true,
       lastSpeechAtMs: -1,
       lastVoiceActivityAtMs: 10_000,
+      silenceStreakStartedAtMs: 10_000,
       audioLevel: 0.01,
       nowMs: 15_500,
     });

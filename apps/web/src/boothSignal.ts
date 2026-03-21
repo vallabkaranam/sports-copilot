@@ -7,7 +7,12 @@ export type BoothSignal = {
   hesitationScore: number;
   confidenceScore: number;
   hesitationReasons: string[];
+  hesitationContributors: BoothSignalContributor[];
+  confidenceReasons: string[];
+  confidenceContributors: BoothSignalContributor[];
   pauseDurationMs: number;
+  speechStreakMs: number;
+  silenceStreakMs: number;
   fillerWords: string[];
   repeatedPhrases: string[];
   unfinishedPhrase: boolean;
@@ -17,6 +22,18 @@ export type BoothSignal = {
   shouldSurfaceAssist: boolean;
 };
 
+export type BoothSignalContributor = {
+  key: 'pause' | 'filler' | 'repeat-start' | 'unfinished' | 'speech-recovery' | 'audio-presence';
+  label: string;
+  score: number;
+};
+
+export type BoothActivityState = {
+  isSpeaking: boolean;
+  hasVoiceActivity: boolean;
+  lastActivityAtMs: number;
+};
+
 export const ACTIVE_SPEECH_WINDOW_MS = 1_400;
 export const LIVE_HESITATION_GATE = 0.36;
 export const LONG_PAUSE_START_MS = 1_200;
@@ -24,6 +41,8 @@ export const FULL_HESITATION_PAUSE_MS = 4_200;
 export const AUDIO_ACTIVITY_WINDOW_MS = 850;
 export const LOCAL_TRANSCRIPT_LIMIT = 8;
 export const RECOVERY_CONFIDENCE_FLOOR = 0.18;
+export const FULL_RECOVERY_SPEECH_MS = 3_200;
+export const STRONG_AUDIO_LEVEL = 0.12;
 
 const FILLER_PATTERNS = [
   { token: 'uh', pattern: /\buh\b/gi },
@@ -94,6 +113,34 @@ function findRepeatedPhrases(entries: TranscriptEntry[]) {
   return repeatedPhrases;
 }
 
+export function deriveBoothActivity({
+  interimTranscript,
+  isMicListening,
+  lastSpeechAtMs,
+  lastVoiceActivityAtMs,
+  nowMs,
+}: {
+  interimTranscript: string;
+  isMicListening: boolean;
+  lastSpeechAtMs: number;
+  lastVoiceActivityAtMs: number;
+  nowMs: number;
+}): BoothActivityState {
+  const hasVoiceActivity =
+    lastVoiceActivityAtMs >= 0 && nowMs - lastVoiceActivityAtMs < AUDIO_ACTIVITY_WINDOW_MS;
+  const hasTranscriptActivity =
+    lastSpeechAtMs >= 0 && nowMs - lastSpeechAtMs < ACTIVE_SPEECH_WINDOW_MS;
+  const isSpeaking =
+    isMicListening &&
+    (interimTranscript.trim().length > 0 || hasTranscriptActivity || hasVoiceActivity);
+
+  return {
+    isSpeaking,
+    hasVoiceActivity,
+    lastActivityAtMs: Math.max(lastSpeechAtMs, lastVoiceActivityAtMs),
+  };
+}
+
 export function buildBoothSignal({
   boothTranscript,
   interimTranscript,
@@ -102,6 +149,8 @@ export function buildBoothSignal({
   lastVoiceActivityAtMs,
   audioLevel,
   nowMs,
+  speechStreakStartedAtMs = -1,
+  silenceStreakStartedAtMs = -1,
 }: {
   boothTranscript: TranscriptEntry[];
   interimTranscript: string;
@@ -110,6 +159,8 @@ export function buildBoothSignal({
   lastVoiceActivityAtMs: number;
   audioLevel: number;
   nowMs: number;
+  speechStreakStartedAtMs?: number;
+  silenceStreakStartedAtMs?: number;
 }): BoothSignal {
   const recentTranscript = boothTranscript.slice(-LOCAL_TRANSCRIPT_LIMIT);
   const transcriptTexts = recentTranscript.map((entry) => entry.text);
@@ -120,67 +171,139 @@ export function buildBoothSignal({
   const repeatedPhrases = findRepeatedPhrases(recentTranscript);
   const lastLine = recentTranscript[recentTranscript.length - 1]?.text.trim() ?? '';
   const unfinishedPhrase = /(?:\.\.\.|-)\s*$/.test(lastLine);
-  const recentVoiceActivity =
-    lastVoiceActivityAtMs >= 0 && nowMs - lastVoiceActivityAtMs < AUDIO_ACTIVITY_WINDOW_MS;
-  const recentTranscriptActivity =
-    lastSpeechAtMs >= 0 && nowMs - lastSpeechAtMs < ACTIVE_SPEECH_WINDOW_MS;
-  const isSpeaking =
-    isMicListening && (interimText.length > 0 || recentTranscriptActivity || recentVoiceActivity);
-  const lastActivityAtMs = Math.max(lastSpeechAtMs, lastVoiceActivityAtMs);
+  const activity = deriveBoothActivity({
+    interimTranscript,
+    isMicListening,
+    lastSpeechAtMs,
+    lastVoiceActivityAtMs,
+    nowMs,
+  });
+  const { isSpeaking, hasVoiceActivity, lastActivityAtMs } = activity;
   const pauseDurationMs =
     !isSpeaking && lastActivityAtMs >= 0 ? Math.max(0, nowMs - lastActivityAtMs) : 0;
+  const speechStreakMs =
+    isSpeaking && speechStreakStartedAtMs >= 0 ? Math.max(0, nowMs - speechStreakStartedAtMs) : 0;
+  const silenceStreakMs =
+    !isSpeaking && silenceStreakStartedAtMs >= 0
+      ? Math.max(0, nowMs - silenceStreakStartedAtMs)
+      : pauseDurationMs;
   const hesitationReasons: string[] = [];
+  const hesitationContributors: BoothSignalContributor[] = [];
+  const confidenceReasons: string[] = [];
+  const confidenceContributors: BoothSignalContributor[] = [];
   let hesitationScore = 0;
+  let fillerContribution = 0;
+  let unfinishedContribution = 0;
+  let repeatedContribution = 0;
 
-  if (pauseDurationMs >= LONG_PAUSE_START_MS) {
-    const pauseSeconds = Math.round((pauseDurationMs / 1_000) * 10) / 10;
-    const pauseBuild = clamp(
-      (pauseDurationMs - LONG_PAUSE_START_MS) /
+  if (silenceStreakMs >= LONG_PAUSE_START_MS) {
+    const pauseSeconds = Math.round((silenceStreakMs / 1_000) * 10) / 10;
+    const pauseContribution = clamp(
+      (silenceStreakMs - LONG_PAUSE_START_MS) /
         Math.max(1, FULL_HESITATION_PAUSE_MS - LONG_PAUSE_START_MS),
     );
-    hesitationScore = Math.max(hesitationScore, pauseBuild);
+    hesitationScore += pauseContribution;
     hesitationReasons.push(`You paused for ${pauseSeconds}s after the last thought.`);
+    hesitationContributors.push({
+      key: 'pause',
+      label: 'Extended pause',
+      score: pauseContribution,
+    });
   }
 
   if (fillerWords.length > 0) {
     const uniqueFillers = [...new Set(fillerWords)];
-    hesitationScore += Math.min(0.24, 0.08 * fillerWords.length);
+    fillerContribution = Math.min(0.24, 0.08 * fillerWords.length);
+    hesitationScore += fillerContribution;
     hesitationReasons.push(`Fillers detected: ${uniqueFillers.join(', ')}.`);
+    hesitationContributors.push({
+      key: 'filler',
+      label: 'Filler language',
+      score: fillerContribution,
+    });
   }
 
   if (unfinishedPhrase && pauseDurationMs >= 900) {
-    hesitationScore += 0.18;
+    unfinishedContribution = 0.18;
+    hesitationScore += unfinishedContribution;
     hesitationReasons.push('The last line trails off mid-thought.');
+    hesitationContributors.push({
+      key: 'unfinished',
+      label: 'Unfinished thought',
+      score: unfinishedContribution,
+    });
   }
 
   if (repeatedPhrases.length > 0) {
-    hesitationScore += Math.min(0.16, repeatedPhrases.length * 0.08);
+    repeatedContribution = Math.min(0.16, repeatedPhrases.length * 0.08);
+    hesitationScore += repeatedContribution;
     hesitationReasons.push(`Repeated opening: "${repeatedPhrases[0]}".`);
+    hesitationContributors.push({
+      key: 'repeat-start',
+      label: 'Repeated opening',
+      score: repeatedContribution,
+    });
   }
 
-  const confidenceScore = isSpeaking
-    ? clamp(0.72 + Math.min(0.18, audioLevel * 1.8) - hesitationScore * 0.3)
-    : clamp(
-        0.78 -
-          hesitationScore * 0.95 -
-          Math.min(0.28, Math.max(0, pauseDurationMs - LONG_PAUSE_START_MS) / 5_000),
-        RECOVERY_CONFIDENCE_FLOOR,
-        0.88,
-      );
+  const clampedHesitationScore = clamp(hesitationScore);
+  let confidenceScore = 0;
+
+  if (isSpeaking) {
+    const recoveryContribution = clamp(speechStreakMs / FULL_RECOVERY_SPEECH_MS);
+    const audioContribution = clamp(audioLevel / STRONG_AUDIO_LEVEL);
+    const deliveryPenalty = clamp(
+      fillerContribution + repeatedContribution + unfinishedContribution,
+      0,
+      0.65,
+    );
+
+    confidenceScore = clamp(
+      recoveryContribution * 0.65 + audioContribution * 0.35 - deliveryPenalty,
+      RECOVERY_CONFIDENCE_FLOOR,
+      1,
+    );
+
+    confidenceContributors.push({
+      key: 'speech-recovery',
+      label: 'Sustained speech recovery',
+      score: recoveryContribution,
+    });
+    confidenceContributors.push({
+      key: 'audio-presence',
+      label: 'Voice presence',
+      score: audioContribution,
+    });
+    confidenceReasons.push(
+      recoveryContribution >= 0.7
+        ? 'Your delivery has settled back into a steady run.'
+        : 'Confidence is rebuilding as you keep the call moving.',
+    );
+
+    if (deliveryPenalty > 0) {
+      confidenceReasons.push('Transcript instability is still holding confidence down.');
+    }
+  } else if (lastActivityAtMs >= 0) {
+    confidenceReasons.push('Confidence is inactive while the call is silent.');
+  }
 
   return {
     activeSpeaker: isSpeaking ? 'lead' : 'none',
-    hesitationScore: clamp(hesitationScore),
+    hesitationScore: clampedHesitationScore,
     confidenceScore,
     hesitationReasons,
+    hesitationContributors,
+    confidenceReasons,
+    confidenceContributors,
     pauseDurationMs,
+    speechStreakMs,
+    silenceStreakMs,
     fillerWords,
     repeatedPhrases,
     unfinishedPhrase,
     isSpeaking,
     audioLevel,
-    hasVoiceActivity: recentVoiceActivity,
-    shouldSurfaceAssist: hesitationScore >= LIVE_HESITATION_GATE,
+    hasVoiceActivity,
+    shouldSurfaceAssist: clampedHesitationScore >= LIVE_HESITATION_GATE,
   };
 }
 

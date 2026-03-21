@@ -22,6 +22,7 @@ import {
   LONG_PAUSE_START_MS,
   buildBoothSignal,
   calculateAudioLevel,
+  deriveBoothActivity,
 } from './boothSignal';
 import {
   createInitialWorldState,
@@ -75,10 +76,6 @@ type SpeechRecognitionWindow = Window & {
 const AUDIO_ACTIVITY_SAMPLE_MS = 120;
 const AUDIO_ACTIVITY_THRESHOLD = 0.045;
 
-function clamp(value: number, minimum = 0, maximum = 1) {
-  return Math.min(maximum, Math.max(minimum, value));
-}
-
 function getSpeechRecognitionConstructor() {
   if (typeof window === 'undefined') {
     return null;
@@ -114,7 +111,7 @@ function safelyPlayVideo(videoElement: HTMLVideoElement, onBlocked: () => void) 
 }
 
 function createPracticeAssist(boothSignal: BoothSignal) {
-  const confidence = clamp(0.28 + boothSignal.hesitationScore * 0.72);
+  const confidence = boothSignal.hesitationScore;
 
   if (boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS) {
     return {
@@ -198,6 +195,8 @@ function App() {
   const [isMicListening, setIsMicListening] = useState(false);
   const [lastSpeechAtMs, setLastSpeechAtMs] = useState(-1);
   const [lastVoiceActivityAtMs, setLastVoiceActivityAtMs] = useState(-1);
+  const [speechStreakStartedAtMs, setSpeechStreakStartedAtMs] = useState(-1);
+  const [silenceStreakStartedAtMs, setSilenceStreakStartedAtMs] = useState(-1);
   const [audioLevel, setAudioLevel] = useState(0);
   const [boothClockMs, setBoothClockMs] = useState(() => Date.now());
   const [microphoneAvailability, setMicrophoneAvailability] =
@@ -294,6 +293,8 @@ function App() {
     setBoothInterimTranscript('');
     setLastSpeechAtMs(-1);
     setLastVoiceActivityAtMs(-1);
+    setSpeechStreakStartedAtMs(-1);
+    setSilenceStreakStartedAtMs(-1);
     setAudioLevel(0);
     setBoothClockMs(Date.now());
     setClipPositionMs(0);
@@ -375,6 +376,8 @@ function App() {
     setIsClipMuted(true);
     setHasStartedBroadcast(false);
     setActiveBoothSessionId(null);
+    setSpeechStreakStartedAtMs(-1);
+    setSilenceStreakStartedAtMs(-1);
   }
 
   async function refreshBoothSessions() {
@@ -458,6 +461,8 @@ function App() {
     microphoneStreamRef.current?.getTracks().forEach((track) => track.stop());
     microphoneStreamRef.current = null;
     setAudioLevel(0);
+    setSpeechStreakStartedAtMs(-1);
+    setSilenceStreakStartedAtMs(-1);
   }
 
   function handleClipChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -645,6 +650,8 @@ function App() {
     setBoothInterimTranscript('');
     setLastSpeechAtMs(-1);
     setLastVoiceActivityAtMs(-1);
+    setSpeechStreakStartedAtMs(-1);
+    setSilenceStreakStartedAtMs(-1);
     setAudioLevel(0);
     setBoothClockMs(Date.now());
     setBoothError(null);
@@ -699,8 +706,6 @@ function App() {
   }
 
   const assist = worldState.assist;
-  const latestBoothLine =
-    boothInterimTranscript || boothTranscript[boothTranscript.length - 1]?.text || null;
   const recentEvents = [...worldState.recentEvents].reverse();
   const surfacedAssists = [...worldState.sessionMemory.surfacedAssists].reverse();
   const systemHesitationReasons =
@@ -710,12 +715,21 @@ function App() {
   const isMicSupported =
     microphoneAvailability !== 'unsupported' &&
     (Boolean(getSpeechRecognitionConstructor()) || supportsAudioMonitoring());
+  const boothActivity = deriveBoothActivity({
+    interimTranscript: boothInterimTranscript,
+    isMicListening,
+    lastSpeechAtMs,
+    lastVoiceActivityAtMs,
+    nowMs: boothClockMs,
+  });
   const boothSignal = buildBoothSignal({
     boothTranscript,
     interimTranscript: boothInterimTranscript,
     isMicListening,
     lastSpeechAtMs,
     lastVoiceActivityAtMs,
+    speechStreakStartedAtMs,
+    silenceStreakStartedAtMs,
     audioLevel,
     nowMs: boothClockMs,
   });
@@ -757,6 +771,10 @@ function App() {
       : boothHasLiveInput
         ? ['Talk through the play. The copilot will watch for pauses, fillers, and repeated starts.']
         : systemHesitationReasons;
+  const visibleConfidenceReasons =
+    boothSignal.confidenceReasons.length > 0
+      ? boothSignal.confidenceReasons
+      : ['Confidence builds only when your delivery restarts and holds.'];
   const clipClockLabel = formatDurationMs(clipPositionMs);
   const clipDurationLabel = clipDurationMs > 0 ? formatDurationMs(clipDurationMs) : '--:--';
   const clipProgress = clipDurationMs > 0 ? Math.min(100, Math.round((clipPositionMs / clipDurationMs) * 100)) : 0;
@@ -794,6 +812,52 @@ function App() {
     boothSignal.repeatedPhrases.length > 0 ? 'repeat-start' : null,
     boothSignal.unfinishedPhrase ? 'unfinished' : null,
   ].filter(Boolean) as string[];
+
+  useEffect(() => {
+    if (!hasStartedBroadcast) {
+      if (speechStreakStartedAtMs !== -1) {
+        setSpeechStreakStartedAtMs(-1);
+      }
+      if (silenceStreakStartedAtMs !== -1) {
+        setSilenceStreakStartedAtMs(-1);
+      }
+      return;
+    }
+
+    if (boothActivity.isSpeaking) {
+      if (speechStreakStartedAtMs === -1) {
+        setSpeechStreakStartedAtMs(boothClockMs);
+      }
+      if (silenceStreakStartedAtMs !== -1) {
+        setSilenceStreakStartedAtMs(-1);
+      }
+      return;
+    }
+
+    if (boothActivity.lastActivityAtMs >= 0) {
+      if (speechStreakStartedAtMs !== -1) {
+        setSpeechStreakStartedAtMs(-1);
+      }
+      if (silenceStreakStartedAtMs === -1) {
+        setSilenceStreakStartedAtMs(boothActivity.lastActivityAtMs);
+      }
+      return;
+    }
+
+    if (speechStreakStartedAtMs !== -1) {
+      setSpeechStreakStartedAtMs(-1);
+    }
+    if (silenceStreakStartedAtMs !== -1) {
+      setSilenceStreakStartedAtMs(-1);
+    }
+  }, [
+    boothActivity.isSpeaking,
+    boothActivity.lastActivityAtMs,
+    boothClockMs,
+    hasStartedBroadcast,
+    silenceStreakStartedAtMs,
+    speechStreakStartedAtMs,
+  ]);
 
   useEffect(() => {
     if (!hasStartedBroadcast || !activeBoothSessionId) {
@@ -948,8 +1012,8 @@ function App() {
               ) : boothHasLiveInput ? (
                 <div className="replay-toast replay-toast--hint">
                   <p className="assist-type">Monitoring</p>
-                  <h3>{latestBoothLine ?? 'Keep calling the action.'}</h3>
-                  <p>The booth is listening. If hesitation becomes real, one clean assist will come in.</p>
+                  <h3>Booth tracking is live.</h3>
+                  <p>The feed stays clear until hesitation becomes strong enough to justify one assist.</p>
                 </div>
               ) : loadedClipUrl && !hasStartedBroadcast ? (
                 <div className="replay-toast replay-toast--hint">
@@ -1058,6 +1122,9 @@ function App() {
 
               <div className="reason-list">
                 {visibleReasons.map((reason) => (
+                  <p key={reason}>{reason}</p>
+                ))}
+                {visibleConfidenceReasons.map((reason) => (
                   <p key={reason}>{reason}</p>
                 ))}
               </div>
