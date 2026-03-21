@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import http from 'http';
 import { buildAssistCard } from './assist';
+import { BlueskyPostCache, ingestBlueskySocialPosts } from './bluesky';
 import { analyzeCommentary } from './commentator';
 import { buildNarrativeState } from './narrative';
 import { buildPreMatchContext, createDegradedPreMatchState } from './pre-match';
@@ -181,6 +182,7 @@ async function run() {
   let lastKnownControls = createDefaultReplayControlState();
   let lastHandledRestartToken = 0;
   let lastPreMatchFixtureId = '';
+  let blueskyCache: BlueskyPostCache = {};
   let lastWorldState: Partial<WorldState> = {
     matchId: 'sportmonks-live',
     clock: '00:00',
@@ -224,6 +226,7 @@ async function run() {
           ...lastWorldState,
           preMatch: createEmptyPreMatchState(),
         };
+        blueskyCache = {};
       }
 
       if (!fixtureId || !apiToken) {
@@ -272,6 +275,28 @@ async function run() {
       });
       const snapshot = normalizeSportmonksFixture(payload, fixtureId);
       const clockMs = snapshot.liveMatch.minute * 60_000;
+      let resolvedSocialPosts = socialPosts;
+
+      if (process.env.BLUESKY_SOCIAL_ENABLED !== 'false') {
+        try {
+          const blueskyPosts = await ingestBlueskySocialPosts(
+            {
+              homeTeam: snapshot.liveMatch.homeTeam.name,
+              awayTeam: snapshot.liveMatch.awayTeam.name,
+              clockMs,
+            },
+            blueskyCache,
+          );
+          resolvedSocialPosts = [...socialPosts, ...blueskyPosts].sort(
+            (left, right) => left.timestamp - right.timestamp,
+          );
+        } catch (error) {
+          console.warn(
+            'Bluesky social ingest failed:',
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      }
       const commentator = applyForcedHesitation(
         analyzeCommentary({
           clockMs,
@@ -294,7 +319,7 @@ async function run() {
         transcript,
         roster,
         narratives,
-        socialPosts,
+        socialPosts: resolvedSocialPosts,
         visionCues,
         liveMatch: snapshot.liveMatch,
         preMatch,
@@ -310,7 +335,7 @@ async function run() {
       });
 
       sessionMemory.rememberAssist(assist);
-      const ingestedSocialPosts = ingestLiveSocialPosts(clockMs, socialPosts);
+      const ingestedSocialPosts = ingestLiveSocialPosts(clockMs, resolvedSocialPosts);
       const score = snapshot.score;
       const recentEvents = snapshot.events.slice(-8);
       const highSalienceMoments = snapshot.events.filter((event) => event.highSalience).slice(-4);
