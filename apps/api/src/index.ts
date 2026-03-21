@@ -3,6 +3,7 @@ import fastify from 'fastify';
 import {
   AppendBoothSessionSampleInputSchema,
   BoothInterpretation,
+  BoothSessionReview,
   BoothSessionsResponse,
   FinishBoothSessionInputSchema,
   InterpretBoothInputSchema,
@@ -25,6 +26,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { interpretBoothWithOpenAI } from './booth-interpretation';
 import { createRealtimeBoothSdpAnswer } from './booth-realtime';
+import { reviewBoothSessionWithOpenAI } from './booth-review';
 import { createBoothSessionStore } from './booth-session-store';
 import { transcribeBoothAudioWithOpenAI } from './booth-transcription';
 
@@ -132,6 +134,21 @@ server.get('/booth-sessions/:sessionId', async (request, reply) => {
   }
 
   return { session };
+});
+
+server.get('/booth-sessions/:sessionId/review', async (request, reply): Promise<{ review: BoothSessionReview } | void> => {
+  const sessionStore = requireBoothSessionStore();
+  const session = await sessionStore.getSession((request.params as { sessionId: string }).sessionId);
+
+  if (!session) {
+    reply.status(404).send({ error: 'Booth session not found' });
+    return;
+  }
+
+  const profile = await sessionStore.getSpeakerProfile();
+  return {
+    review: await reviewBoothSessionWithOpenAI(session, profile),
+  };
 });
 
 server.post('/booth/interpret', async (request, reply): Promise<BoothInterpretation | void> => {

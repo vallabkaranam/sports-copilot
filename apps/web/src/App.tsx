@@ -4,6 +4,7 @@ import {
   BoothInterpretation,
   BoothSessionAnalytics,
   BoothSessionRecord,
+  BoothSessionReview,
   BoothSessionSummary,
   ReplayControlState,
   TranscriptEntry,
@@ -15,6 +16,7 @@ import {
   appendBoothSessionSample,
   connectRealtimeBoothSession,
   fetchBoothSession,
+  fetchBoothSessionReview,
   fetchBoothSessions,
   fetchControlState,
   fetchWorldState,
@@ -306,6 +308,8 @@ function App() {
   });
   const [, setRecentBoothSessions] = useState<BoothSessionSummary[]>([]);
   const [latestCompletedSession, setLatestCompletedSession] = useState<BoothSessionRecord | null>(null);
+  const [latestCompletedSessionReview, setLatestCompletedSessionReview] =
+    useState<BoothSessionReview | null>(null);
   const [activeBoothSessionId, setActiveBoothSessionId] = useState<string | null>(null);
   const [loadedClipName, setLoadedClipName] = useState('');
   const [loadedClipUrl, setLoadedClipUrl] = useState<string | null>(null);
@@ -541,6 +545,8 @@ function App() {
       const response = await finishBoothSession(activeBoothSessionId);
       const completedSession = await fetchBoothSession(response.session.id);
       setLatestCompletedSession(completedSession.session);
+      const review = await fetchBoothSessionReview(response.session.id);
+      setLatestCompletedSessionReview(review.review);
       await refreshBoothSessions();
     } catch (_error) {
       setBoothError('The booth session could not be finalized in the local store.');
@@ -925,6 +931,7 @@ function App() {
     }
 
     setLatestCompletedSession(null);
+    setLatestCompletedSessionReview(null);
     setHasStartedBroadcast(true);
 
     if (controls.playbackStatus !== 'playing') {
@@ -1109,6 +1116,17 @@ function App() {
       ? 'Standby'
       : 'Waiting';
   const postSessionReview = derivePostSessionReview(latestCompletedSession);
+  const resolvedPostSessionReview =
+    latestCompletedSessionReview ??
+    (postSessionReview
+      ? {
+          headline: postSessionReview.headline,
+          summary: postSessionReview.summary,
+          strengths: [postSessionReview.learningNotes[0] ?? 'Session data is available for review.'],
+          watchouts: [postSessionReview.learningNotes[1] ?? 'No major watchouts recorded.'],
+          coachingNotes: [postSessionReview.learningNotes[2] ?? 'Review the saved session before the next run.'],
+        }
+      : null);
 
   useEffect(() => {
     if (!hasStartedBroadcast) {
@@ -1459,8 +1477,8 @@ function App() {
                   {loadedClipUrl
                     ? hasStartedBroadcast
                       ? coachingTone.headline
-                      : postSessionReview
-                        ? postSessionReview.headline
+                      : resolvedPostSessionReview
+                        ? resolvedPostSessionReview.headline
                       : 'Go live and And-One will request microphone access if needed.'
                     : 'Attach a video input to begin.'}
                 </h3>
@@ -1598,7 +1616,7 @@ function App() {
               {boothError ? <p className="inline-warning">{boothError}</p> : null}
             </article>
 
-            {!hasStartedBroadcast && postSessionReview ? (
+            {!hasStartedBroadcast && resolvedPostSessionReview ? (
               <article className="session-review-card">
                 <div className="panel-header panel-header--compact">
                   <div>
@@ -1608,10 +1626,10 @@ function App() {
                   <span className="panel-tag">Stored in DB</span>
                 </div>
 
-                <p className="field-copy field-copy--tight">{postSessionReview.summary}</p>
+                <p className="field-copy field-copy--tight">{resolvedPostSessionReview.summary}</p>
 
                 <div className="commentary-metadata commentary-metadata--review">
-                  {postSessionReview.metrics.map((metric) => (
+                  {(postSessionReview?.metrics ?? []).map((metric) => (
                     <div key={metric.label}>
                       <p className="control-label">{metric.label}</p>
                       <strong>{metric.value}</strong>
@@ -1620,8 +1638,20 @@ function App() {
                 </div>
 
                 <div className="reason-list">
-                  {postSessionReview.learningNotes.map((note) => (
-                    <p key={note}>{note}</p>
+                  {resolvedPostSessionReview.strengths.map((note) => (
+                    <p key={`strength-${note}`}>{note}</p>
+                  ))}
+                </div>
+
+                <div className="reason-list">
+                  {resolvedPostSessionReview.watchouts.map((note) => (
+                    <p key={`watchout-${note}`}>{note}</p>
+                  ))}
+                </div>
+
+                <div className="reason-list">
+                  {resolvedPostSessionReview.coachingNotes.map((note) => (
+                    <p key={`coach-${note}`}>{note}</p>
                   ))}
                 </div>
               </article>

@@ -1,6 +1,7 @@
 import {
   BoothFeatureSnapshot,
   BoothInterpretation,
+  BoothSessionReview,
   BoothSessionRecord,
   BoothSessionSample,
   BoothSessionsResponse,
@@ -54,6 +55,10 @@ export function fetchBoothSessions() {
 
 export function fetchBoothSession(sessionId: string) {
   return requestJson<{ session: BoothSessionRecord }>(`/booth-sessions/${sessionId}`);
+}
+
+export function fetchBoothSessionReview(sessionId: string) {
+  return requestJson<{ review: BoothSessionReview }>(`/booth-sessions/${sessionId}/review`);
 }
 
 export function startBoothSession(clipName: string) {

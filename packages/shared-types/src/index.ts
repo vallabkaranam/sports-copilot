@@ -614,6 +614,15 @@ export const BoothSessionsResponseSchema = z.object({
 });
 export type BoothSessionsResponse = z.infer<typeof BoothSessionsResponseSchema>;
 
+export const BoothSessionReviewSchema = z.object({
+  headline: z.string(),
+  summary: z.string(),
+  strengths: z.array(z.string()),
+  watchouts: z.array(z.string()),
+  coachingNotes: z.array(z.string()),
+});
+export type BoothSessionReview = z.infer<typeof BoothSessionReviewSchema>;
+
 export const StartBoothSessionInputSchema = z.object({
   clipName: z.string().min(1),
 });

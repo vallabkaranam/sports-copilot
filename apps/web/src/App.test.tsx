@@ -523,6 +523,17 @@ describe('App dashboard', () => {
       }
 
       if (url.includes('/booth-sessions') && (!init?.method || init.method === 'GET')) {
+        if (url.includes('/booth-sessions/session-1/review')) {
+          return jsonResponse({
+            review: {
+              headline: 'You recovered cleanly after the pressure beat.',
+              summary: 'The saved booth trace shows a long pause, a quick assist, and a solid recovery.',
+              strengths: ['Recovery showed up clearly once speech resumed.'],
+              watchouts: ['Pause-based hesitation remains the dominant trigger.'],
+              coachingNotes: ['Re-enter with one short line instead of restarting twice.'],
+            },
+          });
+        }
         if (url.includes('/booth-sessions/session-1')) {
           return jsonResponse({ session: currentBoothSessionRecord });
         }
@@ -790,10 +801,11 @@ describe('App dashboard', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('Session review is ready.');
+    expect(container.textContent).toContain('You recovered cleanly after the pressure beat.');
     expect(container.textContent).toContain('Post-session analytics');
     expect(container.textContent).toContain('Stored in DB');
     expect(container.textContent).toContain('Peak hesitation');
+    expect(container.textContent).toContain('The saved booth trace shows a long pause, a quick assist, and a solid recovery.');
     expect(container.textContent).not.toContain('Assist live on this beat.');
   });
 
