@@ -21,8 +21,6 @@ export const ACTIVE_SPEECH_WINDOW_MS = 1_400;
 export const LIVE_HESITATION_GATE = 0.36;
 export const LONG_PAUSE_START_MS = 1_200;
 export const PAUSE_RANGE_MS = 1_800;
-export const PAUSE_DECAY_START_MS = 7_500;
-export const PAUSE_DECAY_RANGE_MS = 7_500;
 export const AUDIO_ACTIVITY_WINDOW_MS = 850;
 export const LOCAL_TRANSCRIPT_LIMIT = 8;
 export const RECOVERY_CONFIDENCE_FLOOR = 0.18;
@@ -138,11 +136,7 @@ export function buildBoothSignal({
     const pauseSeconds = Math.round((pauseDurationMs / 1_000) * 10) / 10;
     const pauseBuild =
       0.38 + clamp((pauseDurationMs - LONG_PAUSE_START_MS) / PAUSE_RANGE_MS) * 0.38;
-    const pauseDecay =
-      pauseDurationMs <= PAUSE_DECAY_START_MS
-        ? 1
-        : 1 - clamp((pauseDurationMs - PAUSE_DECAY_START_MS) / PAUSE_DECAY_RANGE_MS);
-    hesitationScore += pauseBuild * pauseDecay;
+    hesitationScore += pauseBuild;
     hesitationReasons.push(`You paused for ${pauseSeconds}s after the last thought.`);
   }
 

@@ -64,6 +64,31 @@ describe('booth signal audio activity', () => {
     expect(resumedSignal.confidenceScore).toBeGreaterThan(pausedSignal.confidenceScore);
   });
 
+  it('keeps hesitation high during a sustained silence instead of decaying on its own', () => {
+    const shorterPause = buildBoothSignal({
+      boothTranscript: [],
+      interimTranscript: '',
+      isMicListening: true,
+      lastSpeechAtMs: -1,
+      lastVoiceActivityAtMs: 10_000,
+      audioLevel: 0.01,
+      nowMs: 12_800,
+    });
+    const longerPause = buildBoothSignal({
+      boothTranscript: [],
+      interimTranscript: '',
+      isMicListening: true,
+      lastSpeechAtMs: -1,
+      lastVoiceActivityAtMs: 10_000,
+      audioLevel: 0.01,
+      nowMs: 20_000,
+    });
+
+    expect(longerPause.hesitationScore).toBeGreaterThanOrEqual(shorterPause.hesitationScore);
+    expect(longerPause.shouldSurfaceAssist).toBe(true);
+    expect(longerPause.confidenceScore).toBeLessThanOrEqual(shorterPause.confidenceScore);
+  });
+
   it('returns a higher level for a louder waveform', () => {
     const quiet = calculateAudioLevel(new Uint8Array([128, 128, 128, 128]));
     const louder = calculateAudioLevel(new Uint8Array([128, 160, 96, 128]));
