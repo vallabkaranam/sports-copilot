@@ -3,14 +3,12 @@ import { ReplayControlState, TranscriptEntry } from '@sports-copilot/shared-type
 import './App.css';
 import { fetchControlState, fetchWorldState, updateControlState } from './api';
 import {
-  TEAM_META,
   createInitialWorldState,
   formatAssistType,
   formatDurationMs,
   formatEventType,
   formatMomentum,
   formatPercent,
-  getReplayProgress,
   parseClock,
 } from './dashboard';
 
@@ -70,6 +68,8 @@ const ACTIVE_SPEECH_WINDOW_MS = 1_400;
 const LIVE_HESITATION_GATE = 0.36;
 const LONG_PAUSE_START_MS = 1_600;
 const PAUSE_RANGE_MS = 2_400;
+const PAUSE_DECAY_START_MS = 6_000;
+const PAUSE_DECAY_RANGE_MS = 6_000;
 const LOCAL_TRANSCRIPT_LIMIT = 8;
 const FILLER_PATTERNS = [
   { token: 'uh', pattern: /\buh\b/gi },
@@ -173,8 +173,12 @@ function buildBoothSignal({
 
   if (pauseDurationMs >= LONG_PAUSE_START_MS) {
     const pauseSeconds = Math.round((pauseDurationMs / 1_000) * 10) / 10;
-    hesitationScore +=
-      clamp((pauseDurationMs - LONG_PAUSE_START_MS) / PAUSE_RANGE_MS) * 0.55;
+    const pauseBuild = clamp((pauseDurationMs - LONG_PAUSE_START_MS) / PAUSE_RANGE_MS) * 0.55;
+    const pauseDecay =
+      pauseDurationMs <= PAUSE_DECAY_START_MS
+        ? 1
+        : 1 - clamp((pauseDurationMs - PAUSE_DECAY_START_MS) / PAUSE_DECAY_RANGE_MS);
+    hesitationScore += pauseBuild * pauseDecay;
     hesitationReasons.push(`You paused for ${pauseSeconds}s after the last thought.`);
   }
 
@@ -221,6 +225,58 @@ function createTranscriptEntry(timestamp: number, text: string): TranscriptEntry
     timestamp,
     speaker: 'lead',
     text,
+  };
+}
+
+function createPracticeAssist(boothSignal: BoothSignal) {
+  const confidence = clamp(0.28 + boothSignal.hesitationScore * 0.72);
+
+  if (boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS) {
+    return {
+      type: 'context' as const,
+      text: 'Reset with a simple scene call and one short takeaway.',
+      whyNow: 'You left a clear pause after the last thought.',
+      urgency: 'medium' as const,
+      confidence,
+    };
+  }
+
+  if (boothSignal.fillerWords.length >= 2) {
+    return {
+      type: 'transition' as const,
+      text: 'Drop the filler and go straight to what the viewer is seeing.',
+      whyNow: 'The booth cadence is getting clogged with filler words.',
+      urgency: 'medium' as const,
+      confidence,
+    };
+  }
+
+  if (boothSignal.repeatedPhrases.length > 0) {
+    return {
+      type: 'transition' as const,
+      text: 'Pick one clean re-entry line and commit to it.',
+      whyNow: 'You restarted the same opening more than once.',
+      urgency: 'medium' as const,
+      confidence,
+    };
+  }
+
+  if (boothSignal.unfinishedPhrase) {
+    return {
+      type: 'context' as const,
+      text: 'Finish the thought with one short sentence, then breathe.',
+      whyNow: 'The last line trailed off before it landed.',
+      urgency: 'low' as const,
+      confidence,
+    };
+  }
+
+  return {
+    type: 'none' as const,
+    text: '',
+    whyNow: 'No assist needed right now.',
+    urgency: 'low' as const,
+    confidence: 0,
   };
 }
 
@@ -592,15 +648,8 @@ function App() {
   }
 
   const assist = worldState.assist;
-  const latestTranscript =
-    worldState.commentator.recentTranscript[
-      worldState.commentator.recentTranscript.length - 1
-    ];
-  const latestSocial =
-    worldState.liveSignals.social[worldState.liveSignals.social.length - 1];
   const latestBoothLine =
     boothInterimTranscript || boothTranscript[boothTranscript.length - 1]?.text || null;
-  const replayProgress = getReplayProgress(worldState.clock);
   const recentEvents = [...worldState.recentEvents].reverse();
   const surfacedAssists = [...worldState.sessionMemory.surfacedAssists].reverse();
   const systemHesitationReasons =
@@ -618,25 +667,29 @@ function App() {
   });
   const boothHasLiveInput =
     isMicListening || boothTranscript.length > 0 || boothInterimTranscript.length > 0;
+  const isPracticeMode = true;
+  const practiceAssist = createPracticeAssist(boothSignal);
   const shouldSurfaceAssist =
-    assist.type !== 'none' &&
-    (controls.forceHesitation ||
-      !boothHasLiveInput ||
-      boothSignal.shouldSurfaceAssist ||
-      worldState.commentator.hesitationScore >= LIVE_HESITATION_GATE);
-  const assistCardText = shouldSurfaceAssist
-    ? assist.text
-    : boothHasLiveInput
-      ? 'Copilot is listening for a real hesitation beat before it jumps in.'
-      : 'System holding its fire until the booth needs help.';
-  const assistWhyNow = shouldSurfaceAssist
-    ? assist.whyNow
-    : boothHasLiveInput
-      ? 'Talk through the play and leave a beat. The assist will surface once your cadence breaks.'
-      : 'No assist needed right now.';
-  const assistType = shouldSurfaceAssist ? assist.type : 'none';
-  const assistStyleMode = shouldSurfaceAssist ? assist.styleMode : 'analyst';
-  const assistConfidencePercent = formatPercent(shouldSurfaceAssist ? assist.confidence : 0);
+    isPracticeMode
+      ? boothHasLiveInput && boothSignal.shouldSurfaceAssist
+      : assist.type !== 'none' &&
+        (controls.forceHesitation ||
+          !boothHasLiveInput ||
+          boothSignal.shouldSurfaceAssist ||
+          worldState.commentator.hesitationScore >= LIVE_HESITATION_GATE);
+  const activeAssist = isPracticeMode
+    ? {
+        ...assist,
+        type: practiceAssist.type,
+        text: practiceAssist.text,
+        whyNow: practiceAssist.whyNow,
+        urgency: practiceAssist.urgency,
+        confidence: practiceAssist.confidence,
+        sourceChips: [],
+        styleMode: 'analyst' as const,
+      }
+    : assist;
+  const assistConfidencePercent = formatPercent(shouldSurfaceAssist ? activeAssist.confidence : 0);
   const hesitationPercent = formatPercent(
     boothHasLiveInput ? boothSignal.hesitationScore : worldState.commentator.hesitationScore,
   );
@@ -650,13 +703,7 @@ function App() {
         : systemHesitationReasons;
   const clipClockLabel = formatDurationMs(clipPositionMs);
   const clipDurationLabel = clipDurationMs > 0 ? formatDurationMs(clipDurationMs) : '--:--';
-  const clipSyncDeltaMs = loadedClipUrl ? Math.abs(clipPositionMs - parseClock(worldState.clock)) : 0;
-  const clipSyncLabel =
-    loadedClipUrl && clipDurationMs > 0
-      ? clipSyncDeltaMs <= 2_000
-        ? 'Fixture timing aligned'
-        : `Fixture delta ${formatDurationMs(clipSyncDeltaMs)}`
-      : 'Load the replay clip to compare the footage with the fixture clock';
+  const clipProgress = clipDurationMs > 0 ? Math.min(100, Math.round((clipPositionMs / clipDurationMs) * 100)) : 0;
   const boothStatusLabel = isMicListening
     ? boothSignal.isSpeaking
       ? 'Mic live'
@@ -674,17 +721,24 @@ function App() {
       ? 'status-pill--ghost'
       : 'status-pill--warning';
   const isBroadcastLive = controls.playbackStatus === 'playing' || isMicListening;
-  const replayToastSignature = `${assist.type}:${assist.text}:${shouldSurfaceAssist}:${controls.restartToken}`;
+  const replayToastSignature = `${activeAssist.type}:${activeAssist.text}:${shouldSurfaceAssist}:${controls.restartToken}`;
+  const activeTriggerBadges = [
+    boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS ? 'pause' : null,
+    boothSignal.fillerWords.length > 0 ? 'filler' : null,
+    boothSignal.repeatedPhrases.length > 0 ? 'repeat-start' : null,
+    boothSignal.unfinishedPhrase ? 'unfinished' : null,
+  ].filter(Boolean) as string[];
 
   return (
     <div className="app-shell">
       <header className="hero">
         <div>
-          <p className="eyebrow">Controlled El Clasico Replay</p>
+          <p className="eyebrow">{isPracticeMode ? 'Practice Booth' : 'Controlled El Clasico Replay'}</p>
           <h1>Sports Copilot</h1>
           <p className="hero-copy">
-            A replay-aware commentator booth with a real clip window, live hesitation tracking,
-            and grounded assist timing.
+            {isPracticeMode
+              ? 'Test hesitation tracking, confidence, and assist timing against your own commentary on any clip.'
+              : 'A replay-aware commentator booth with a real clip window, live hesitation tracking, and grounded assist timing.'}
           </p>
         </div>
 
@@ -701,49 +755,15 @@ function App() {
 
       {error ? <div className="warning-banner">{error}</div> : null}
 
-      <section className="panel score-strip">
-        <div className="team-block">
-          <span className="team-code">{TEAM_META.home.code}</span>
-          <div>
-            <p className="team-name">{TEAM_META.home.name}</p>
-            <p className="team-note">Fixture lane</p>
-          </div>
-        </div>
-
-        <div className="score-center">
-          <p className="score-label">Replay Clock</p>
-          <div className="scoreline">
-            <span>{worldState.score.home}</span>
-            <span className="score-divider">:</span>
-            <span>{worldState.score.away}</span>
-          </div>
-          <p className="clock-chip">{worldState.clock}</p>
-        </div>
-
-        <div className="team-block team-block--away">
-          <div>
-            <p className="team-name">{TEAM_META.away.name}</p>
-            <p className="team-note">Counter threat live</p>
-          </div>
-          <span className="team-code">{TEAM_META.away.code}</span>
-        </div>
-
-        <div className="score-sidecar">
-          <p className="score-label">Possession</p>
-          <strong>{worldState.possession}</strong>
-          <p className="score-sidecar-copy">{worldState.gameStateSummary}</p>
-        </div>
-      </section>
-
       <div className="main-grid">
         <section className="panel replay-panel">
           <div className="panel-header">
             <div>
-              <p className="panel-kicker">Replay Booth</p>
-              <h2>See the clip and the cue timing together</h2>
+              <p className="panel-kicker">Practice Booth</p>
+              <h2>Test hesitation on any clip</h2>
             </div>
             <span className="panel-tag">
-              {loadedClipUrl ? `${clipClockLabel} / ${clipDurationLabel}` : `${replayProgress}% through fixture`}
+              {loadedClipUrl ? `${clipClockLabel} / ${clipDurationLabel}` : 'Load a clip to begin'}
             </span>
           </div>
 
@@ -754,7 +774,6 @@ function App() {
             </label>
             <div className="media-meta">
               <span className="meta-pill">{loadedClipName || 'No local clip loaded yet'}</span>
-              <span className="meta-pill">{clipSyncLabel}</span>
               {loadedClipUrl ? (
                 <span className="meta-pill">{isClipMuted ? 'Clip audio muted' : 'Clip audio on'}</span>
               ) : null}
@@ -799,22 +818,19 @@ function App() {
 
             <div className="replay-stage__content">
               <div className="replay-copy">
-                <span className="live-chip">
-                  {loadedClipUrl ? 'Loaded footage' : 'Fixture director cue'}
-                </span>
-                <h3>{worldState.gameStateSummary}</h3>
+                <span className="live-chip">{loadedClipUrl ? 'Practice clip' : 'Ready for practice'}</span>
+                <h3>{loadedClipUrl ? 'Test your booth timing against the clip.' : 'Load a clip and start talking.'}</h3>
                 <p>
-                  {latestTranscript
-                    ? latestTranscript.text
-                    : 'Load the replay clip and press play to compare the footage with the fixture state.'}
+                  Speak naturally, leave a beat, repeat yourself, or use filler words to test the
+                  hesitation tracker.
                 </p>
               </div>
 
               {shouldSurfaceAssist ? (
                 <article className="replay-toast" key={replayToastSignature}>
-                  <p className="assist-type">{formatAssistType(assist.type)}</p>
-                  <h3>{assist.text}</h3>
-                  <p>{assist.whyNow}</p>
+                  <p className="assist-type">{formatAssistType(activeAssist.type)}</p>
+                  <h3>{activeAssist.text}</h3>
+                  <p>{activeAssist.whyNow}</p>
                 </article>
               ) : boothHasLiveInput ? (
                 <div className="replay-toast replay-toast--hint">
@@ -825,25 +841,29 @@ function App() {
               ) : null}
 
               <div className="replay-tags">
-                {worldState.liveSignals.vision.length > 0 ? (
-                  worldState.liveSignals.vision.map((cue) => (
-                    <span className="scene-chip" key={`${cue.timestamp}-${cue.tag}`}>
-                      {cue.tag}
-                    </span>
-                  ))
+                {isPracticeMode ? (
+                  activeTriggerBadges.length > 0 ? (
+                    activeTriggerBadges.map((badge) => (
+                      <span className="scene-chip" key={badge}>
+                        {badge}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="scene-chip scene-chip--muted">Waiting for hesitation cue</span>
+                  )
                 ) : (
-                  <span className="scene-chip scene-chip--muted">Awaiting visual cue</span>
+                  <span className="scene-chip scene-chip--muted">Waiting for hesitation cue</span>
                 )}
               </div>
 
               <div className="replay-footer">
                 <div className="progress-track" aria-label="Replay progress">
-                  <span style={{ width: `${replayProgress}%` }} />
+                  <span style={{ width: `${clipProgress}%` }} />
                 </div>
                 <p className="pulse-copy">
-                  {latestSocial
-                    ? `${latestSocial.handle}: ${latestSocial.text}`
-                    : 'Social pulse and crowd reaction will populate as the sequence heats up.'}
+                  {boothInterimTranscript ||
+                    boothTranscript[boothTranscript.length - 1]?.text ||
+                    'Live transcript and hesitation cues will appear as you speak.'}
                 </p>
               </div>
             </div>
@@ -927,57 +947,6 @@ function App() {
             </article>
           </section>
 
-          <section className="panel assist-panel">
-            <div className="panel-header">
-              <div>
-                <p className="panel-kicker">Active Assist</p>
-                <h2>Copilot card</h2>
-              </div>
-              <span className={`panel-tag panel-tag--${assistStyleMode}`}>{assistStyleMode}</span>
-            </div>
-
-            <article
-              className={`assist-card ${shouldSurfaceAssist ? 'assist-card--live' : ''}`}
-              key={`${assistType}:${assistCardText}:${assistWhyNow}`}
-            >
-              <div className="assist-card__header">
-                <div>
-                  <p className="assist-type">{formatAssistType(assistType)}</p>
-                  <h3>{assistCardText}</h3>
-                </div>
-                <div className="assist-confidence">
-                  <span>Confidence</span>
-                  <strong>{assistConfidencePercent}</strong>
-                </div>
-              </div>
-
-              <p className="assist-why">{assistWhyNow}</p>
-
-              <div className="assist-meta">
-                <span className="meta-pill">
-                  {shouldSurfaceAssist ? assist.urgency : 'standing by'} urgency
-                </span>
-                <span className="meta-pill">{assistStyleMode} delivery</span>
-                <span className="meta-pill">
-                  {shouldSurfaceAssist ? assist.sourceChips.length : 0} sources grounded
-                </span>
-              </div>
-
-              <div className="source-chip-row">
-                {shouldSurfaceAssist && assist.sourceChips.length > 0 ? (
-                  assist.sourceChips.map((chip) => (
-                    <span className="source-chip" key={chip.id}>
-                      {chip.label}
-                    </span>
-                  ))
-                ) : (
-                  <span className="source-chip source-chip--muted">
-                    Source chips appear when a grounded assist is surfaced.
-                  </span>
-                )}
-              </div>
-            </article>
-          </section>
         </div>
       </div>
 
@@ -987,7 +956,7 @@ function App() {
           className="text-button"
           onClick={() => setShowDetails((current) => !current)}
         >
-          {showDetails ? 'Hide dashboard details' : 'Show dashboard details'}
+          {showDetails ? 'Hide system details' : 'Show system details'}
         </button>
       </div>
 

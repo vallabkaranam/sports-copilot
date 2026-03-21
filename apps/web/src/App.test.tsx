@@ -239,12 +239,11 @@ describe('App dashboard', () => {
     await renderApp();
 
     expect(container.textContent).toContain('Sports Copilot');
-    expect(container.textContent).toContain('Barcelona');
-    expect(container.textContent).toContain('Real Madrid');
+    expect(container.textContent).toContain('Practice Booth');
     expect(container.textContent).toContain('Load Replay Clip');
     expect(container.textContent).toContain('Start the booth');
-    expect(container.textContent).toContain('Show dashboard details');
-    expect(container.textContent).toContain('Courtois is keeping Madrid alive in this pressure wave.');
+    expect(container.textContent).toContain('Show system details');
+    expect(container.textContent).toContain('Load a clip and start talking.');
   });
 
   it('posts replay and backup control updates back to the API', async () => {
@@ -279,14 +278,14 @@ describe('App dashboard', () => {
     );
   });
 
-  it('surfaces a fresh assist card when the polled world state changes', async () => {
+  it('keeps the landing screen focused on practice mode instead of fixture assists', async () => {
     currentWorldState = createWorldState({
       assist: createEmptyAssistCard(),
       sessionMemory: createEmptySessionMemory(),
     });
 
     await renderApp();
-    expect(container.textContent).toContain('System holding its fire until the booth needs help.');
+    expect(container.textContent).not.toContain('Courtois keeps Madrid alive with an enormous reflex stop.');
 
     currentWorldState = createWorldState({
       assist: {
@@ -313,7 +312,7 @@ describe('App dashboard', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('Courtois keeps Madrid alive with an enormous reflex stop.');
-    expect(container.textContent).toContain('THIBAUT COURTOIS IS WORLD CLASS.');
+    expect(container.textContent).not.toContain('Courtois keeps Madrid alive with an enormous reflex stop.');
+    expect(container.textContent).toContain('Show system details');
   });
 });
