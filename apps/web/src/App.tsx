@@ -15,6 +15,7 @@ import {
 } from './dashboard';
 
 type BoothActiveSpeaker = 'lead' | 'none';
+type MicrophoneAvailability = 'supported' | 'degraded' | 'unsupported';
 
 type BoothSignal = {
   activeSpeaker: BoothActiveSpeaker;
@@ -244,6 +245,8 @@ function App() {
   const [isMicListening, setIsMicListening] = useState(false);
   const [lastSpeechAtMs, setLastSpeechAtMs] = useState(-1);
   const [boothClockMs, setBoothClockMs] = useState(() => Date.now());
+  const [microphoneAvailability, setMicrophoneAvailability] =
+    useState<MicrophoneAvailability>('supported');
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const shouldKeepMicLiveRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -470,15 +473,24 @@ function App() {
     recognition.onerror = (event) => {
       shouldKeepMicLiveRef.current = false;
       setIsMicListening(false);
+      setBoothInterimTranscript('');
 
       switch (event.error) {
         case 'not-allowed':
+          setMicrophoneAvailability('degraded');
           setBoothError('Microphone access was blocked. Allow mic access to test live hesitation.');
           break;
         case 'no-speech':
           setBoothError('No speech was detected. Try speaking a little closer to the mic.');
           break;
+        case 'network':
+          setMicrophoneAvailability('degraded');
+          setBoothError(
+            'This browser speech service is unavailable right now. Chrome or Edge usually work best.',
+          );
+          break;
         default:
+          setMicrophoneAvailability('degraded');
           setBoothError(`Microphone error: ${event.error}.`);
       }
     };
@@ -505,6 +517,7 @@ function App() {
     const SpeechRecognition = getSpeechRecognitionConstructor();
 
     if (!SpeechRecognition) {
+      setMicrophoneAvailability('unsupported');
       setBoothError('Use Chrome or Edge to test browser speech recognition in this booth.');
       return;
     }
@@ -524,6 +537,7 @@ function App() {
 
       shouldKeepMicLiveRef.current = true;
       recognition.start();
+      setMicrophoneAvailability('supported');
       setBoothError(null);
       setIsMicListening(true);
       setBoothClockMs(Date.now());
@@ -547,6 +561,21 @@ function App() {
     setBoothError(null);
   }
 
+  async function togglePlayback() {
+    await sendControlPatch({
+      playbackStatus: controls.playbackStatus === 'playing' ? 'paused' : 'playing',
+    });
+  }
+
+  async function toggleMicrophone() {
+    if (isMicListening) {
+      stopMicrophone();
+      return;
+    }
+
+    startMicrophone();
+  }
+
   const assist = worldState.assist;
   const latestTranscript =
     worldState.commentator.recentTranscript[
@@ -563,7 +592,8 @@ function App() {
     worldState.commentator.hesitationReasons.length > 0
       ? worldState.commentator.hesitationReasons
       : ['No replay-side hesitation trigger is active right now.'];
-  const isMicSupported = Boolean(getSpeechRecognitionConstructor());
+  const isMicSupported =
+    microphoneAvailability !== 'unsupported' && Boolean(getSpeechRecognitionConstructor());
   const boothSignal = buildBoothSignal({
     boothTranscript,
     interimTranscript: boothInterimTranscript,
@@ -617,11 +647,15 @@ function App() {
       ? 'Mic live'
       : 'Listening for the next beat'
     : isMicSupported
-      ? 'Mic ready'
+      ? microphoneAvailability === 'degraded'
+        ? 'Mic degraded'
+        : 'Mic ready'
       : 'Mic unavailable';
   const boothStatusTone = isMicListening
     ? 'status-pill--live'
-    : isMicSupported
+    : microphoneAvailability === 'degraded'
+      ? 'status-pill--warning'
+      : isMicSupported
       ? 'status-pill--ghost'
       : 'status-pill--warning';
   const replayToastSignature = `${assist.type}:${assist.text}:${shouldSurfaceAssist}:${controls.restartToken}`;
@@ -697,7 +731,7 @@ function App() {
 
           <div className="media-toolbar">
             <label className="file-chip">
-              <span>Load Replay Clip</span>
+              <span>{loadedClipUrl ? 'Replace Clip' : 'Load Replay Clip'}</span>
               <input type="file" accept="video/*" onChange={handleClipChange} />
             </label>
             <div className="media-meta">
@@ -705,8 +739,8 @@ function App() {
               <span className="meta-pill">{clipSyncLabel}</span>
             </div>
             {loadedClipUrl ? (
-              <button type="button" className="ghost-button" onClick={clearLoadedClip}>
-                Remove Clip
+              <button type="button" className="text-button" onClick={clearLoadedClip}>
+                Clear clip
               </button>
             ) : null}
           </div>
@@ -796,31 +830,37 @@ function App() {
             </div>
 
             <div className="control-group">
-              <p className="control-label">Replay</p>
-              <div className="segmented-control">
+              <p className="control-label">Booth Controls</p>
+              <div className="primary-controls">
                 <button
                   type="button"
                   className={controls.playbackStatus === 'playing' ? 'is-active' : ''}
-                  onClick={() => void sendControlPatch({ playbackStatus: 'playing' })}
+                  onClick={() => void togglePlayback()}
                 >
-                  Play
+                  {controls.playbackStatus === 'playing' ? 'Pause Replay' : 'Play Replay'}
                 </button>
                 <button
                   type="button"
-                  className={controls.playbackStatus === 'paused' ? 'is-active' : ''}
-                  onClick={() => void sendControlPatch({ playbackStatus: 'paused' })}
+                  className={isMicListening ? 'is-active' : ''}
+                  onClick={() => void toggleMicrophone()}
+                  disabled={!isMicSupported && !isMicListening}
                 >
-                  Pause
+                  {isMicListening ? 'Stop Mic' : 'Start Mic'}
                 </button>
-                <button type="button" onClick={() => void sendControlPatch({ restart: true })}>
-                  Restart
+              </div>
+              <div className="inline-actions">
+                <button type="button" className="text-button" onClick={() => void sendControlPatch({ restart: true })}>
+                  Restart replay
+                </button>
+                <button type="button" className="text-button" onClick={clearBoothTranscript}>
+                  Clear transcript
                 </button>
               </div>
             </div>
 
             <div className="control-group">
               <p className="control-label">Style Mode</p>
-              <div className="segmented-control">
+              <div className="segmented-control segmented-control--compact">
                 <button
                   type="button"
                   aria-pressed={controls.preferredStyleMode === 'analyst'}
@@ -838,31 +878,6 @@ function App() {
                   Hype
                 </button>
               </div>
-            </div>
-
-            <div className="control-group">
-              <p className="control-label">Microphone</p>
-              <div className="mic-controls">
-                <button
-                  type="button"
-                  className={isMicListening ? 'is-active' : ''}
-                  onClick={startMicrophone}
-                  disabled={!isMicSupported || isMicListening}
-                >
-                  Start Mic
-                </button>
-                <button type="button" onClick={stopMicrophone} disabled={!isMicListening}>
-                  Stop Mic
-                </button>
-                <button type="button" onClick={clearBoothTranscript}>
-                  Clear Booth
-                </button>
-              </div>
-              <p className="field-copy">
-                Browser speech recognition is local to the tab. Chrome or Edge work best for live
-                hesitation testing.
-              </p>
-              {boothError ? <p className="inline-warning">{boothError}</p> : null}
             </div>
 
             <article className="booth-card">
@@ -883,6 +898,12 @@ function App() {
                   <p key={reason}>{reason}</p>
                 ))}
               </div>
+
+              <p className="field-copy">
+                Browser speech recognition is local to the tab. Chrome or Edge work best for live
+                hesitation testing.
+              </p>
+              {boothError ? <p className="inline-warning">{boothError}</p> : null}
 
               <div className="transcript-list">
                 {boothTranscript.length > 0 ? (
@@ -905,7 +926,7 @@ function App() {
             </article>
 
             <div className="control-group">
-              <p className="control-label">Backup Trigger</p>
+              <p className="control-label">Demo Backup</p>
               <button
                 type="button"
                 className={`toggle-button ${controls.forceHesitation ? 'toggle-button--on' : ''}`}
@@ -914,7 +935,7 @@ function App() {
                   void sendControlPatch({ forceHesitation: !controls.forceHesitation })
                 }
               >
-                {controls.forceHesitation ? 'Force Hesitation On' : 'Force Hesitation Off'}
+                {controls.forceHesitation ? 'Forced assist is on' : 'Force assist if needed'}
               </button>
             </div>
           </section>

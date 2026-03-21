@@ -253,7 +253,7 @@ describe('App dashboard', () => {
     await renderApp();
 
     const playButton = container.querySelector('button');
-    expect(playButton?.textContent).toBe('Play');
+    expect(playButton?.textContent).toBe('Play Replay');
 
     await act(async () => {
       playButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -270,7 +270,7 @@ describe('App dashboard', () => {
     });
 
     const forceButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Force Hesitation'),
+      button.textContent?.includes('Force assist'),
     );
 
     await act(async () => {

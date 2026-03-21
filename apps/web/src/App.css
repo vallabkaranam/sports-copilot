@@ -309,6 +309,20 @@
   background: rgba(255, 255, 255, 0.9);
 }
 
+.text-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--teal-deep);
+  cursor: pointer;
+}
+
+.text-button:hover,
+.text-button:focus-visible {
+  color: var(--ink);
+  outline: none;
+}
+
 .replay-stage {
   position: relative;
   overflow: hidden;
@@ -409,7 +423,6 @@
 .assist-meta,
 .source-chip-row,
 .narrative-stack,
-.mic-controls,
 .transcript-list {
   display: flex;
   flex-wrap: wrap;
@@ -462,20 +475,35 @@
   margin-top: 18px;
 }
 
+.primary-controls,
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.primary-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.inline-actions {
+  margin-top: 10px;
+}
+
 .segmented-control {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 10px;
 }
 
-.mic-controls {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.segmented-control--compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .segmented-control button,
 .toggle-button,
-.mic-controls button {
+.primary-controls button {
   border-radius: 18px;
   padding: 12px 14px;
   background: rgba(255, 255, 255, 0.76);
@@ -491,10 +519,10 @@
 
 .segmented-control button:hover,
 .toggle-button:hover,
-.mic-controls button:hover,
+.primary-controls button:hover,
 .segmented-control button:focus-visible,
 .toggle-button:focus-visible,
-.mic-controls button:focus-visible {
+.primary-controls button:focus-visible {
   transform: translateY(-1px);
   background: rgba(255, 255, 255, 0.96);
   border-color: rgba(52, 121, 111, 0.32);
@@ -503,14 +531,14 @@
 
 .segmented-control .is-active,
 .toggle-button--on,
-.mic-controls .is-active {
+.primary-controls .is-active {
   border-color: rgba(52, 121, 111, 0.32);
   background: rgba(52, 121, 111, 0.12);
   color: var(--teal-deep);
 }
 
 .segmented-control button:disabled,
-.mic-controls button:disabled {
+.primary-controls button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
@@ -755,7 +783,7 @@
 
   .timeline-item,
   .commentary-metadata,
-  .mic-controls,
+  .primary-controls,
   .segmented-control {
     grid-template-columns: 1fr;
   }
