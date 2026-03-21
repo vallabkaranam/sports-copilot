@@ -62,6 +62,16 @@ function cleanFactText(text: string) {
   return text.replace(/^@[^:]+:\s*/i, '').replace(/\s+/g, ' ').trim();
 }
 
+export function getBoothAssistQuery({
+  boothTranscript,
+  interimTranscript,
+}: {
+  boothTranscript: TranscriptEntry[];
+  interimTranscript: string;
+}) {
+  return interimTranscript.trim() || boothTranscript[boothTranscript.length - 1]?.text.trim() || '';
+}
+
 function createSyntheticFact(
   partial: Omit<RetrievedFact, 'sourceChip'>,
 ): RetrievedFact {
@@ -184,7 +194,7 @@ function buildHardcodedClasicoFacts(): RetrievedFact[] {
   ];
 }
 
-function buildFallbackFacts(params: {
+export function buildBoothAssistFacts(params: {
   retrieval: RetrievalState;
   preMatch?: PreMatchState;
   liveMatch?: LiveMatchState;
@@ -335,6 +345,7 @@ function scoreFact(fact: RetrievedFact, queryTokens: string[], fullQuery: string
   let score = fact.relevance;
   const factTokens = new Set(tokenize(fact.text));
   const overlap = queryTokens.filter((token) => factTokens.has(token)).length;
+  const isPlayQuery = /\b(save|chance|play|shot|sequence|move|moment|attack|counter)\b/i.test(fullQuery);
 
   score += overlap * 0.12;
 
@@ -357,8 +368,34 @@ function scoreFact(fact: RetrievedFact, queryTokens: string[], fullQuery: string
   if (fact.source.includes('stats:') && /\b(stat|number|possession|shots|corners)\b/i.test(fullQuery)) {
     score += 0.24;
   }
+  if (fact.source.includes('event-feed:') && isPlayQuery) {
+    score += 0.28;
+  }
 
   return score;
+}
+
+export function rankBoothAssistFacts({
+  facts,
+  boothTranscript,
+  interimTranscript,
+  limit = facts.length,
+}: {
+  facts: RetrievedFact[];
+  boothTranscript: TranscriptEntry[];
+  interimTranscript: string;
+  limit?: number;
+}) {
+  const fullQuery = getBoothAssistQuery({ boothTranscript, interimTranscript });
+  const queryTokens = tokenize(fullQuery);
+
+  return facts
+    .map((fact) => ({
+      fact,
+      score: scoreFact(fact, queryTokens, fullQuery),
+    }))
+    .sort((left, right) => right.score - left.score)
+    .slice(0, limit);
 }
 
 function buildHintFromFact(fact: RetrievedFact) {
@@ -440,21 +477,23 @@ export function buildBoothAssist(params: {
     recentEvents = [],
   } = params;
 
-  const currentLine = interimTranscript.trim() || boothTranscript[boothTranscript.length - 1]?.text.trim() || '';
-  const queryTokens = tokenize(currentLine);
-  const candidateFacts = buildFallbackFacts({
+  if (!boothSignal.shouldSurfaceAssist) {
+    return createEmptyAssistCard();
+  }
+
+  const currentLine = getBoothAssistQuery({ boothTranscript, interimTranscript });
+  const candidateFacts = buildBoothAssistFacts({
     retrieval,
     preMatch,
     liveMatch,
     socialPosts,
     recentEvents,
   });
-  const rankedFacts = candidateFacts
-    .map((fact) => ({
-      fact,
-      score: scoreFact(fact, queryTokens, currentLine),
-    }))
-    .sort((left, right) => right.score - left.score);
+  const rankedFacts = rankBoothAssistFacts({
+    facts: candidateFacts,
+    boothTranscript,
+    interimTranscript,
+  });
   const topFact = rankedFacts[0]?.fact;
 
   if (!topFact) {

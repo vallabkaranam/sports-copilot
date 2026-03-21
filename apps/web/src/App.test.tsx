@@ -441,6 +441,21 @@ describe('App dashboard', () => {
   let currentControls: ReplayControlState;
   let currentBoothSessions: BoothSessionsResponse;
   let currentBoothSessionRecord: BoothSessionRecord;
+  let mediaRecorders: Array<{
+    mimeType: string;
+    ondataavailable: ((event: { data: Blob }) => void) | null;
+  }>;
+  let currentBoothInterpretation: {
+    state: string;
+    hesitationScore: number;
+    recoveryScore: number;
+    shouldSurfaceAssist: boolean;
+    summary: string;
+    reasons: string[];
+    signals?: string[];
+    source: string;
+  };
+  let queuedTranscripts: string[];
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -453,8 +468,21 @@ describe('App dashboard', () => {
     currentControls = createControls();
     currentBoothSessions = createBoothSessionsResponse();
     currentBoothSessionRecord = createBoothSessionRecord();
+    mediaRecorders = [];
+    currentBoothInterpretation = {
+      state: 'monitoring',
+      hesitationScore: 0.18,
+      recoveryScore: 0.34,
+      shouldSurfaceAssist: false,
+      summary: 'Tracking the booth without stepping in.',
+      reasons: ['No strong hesitation cue is active in the current booth window.'],
+      signals: [],
+      source: 'openai',
+    };
+    queuedTranscripts = [];
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+    vi.stubGlobal('btoa', vi.fn((value: string) => value));
     const fakeStream = {
       getTracks: () => [{ stop: vi.fn() }],
       getAudioTracks: () => [{ kind: 'audio', stop: vi.fn() }],
@@ -503,6 +531,7 @@ describe('App dashboard', () => {
 
         constructor(_stream: MediaStream, options?: { mimeType?: string }) {
           this.mimeType = options?.mimeType ?? 'audio/webm';
+          mediaRecorders.push(this);
         }
 
         start() {}
@@ -570,16 +599,7 @@ describe('App dashboard', () => {
       }
 
       if (url.includes('/booth/interpret') && init?.method === 'POST') {
-        return jsonResponse({
-          state: 'monitoring',
-          hesitationScore: 0.18,
-          recoveryScore: 0.34,
-          shouldSurfaceAssist: false,
-          summary: 'Tracking the booth without stepping in.',
-          reasons: ['No strong hesitation cue is active in the current booth window.'],
-          signals: [],
-          source: 'openai',
-        });
+        return jsonResponse(currentBoothInterpretation);
       }
 
       if (url.includes('/booth/generate-cue') && init?.method === 'POST') {
@@ -607,14 +627,15 @@ describe('App dashboard', () => {
 
       if (url.includes('/booth/realtime-connect') && init?.method === 'POST') {
         return Promise.resolve({
-          ok: true,
-          text: async () => 'fake-answer-sdp',
+          ok: false,
+          status: 503,
+          text: async () => '',
         } as Response);
       }
 
       if (url.includes('/booth/transcribe') && init?.method === 'POST') {
         return jsonResponse({
-          transcript: 'um vinicius is driving forward',
+          transcript: queuedTranscripts.shift() ?? 'um vinicius is driving forward',
           source: 'openai',
         });
       }
@@ -1020,4 +1041,5 @@ describe('App dashboard', () => {
     expect(container.textContent).not.toContain('Courtois keeps Madrid alive with an enormous reflex stop.');
     expect(container.textContent).toContain('Show Details');
   });
+
 });

@@ -3,9 +3,10 @@ import {
   createEmptyLiveMatchState,
   createEmptyPreMatchState,
   createEmptyRetrievalState,
+  RetrievedFact,
   TranscriptEntry,
 } from '@sports-copilot/shared-types';
-import { buildBoothAssist } from './boothAssist';
+import { buildBoothAssist, rankBoothAssistFacts } from './boothAssist';
 import type { BoothSignal } from './boothSignal';
 
 function makeSignal(overrides: Partial<BoothSignal> = {}): BoothSignal {
@@ -46,7 +47,105 @@ function makeTranscript(text: string): TranscriptEntry[] {
   ];
 }
 
+function makeFact(partial: Partial<RetrievedFact> & Pick<RetrievedFact, 'id' | 'tier' | 'text' | 'source'>): RetrievedFact {
+  return {
+    timestamp: 1000,
+    relevance: 0.7,
+    sourceChip: {
+      id: partial.id,
+      label: partial.text,
+      source: `${partial.tier}:${partial.source}`,
+      relevance: partial.relevance ?? 0.7,
+      metadata: partial.metadata,
+    },
+    ...partial,
+  };
+}
+
 describe('buildBoothAssist', () => {
+  it('ranks social facts first when the transcript is about fan reaction', () => {
+    const ranked = rankBoothAssistFacts({
+      facts: [
+        makeFact({
+          id: 'social',
+          tier: 'live',
+          text: '@matchday: Fans are calling that save unbelievable.',
+          source: 'social:@matchday',
+          relevance: 0.8,
+        }),
+        makeFact({
+          id: 'stat',
+          tier: 'live',
+          text: 'Barcelona possession: 58%.',
+          source: 'stats:possession',
+          relevance: 0.8,
+        }),
+      ],
+      boothTranscript: makeTranscript('Fans are really reacting to that save'),
+      interimTranscript: '',
+      limit: 2,
+    });
+
+    expect(ranked[0]?.fact.source).toContain('social');
+  });
+
+  it('ranks stats first when the transcript is about numbers', () => {
+    const ranked = rankBoothAssistFacts({
+      facts: [
+        makeFact({
+          id: 'social',
+          tier: 'live',
+          text: '@matchday: Fans are calling that save unbelievable.',
+          source: 'social:@matchday',
+          relevance: 0.8,
+        }),
+        makeFact({
+          id: 'stat',
+          tier: 'live',
+          text: 'Barcelona possession: 58%.',
+          source: 'stats:possession',
+          relevance: 0.68,
+        }),
+      ],
+      boothTranscript: makeTranscript('The numbers tell you Barcelona have more possession'),
+      interimTranscript: '',
+      limit: 2,
+    });
+
+    expect(ranked[0]?.fact.source).toContain('stats:');
+  });
+
+  it('ranks live event facts first when the transcript is about the play', () => {
+    const ranked = rankBoothAssistFacts({
+      facts: [
+        makeFact({
+          id: 'event',
+          tier: 'session',
+          text: 'Courtois stands tall to deny Barcelona from close range.',
+          source: 'event-feed:save',
+          relevance: 0.7,
+        }),
+        makeFact({
+          id: 'form',
+          tier: 'pre_match',
+          text: 'Barcelona recent form: 3-1-1 across the last 5.',
+          source: 'pre-match:recent-form',
+          relevance: 0.72,
+          metadata: {
+            chunkCategory: 'recent-form',
+            teamSide: 'home',
+            phaseHints: ['pre_kickoff'],
+          },
+        }),
+      ],
+      boothTranscript: makeTranscript('That save changes the whole play'),
+      interimTranscript: '',
+      limit: 2,
+    });
+
+    expect(ranked[0]?.fact.source).toContain('event-feed:');
+  });
+
   it('uses live social reaction when the speaker references fan reaction', () => {
     const assist = buildBoothAssist({
       boothSignal: makeSignal(),
@@ -192,7 +291,7 @@ describe('buildBoothAssist', () => {
     expect(assist.sourceChips.length).toBeGreaterThan(0);
   });
 
-  it('can still build a grounded assist even if visibility is gated elsewhere', () => {
+  it('returns no assist when visibility is gated elsewhere', () => {
     const assist = buildBoothAssist({
       boothSignal: makeSignal({ shouldSurfaceAssist: false }),
       boothTranscript: makeTranscript('steady call'),
@@ -200,6 +299,6 @@ describe('buildBoothAssist', () => {
       retrieval: createEmptyRetrievalState(),
     });
 
-    expect(assist.type).not.toBe('none');
+    expect(assist.type).toBe('none');
   });
 });

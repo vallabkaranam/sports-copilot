@@ -29,6 +29,12 @@ import {
   updateControlState,
 } from './api';
 import {
+  buildBoothAssist,
+  buildBoothAssistFacts,
+  getBoothAssistQuery,
+  rankBoothAssistFacts,
+} from './boothAssist';
+import {
   LOCAL_TRANSCRIPT_LIMIT,
   LIVE_HESITATION_GATE,
   LONG_PAUSE_START_MS,
@@ -1280,7 +1286,7 @@ function App() {
   const isMicSupported =
     microphoneAvailability !== 'unsupported' && supportsAudioMonitoring();
   const isSystemReady = isHydrated && !error;
-  const isBroadcastReady = Boolean(loadedClipUrl) && isSystemReady;
+  const isBroadcastReady = Boolean(loadedClipUrl);
   const boothActivity = deriveBoothActivity({
     interimTranscript: boothInterimTranscript,
     isMicListening,
@@ -1302,6 +1308,33 @@ function App() {
   const boothHasLiveInput =
     hasStartedBroadcast &&
     (isMicListening || boothTranscript.length > 0 || boothInterimTranscript.length > 0);
+  const boothAssistFacts = buildBoothAssistFacts({
+    retrieval: worldState.retrieval,
+    preMatch: worldState.preMatch,
+    liveMatch: worldState.liveMatch,
+    socialPosts: worldState.liveSignals.social,
+    recentEvents: worldState.recentEvents,
+  });
+  const boothAssist = buildBoothAssist({
+    boothSignal,
+    boothTranscript,
+    interimTranscript: boothInterimTranscript,
+    retrieval: worldState.retrieval,
+    preMatch: worldState.preMatch,
+    liveMatch: worldState.liveMatch,
+    socialPosts: worldState.liveSignals.social,
+    recentEvents: worldState.recentEvents,
+  });
+  const boothAssistQuery = getBoothAssistQuery({
+    boothTranscript,
+    interimTranscript: boothInterimTranscript,
+  });
+  const rankedBoothAssistFacts = rankBoothAssistFacts({
+    facts: boothAssistFacts,
+    boothTranscript,
+    interimTranscript: boothInterimTranscript,
+    limit: 8,
+  });
   const currentBoothFeatures = useMemo<BoothFeatureSnapshot>(
     () => ({
       timestamp: boothClockMs,
@@ -1365,9 +1398,9 @@ function App() {
   const boothAssistShouldSurface =
     boothHasLiveInput &&
     liveBoothShouldSurfaceAssist &&
-    (generatedCue?.assist.type ?? 'none') !== 'none';
+    ((generatedCue?.assist.type ?? 'none') !== 'none' || boothAssist.type !== 'none');
   const nextTriggeredAssist = boothAssistShouldSurface
-    ? generatedCue?.assist ?? null
+    ? generatedCue?.assist ?? boothAssist
     : workerAssistShouldSurface
       ? assist
       : null;
@@ -1727,7 +1760,11 @@ function App() {
       void generateBoothCue({
         features: currentBoothFeatures,
         interpretation: boothInterpretation ?? undefined,
-        retrieval: worldState.retrieval,
+        retrieval: {
+          ...worldState.retrieval,
+          query: boothAssistQuery || worldState.retrieval.query,
+          supportingFacts: rankedBoothAssistFacts.map(({ fact }) => fact),
+        },
         contextBundle: worldState.contextBundle,
         recentEvents: worldState.recentEvents.slice(-4),
         clipName: loadedClipName,
@@ -1760,6 +1797,8 @@ function App() {
     latchedAssist.type,
     liveBoothShouldSurfaceAssist,
     loadedClipName,
+    boothAssistQuery,
+    rankedBoothAssistFacts,
     preMatchCueSummary,
     worldState.contextBundle,
     worldState.recentEvents,
