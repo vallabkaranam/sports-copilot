@@ -2,6 +2,14 @@ import { startTransition, useEffect, useRef, useState } from 'react';
 import { ReplayControlState, TranscriptEntry } from '@sports-copilot/shared-types';
 import './App.css';
 import { fetchControlState, fetchWorldState, updateControlState } from './api';
+import type { BoothSignal } from './boothSignal';
+import {
+  LOCAL_TRANSCRIPT_LIMIT,
+  LIVE_HESITATION_GATE,
+  LONG_PAUSE_START_MS,
+  buildBoothSignal,
+  calculateAudioLevel,
+} from './boothSignal';
 import {
   createInitialWorldState,
   formatAssistType,
@@ -12,20 +20,7 @@ import {
   parseClock,
 } from './dashboard';
 
-type BoothActiveSpeaker = 'lead' | 'none';
 type MicrophoneAvailability = 'supported' | 'degraded' | 'unsupported';
-
-type BoothSignal = {
-  activeSpeaker: BoothActiveSpeaker;
-  hesitationScore: number;
-  hesitationReasons: string[];
-  pauseDurationMs: number;
-  fillerWords: string[];
-  repeatedPhrases: string[];
-  unfinishedPhrase: boolean;
-  isSpeaking: boolean;
-  shouldSurfaceAssist: boolean;
-};
 
 type SpeechRecognitionAlternativeLike = {
   transcript: string;
@@ -64,151 +59,11 @@ type SpeechRecognitionWindow = Window & {
   webkitSpeechRecognition?: SpeechRecognitionConstructor;
 };
 
-const ACTIVE_SPEECH_WINDOW_MS = 1_400;
-const LIVE_HESITATION_GATE = 0.36;
-const LONG_PAUSE_START_MS = 1_600;
-const PAUSE_RANGE_MS = 2_400;
-const PAUSE_DECAY_START_MS = 6_000;
-const PAUSE_DECAY_RANGE_MS = 6_000;
-const LOCAL_TRANSCRIPT_LIMIT = 8;
-const FILLER_PATTERNS = [
-  { token: 'uh', pattern: /\buh\b/gi },
-  { token: 'um', pattern: /\bum\b/gi },
-  { token: 'er', pattern: /\ber\b/gi },
-  { token: 'ah', pattern: /\bah\b/gi },
-  { token: 'you know', pattern: /\byou know\b/gi },
-  { token: 'i mean', pattern: /\bi mean\b/gi },
-] as const;
+const AUDIO_ACTIVITY_SAMPLE_MS = 120;
+const AUDIO_ACTIVITY_THRESHOLD = 0.045;
 
 function clamp(value: number, minimum = 0, maximum = 1) {
   return Math.min(maximum, Math.max(minimum, value));
-}
-
-function countMatches(text: string, pattern: RegExp) {
-  return text.match(pattern)?.length ?? 0;
-}
-
-function normalizeTranscriptText(text: string) {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function collectFillerWords(texts: string[]) {
-  const hits: string[] = [];
-
-  for (const text of texts) {
-    for (const filler of FILLER_PATTERNS) {
-      const matchCount = countMatches(text, filler.pattern);
-
-      for (let index = 0; index < matchCount; index += 1) {
-        hits.push(filler.token);
-      }
-    }
-  }
-
-  return hits;
-}
-
-function findRepeatedPhrases(entries: TranscriptEntry[]) {
-  const repeatedPhrases: string[] = [];
-  const prefixCounts = new Map<string, number>();
-
-  for (const entry of entries) {
-    const words = normalizeTranscriptText(entry.text).split(' ').filter(Boolean);
-
-    if (words.length < 2) {
-      continue;
-    }
-
-    const prefix = words.slice(0, Math.min(3, words.length)).join(' ');
-
-    if (prefix.length < 6) {
-      continue;
-    }
-
-    const nextCount = (prefixCounts.get(prefix) ?? 0) + 1;
-    prefixCounts.set(prefix, nextCount);
-
-    if (nextCount === 2) {
-      repeatedPhrases.push(prefix);
-    }
-  }
-
-  return repeatedPhrases;
-}
-
-function buildBoothSignal({
-  boothTranscript,
-  interimTranscript,
-  isMicListening,
-  lastSpeechAtMs,
-  nowMs,
-}: {
-  boothTranscript: TranscriptEntry[];
-  interimTranscript: string;
-  isMicListening: boolean;
-  lastSpeechAtMs: number;
-  nowMs: number;
-}): BoothSignal {
-  const recentTranscript = boothTranscript.slice(-LOCAL_TRANSCRIPT_LIMIT);
-  const transcriptTexts = recentTranscript.map((entry) => entry.text);
-  const interimText = interimTranscript.trim();
-  const fillerWords = collectFillerWords(
-    interimText ? [...transcriptTexts, interimText] : transcriptTexts,
-  );
-  const repeatedPhrases = findRepeatedPhrases(recentTranscript);
-  const lastLine = recentTranscript[recentTranscript.length - 1]?.text.trim() ?? '';
-  const unfinishedPhrase = /(?:\.\.\.|-)\s*$/.test(lastLine);
-  const isSpeaking =
-    isMicListening &&
-    (interimText.length > 0 ||
-      (lastSpeechAtMs >= 0 && nowMs - lastSpeechAtMs < ACTIVE_SPEECH_WINDOW_MS));
-  const pauseDurationMs =
-    !isSpeaking && lastSpeechAtMs >= 0 ? Math.max(0, nowMs - lastSpeechAtMs) : 0;
-  const hesitationReasons: string[] = [];
-  let hesitationScore = 0;
-
-  if (pauseDurationMs >= LONG_PAUSE_START_MS) {
-    const pauseSeconds = Math.round((pauseDurationMs / 1_000) * 10) / 10;
-    const pauseBuild = clamp((pauseDurationMs - LONG_PAUSE_START_MS) / PAUSE_RANGE_MS) * 0.55;
-    const pauseDecay =
-      pauseDurationMs <= PAUSE_DECAY_START_MS
-        ? 1
-        : 1 - clamp((pauseDurationMs - PAUSE_DECAY_START_MS) / PAUSE_DECAY_RANGE_MS);
-    hesitationScore += pauseBuild * pauseDecay;
-    hesitationReasons.push(`You paused for ${pauseSeconds}s after the last thought.`);
-  }
-
-  if (fillerWords.length > 0) {
-    const uniqueFillers = [...new Set(fillerWords)];
-    hesitationScore += Math.min(0.24, 0.08 * fillerWords.length);
-    hesitationReasons.push(`Fillers detected: ${uniqueFillers.join(', ')}.`);
-  }
-
-  if (unfinishedPhrase && pauseDurationMs >= 900) {
-    hesitationScore += 0.18;
-    hesitationReasons.push('The last line trails off mid-thought.');
-  }
-
-  if (repeatedPhrases.length > 0) {
-    hesitationScore += Math.min(0.16, repeatedPhrases.length * 0.08);
-    hesitationReasons.push(`Repeated opening: "${repeatedPhrases[0]}".`);
-  }
-
-  return {
-    activeSpeaker: isSpeaking ? 'lead' : 'none',
-    hesitationScore: clamp(hesitationScore),
-    hesitationReasons,
-    pauseDurationMs,
-    fillerWords,
-    repeatedPhrases,
-    unfinishedPhrase,
-    isSpeaking,
-    shouldSurfaceAssist: hesitationScore >= LIVE_HESITATION_GATE,
-  };
 }
 
 function getSpeechRecognitionConstructor() {
@@ -218,6 +73,15 @@ function getSpeechRecognitionConstructor() {
 
   const speechWindow = window as SpeechRecognitionWindow;
   return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition ?? null;
+}
+
+function supportsAudioMonitoring() {
+  return (
+    typeof window !== 'undefined' &&
+    typeof navigator !== 'undefined' &&
+    Boolean(navigator.mediaDevices?.getUserMedia) &&
+    typeof window.AudioContext !== 'undefined'
+  );
 }
 
 function createTranscriptEntry(timestamp: number, text: string): TranscriptEntry {
@@ -302,11 +166,16 @@ function App() {
   const [boothError, setBoothError] = useState<string | null>(null);
   const [isMicListening, setIsMicListening] = useState(false);
   const [lastSpeechAtMs, setLastSpeechAtMs] = useState(-1);
+  const [lastVoiceActivityAtMs, setLastVoiceActivityAtMs] = useState(-1);
+  const [audioLevel, setAudioLevel] = useState(0);
   const [boothClockMs, setBoothClockMs] = useState(() => Date.now());
   const [microphoneAvailability, setMicrophoneAvailability] =
     useState<MicrophoneAvailability>('supported');
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const shouldKeepMicLiveRef = useRef(false);
+  const microphoneStreamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioMonitorIntervalRef = useRef<number | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const clipObjectUrlRef = useRef<string | null>(null);
   const lastRestartTokenRef = useRef(controls.restartToken);
@@ -389,6 +258,8 @@ function App() {
     setBoothTranscript([]);
     setBoothInterimTranscript('');
     setLastSpeechAtMs(-1);
+    setLastVoiceActivityAtMs(-1);
+    setAudioLevel(0);
     setBoothClockMs(Date.now());
     setClipPositionMs(0);
 
@@ -409,6 +280,11 @@ function App() {
     return () => {
       shouldKeepMicLiveRef.current = false;
       recognitionRef.current?.stop();
+      if (audioMonitorIntervalRef.current !== null) {
+        window.clearInterval(audioMonitorIntervalRef.current);
+      }
+      audioContextRef.current?.close().catch(() => undefined);
+      microphoneStreamRef.current?.getTracks().forEach((track) => track.stop());
 
       if (clipObjectUrlRef.current) {
         URL.revokeObjectURL(clipObjectUrlRef.current);
@@ -462,6 +338,63 @@ function App() {
     setClipPositionMs(0);
     setClipDurationMs(0);
     setIsClipMuted(true);
+  }
+
+  async function startAudioMonitoring() {
+    if (
+      microphoneStreamRef.current &&
+      audioContextRef.current &&
+      audioMonitorIntervalRef.current !== null
+    ) {
+      return;
+    }
+
+    if (!supportsAudioMonitoring()) {
+      return;
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+
+    const audioContext = new window.AudioContext();
+    const source = audioContext.createMediaStreamSource(stream);
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0.78;
+    source.connect(analyser);
+    const samples = new Uint8Array(analyser.fftSize);
+
+    microphoneStreamRef.current = stream;
+    audioContextRef.current = audioContext;
+
+    audioMonitorIntervalRef.current = window.setInterval(() => {
+      analyser.getByteTimeDomainData(samples);
+      const nextAudioLevel = calculateAudioLevel(samples);
+      setAudioLevel(nextAudioLevel);
+      setBoothClockMs(Date.now());
+
+      if (nextAudioLevel >= AUDIO_ACTIVITY_THRESHOLD) {
+        setLastVoiceActivityAtMs(Date.now());
+      }
+    }, AUDIO_ACTIVITY_SAMPLE_MS);
+  }
+
+  function stopAudioMonitoring() {
+    if (audioMonitorIntervalRef.current !== null) {
+      window.clearInterval(audioMonitorIntervalRef.current);
+      audioMonitorIntervalRef.current = null;
+    }
+
+    void audioContextRef.current?.close().catch(() => undefined);
+    audioContextRef.current = null;
+    microphoneStreamRef.current?.getTracks().forEach((track) => track.stop());
+    microphoneStreamRef.current = null;
+    setAudioLevel(0);
   }
 
   function handleClipChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -534,6 +467,7 @@ function App() {
       shouldKeepMicLiveRef.current = false;
       setIsMicListening(false);
       setBoothInterimTranscript('');
+      setAudioLevel(0);
 
       switch (event.error) {
         case 'not-allowed':
@@ -576,9 +510,38 @@ function App() {
   function startMicrophone() {
     const SpeechRecognition = getSpeechRecognitionConstructor();
 
-    if (!SpeechRecognition) {
+    if (!SpeechRecognition && !supportsAudioMonitoring()) {
       setMicrophoneAvailability('unsupported');
-      setBoothError('Use Chrome or Edge to test browser speech recognition in this booth.');
+      setBoothError(
+        'This browser does not expose a usable microphone API for the booth. Chrome or Edge work best.',
+      );
+      return;
+    }
+
+    shouldKeepMicLiveRef.current = true;
+    setBoothError(null);
+    setIsMicListening(true);
+    setBoothClockMs(Date.now());
+
+    void startAudioMonitoring()
+      .then(() => {
+        setMicrophoneAvailability('supported');
+      })
+      .catch(() => {
+        shouldKeepMicLiveRef.current = false;
+        recognitionRef.current?.stop();
+        setMicrophoneAvailability('degraded');
+        setBoothError(
+          'Microphone access was blocked. Allow mic access to test live hesitation from your voice.',
+        );
+        setIsMicListening(false);
+      });
+
+    if (!SpeechRecognition) {
+      setMicrophoneAvailability('degraded');
+      setBoothError(
+        'Voice activity is live, but browser speech transcription is unavailable in this tab.',
+      );
       return;
     }
 
@@ -595,28 +558,31 @@ function App() {
           return nextRecognition;
         })();
 
-      shouldKeepMicLiveRef.current = true;
       recognition.start();
       setMicrophoneAvailability('supported');
-      setBoothError(null);
-      setIsMicListening(true);
-      setBoothClockMs(Date.now());
     } catch (_error) {
-      setBoothError('The browser could not start the microphone session. Try again once the tab is focused.');
+      setMicrophoneAvailability('degraded');
+      setBoothError(
+        'Voice activity is live, but speech transcription could not start in this browser session.',
+      );
     }
   }
 
   function stopMicrophone() {
     shouldKeepMicLiveRef.current = false;
     recognitionRef.current?.stop();
+    stopAudioMonitoring();
     setIsMicListening(false);
     setBoothInterimTranscript('');
+    setAudioLevel(0);
   }
 
   function clearBoothTranscript() {
     setBoothTranscript([]);
     setBoothInterimTranscript('');
     setLastSpeechAtMs(-1);
+    setLastVoiceActivityAtMs(-1);
+    setAudioLevel(0);
     setBoothClockMs(Date.now());
     setBoothError(null);
   }
@@ -657,12 +623,15 @@ function App() {
       ? worldState.commentator.hesitationReasons
       : ['No replay-side hesitation trigger is active right now.'];
   const isMicSupported =
-    microphoneAvailability !== 'unsupported' && Boolean(getSpeechRecognitionConstructor());
+    microphoneAvailability !== 'unsupported' &&
+    (Boolean(getSpeechRecognitionConstructor()) || supportsAudioMonitoring());
   const boothSignal = buildBoothSignal({
     boothTranscript,
     interimTranscript: boothInterimTranscript,
     isMicListening,
     lastSpeechAtMs,
+    lastVoiceActivityAtMs,
+    audioLevel,
     nowMs: boothClockMs,
   });
   const boothHasLiveInput =
@@ -914,6 +883,11 @@ function App() {
                 <span style={{ width: boothHesitationPercent }} />
               </div>
 
+              <div className="meter-label-row">
+                <span>Mic activity</span>
+                <strong>{Math.round(boothSignal.audioLevel * 100)}%</strong>
+              </div>
+
               <div className="reason-list">
                 {visibleReasons.map((reason) => (
                   <p key={reason}>{reason}</p>
@@ -922,7 +896,8 @@ function App() {
 
               <p className="field-copy">
                 The clip is muted by default so the booth mic tracks your voice instead of the
-                program feed. Chrome or Edge work best for live hesitation testing.
+                program feed. Pause detection now follows live mic activity even when transcript
+                text is delayed.
               </p>
               {boothError ? <p className="inline-warning">{boothError}</p> : null}
 
@@ -937,7 +912,7 @@ function App() {
                   <p className="transcript-line transcript-line--muted">
                     {isMicSupported
                       ? 'Start the mic and talk through the replay to see live booth transcript here.'
-                      : 'This browser does not expose speech recognition, so the booth stays in replay-only mode.'}
+                      : 'This browser does not expose usable mic APIs, so live hesitation is unavailable here.'}
                   </p>
                 )}
                 {boothInterimTranscript ? (
