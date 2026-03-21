@@ -4,6 +4,7 @@ import http from 'http';
 import { buildAssistCard } from './assist';
 import { analyzeCommentary } from './commentator';
 import { buildNarrativeState } from './narrative';
+import { buildPreMatchContext, createDegradedPreMatchState } from './pre-match';
 import {
   buildRetrievalState,
   ingestLiveSocialPosts,
@@ -32,6 +33,7 @@ import {
   createEmptyCommentatorState,
   createEmptyLiveMatchState,
   createEmptyNarrativeState,
+  createEmptyPreMatchState,
   createEmptyRetrievalState,
 } from '@sports-copilot/shared-types';
 
@@ -153,6 +155,7 @@ async function run() {
   const sessionMemory = createSessionMemoryTracker();
   let lastKnownControls = createDefaultReplayControlState();
   let lastHandledRestartToken = 0;
+  let lastPreMatchFixtureId = '';
   let lastWorldState: Partial<WorldState> = {
     matchId: 'sportmonks-live',
     clock: '00:00',
@@ -166,6 +169,7 @@ async function run() {
     narrative: createEmptyNarrativeState(),
     retrieval: createEmptyRetrievalState(),
     assist: createEmptyAssistCard(),
+    preMatch: createEmptyPreMatchState(),
     liveMatch: buildDegradedState('Waiting for Sportmonks data.', process.env.SPORTMONKS_FIXTURE_ID ?? ''),
     liveSignals: { social: [], vision: [] },
   };
@@ -190,21 +194,51 @@ async function run() {
       const fixtureId = controls.activeFixtureId ?? process.env.SPORTMONKS_FIXTURE_ID ?? '';
       const apiToken = process.env.SPORTMONKS_API_TOKEN ?? '';
 
+      if (fixtureId && fixtureId !== lastPreMatchFixtureId) {
+        lastWorldState = {
+          ...lastWorldState,
+          preMatch: createEmptyPreMatchState(),
+        };
+      }
+
       if (!fixtureId || !apiToken) {
         const degradedLiveMatch = buildDegradedState(
           'Sportmonks credentials or fixture ID are missing.',
           fixtureId,
         );
+        const degradedPreMatch = createDegradedPreMatchState(
+          'Sportmonks credentials or fixture ID are missing.',
+        );
 
         lastWorldState = {
           ...lastWorldState,
           matchId: fixtureId ? `sportmonks-${fixtureId}` : 'sportmonks-live',
+          preMatch: degradedPreMatch,
           liveMatch: degradedLiveMatch,
           gameStateSummary: degradedLiveMatch.degradedReason ?? 'Live data unavailable.',
         };
 
         await syncState(lastWorldState);
         return;
+      }
+
+      let preMatch = lastWorldState.preMatch ?? createEmptyPreMatchState();
+      if (fixtureId !== lastPreMatchFixtureId || preMatch.loadStatus === 'pending') {
+        try {
+          preMatch = await buildPreMatchContext({
+            apiToken,
+            fixtureId,
+            openAiApiKey: process.env.OPENAI_API_KEY,
+            openAiModel: process.env.OPENAI_MODEL,
+          });
+          lastPreMatchFixtureId = fixtureId;
+        } catch (error) {
+          preMatch = createDegradedPreMatchState(
+            `Pre-match context unavailable: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
       }
 
       const payload = await fetchSportmonksFixture({
@@ -238,6 +272,7 @@ async function run() {
         socialPosts,
         visionCues,
         liveMatch: snapshot.liveMatch,
+        preMatch,
       });
       const assist = buildAssistCard({
         clockMs,
@@ -274,6 +309,7 @@ async function run() {
         narrative,
         retrieval,
         assist,
+        preMatch,
         liveMatch: snapshot.liveMatch,
         liveSignals: {
           social: ingestedSocialPosts,

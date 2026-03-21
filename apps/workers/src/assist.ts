@@ -119,6 +119,29 @@ function getStatFact(retrieval: RetrievalState) {
   );
 }
 
+function getPreMatchFact(
+  retrieval: RetrievalState,
+  categories?: Array<
+    NonNullable<RetrievedFact['metadata']>['chunkCategory']
+  >,
+) {
+  return (
+    retrieval.supportingFacts.find((fact) => {
+      if (fact.tier !== 'pre_match') {
+        return false;
+      }
+
+      if (!categories || categories.length === 0) {
+        return true;
+      }
+
+      return Boolean(
+        fact.metadata?.chunkCategory && categories.includes(fact.metadata.chunkCategory),
+      );
+    }) ?? null
+  );
+}
+
 function dedupeFacts(facts: Array<RetrievedFact | null | undefined>) {
   const seen = new Set<string>();
   const result: RetrievedFact[] = [];
@@ -249,6 +272,14 @@ function buildTransitionLine(event: GameEvent) {
   return sanitizeSentence(`${getEventTeamName(event.data?.team)} are still asking fresh questions here.`);
 }
 
+function buildPreMatchContextLine(fact: RetrievedFact) {
+  return sanitizeSentence(fact.text.replace(/^Venue:\s*/i, '').replace(/^Weather:\s*/i, ''));
+}
+
+function buildPreMatchTransitionLine(fact: RetrievedFact) {
+  return sanitizeSentence(`Scene-setter: ${fact.text.replace(/\s+/g, ' ').trim()}`);
+}
+
 function toAssistCard(draft: AssistDraft): AssistCard {
   return {
     type: draft.type,
@@ -289,13 +320,18 @@ export function generateAssistCandidates(input: AssistPipelineInput) {
   const rankedStyleMode =
     preferredStyleMode ?? chooseStyleMode({ clockMs, commentator, events, urgency });
 
-  if (!latestEvent) {
-    return [];
-  }
-
   const eventFact = getEventFact(retrieval, latestHighSalienceEvent ?? latestEvent);
   const narrativeFact = getNarrativeFact(retrieval, narrative.topNarrative);
   const statFact = getStatFact(retrieval);
+  const preMatchContextFact = getPreMatchFact(retrieval, [
+    'recent-form',
+    'head-to-head',
+    'venue',
+    'weather',
+    'opener',
+    'trend',
+  ]);
+  const preMatchStatFact = getPreMatchFact(retrieval, ['recent-form', 'weather', 'trend']);
 
   const drafts: AssistDraft[] = [];
 
@@ -329,7 +365,7 @@ export function generateAssistCandidates(input: AssistPipelineInput) {
       urgency,
       confidence: 0.66 + commentator.hesitationScore * 0.1,
       whyNow: 'A grounded scene-setter can keep the call moving.',
-      supportingFacts: dedupeFacts([eventFact, narrativeFact]),
+      supportingFacts: dedupeFacts([eventFact, narrativeFact, preMatchContextFact]),
     });
   }
 
@@ -341,11 +377,11 @@ export function generateAssistCandidates(input: AssistPipelineInput) {
       urgency: urgency === 'high' ? 'medium' : urgency,
       confidence: 0.62,
       whyNow: 'A crisp fact can rescue dead air without overtalking the moment.',
-      supportingFacts: dedupeFacts([statFact]),
+      supportingFacts: dedupeFacts([statFact, preMatchStatFact]),
     });
   }
 
-  if (eventFact) {
+  if (eventFact && latestEvent) {
     drafts.push({
       type: 'transition',
       text: buildTransitionLine(latestEvent),
@@ -353,7 +389,29 @@ export function generateAssistCandidates(input: AssistPipelineInput) {
       urgency: urgency === 'high' ? 'medium' : urgency,
       confidence: 0.58,
       whyNow: 'A short bridge line keeps the commentary lane active.',
-      supportingFacts: dedupeFacts([eventFact, narrativeFact]),
+      supportingFacts: dedupeFacts([eventFact, narrativeFact, preMatchContextFact]),
+    });
+  }
+
+  if (!eventFact && preMatchContextFact) {
+    drafts.push({
+      type: 'context',
+      text: buildPreMatchContextLine(preMatchContextFact),
+      styleMode: 'analyst',
+      urgency: urgency === 'high' ? 'medium' : urgency,
+      confidence: 0.59 + commentator.hesitationScore * 0.08,
+      whyNow: 'Live grounding is thin, so a pre-match scene-setter can keep the call moving.',
+      supportingFacts: dedupeFacts([preMatchContextFact, preMatchStatFact]),
+    });
+
+    drafts.push({
+      type: 'transition',
+      text: buildPreMatchTransitionLine(preMatchContextFact),
+      styleMode: rankedStyleMode,
+      urgency: urgency === 'high' ? 'medium' : urgency,
+      confidence: 0.56,
+      whyNow: 'A pre-match bridge line can cover dead air before the next live beat arrives.',
+      supportingFacts: dedupeFacts([preMatchContextFact, preMatchStatFact]),
     });
   }
 

@@ -7,6 +7,7 @@ import {
   createEmptyCommentatorState,
   createEmptyLiveMatchState,
   createEmptyNarrativeState,
+  createEmptyPreMatchState,
   createEmptyRetrievalState,
   createEmptySessionMemory,
 } from '@sports-copilot/shared-types';
@@ -39,6 +40,7 @@ let worldState: Partial<WorldState> = {
   commentator: createEmptyCommentatorState(),
   narrative: createEmptyNarrativeState(),
   retrieval: createEmptyRetrievalState(),
+  preMatch: createEmptyPreMatchState(),
   liveMatch: createEmptyLiveMatchState(),
   liveSignals: { social: [], vision: [] },
 };

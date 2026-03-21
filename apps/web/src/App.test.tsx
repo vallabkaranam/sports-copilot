@@ -10,6 +10,7 @@ import {
   createEmptyCommentatorState,
   createEmptyLiveMatchState,
   createEmptyNarrativeState,
+  createEmptyPreMatchState,
   createEmptyRetrievalState,
   createEmptySessionMemory,
 } from '@sports-copilot/shared-types';
@@ -121,6 +122,74 @@ function createWorldState(overrides: Partial<WorldState> = {}): WorldState {
           relevance: 0.96,
         },
       ],
+    },
+    preMatch: {
+      ...createEmptyPreMatchState(),
+      loadStatus: 'ready',
+      generatedAt: 1000,
+      homeRecentForm: {
+        teamSide: 'home',
+        teamName: 'Barcelona',
+        record: { wins: 3, draws: 1, losses: 1 },
+        lastFive: [
+          {
+            fixtureId: 'r1',
+            kickoffAt: '2026-03-01 18:00:00',
+            opponent: 'Valencia',
+            venue: 'home',
+            scoreFor: 2,
+            scoreAgainst: 1,
+            result: 'win',
+          },
+        ],
+      },
+      awayRecentForm: {
+        teamSide: 'away',
+        teamName: 'Real Madrid',
+        record: { wins: 4, draws: 0, losses: 1 },
+        lastFive: [
+          {
+            fixtureId: 'r2',
+            kickoffAt: '2026-03-01 18:00:00',
+            opponent: 'Sevilla',
+            venue: 'away',
+            scoreFor: 1,
+            scoreAgainst: 0,
+            result: 'win',
+          },
+        ],
+      },
+      headToHead: {
+        meetings: [],
+        homeWins: 2,
+        awayWins: 2,
+        draws: 1,
+        summary: 'Barcelona and Real Madrid have split the last five meetings.',
+      },
+      venue: {
+        name: 'Estadi Olimpic',
+        city: 'Barcelona',
+        country: 'Spain',
+        capacity: 55000,
+        surface: 'grass',
+      },
+      weather: {
+        summary: 'Clear skies',
+        temperatureC: 18,
+        windKph: 11,
+        precipitationMm: 0,
+        source: 'open-meteo',
+        isFallback: true,
+      },
+      deterministicOpener:
+        'Barcelona arrive 3-1-1, Madrid 4-0-1, with clear skies over Estadi Olimpic.',
+      aiOpener: 'Barcelona arrive with strong recent form and a level rivalry backdrop tonight.',
+      sourceMetadata: {
+        provider: 'sportmonks',
+        fetchedAt: 1000,
+        sourceNotes: [],
+        usedWeatherFallback: true,
+      },
     },
     liveMatch: {
       ...createEmptyLiveMatchState(),
@@ -295,6 +364,8 @@ describe('App dashboard', () => {
 
     expect(container.textContent).toContain('Sports Copilot');
     expect(container.textContent).toContain('Practice Booth');
+    expect(container.textContent).toContain('Pre-match brief');
+    expect(container.textContent).toContain('Barcelona arrive with strong recent form');
     expect(container.textContent).toContain('Load Replay Clip');
     expect(container.textContent).toContain('Start the booth');
     expect(container.textContent).toContain('Show system details');
@@ -333,7 +404,7 @@ describe('App dashboard', () => {
     );
   });
 
-  it('keeps the landing screen focused on practice mode instead of fixture assists', async () => {
+  it('prefers the worker assist in the main overlay when one is available', async () => {
     currentWorldState = createWorldState({
       assist: createEmptyAssistCard(),
       sessionMemory: createEmptySessionMemory(),
@@ -367,7 +438,7 @@ describe('App dashboard', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).not.toContain('Courtois keeps Madrid alive with an enormous reflex stop.');
+    expect(container.textContent).toContain('Courtois keeps Madrid alive with an enormous reflex stop.');
     expect(container.textContent).toContain('Show system details');
   });
 });

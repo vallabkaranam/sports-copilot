@@ -58,8 +58,26 @@ export const CoHostTossUpCueSchema = z.object({
 });
 export type CoHostTossUpCue = z.infer<typeof CoHostTossUpCueSchema>;
 
-export const MemoryTierSchema = z.enum(['static', 'session', 'live']);
+export const MemoryTierSchema = z.enum(['static', 'session', 'live', 'pre_match']);
 export type MemoryTier = z.infer<typeof MemoryTierSchema>;
+
+export const PreMatchChunkCategorySchema = z.enum([
+  'recent-form',
+  'head-to-head',
+  'venue',
+  'weather',
+  'opener',
+  'trend',
+]);
+export type PreMatchChunkCategory = z.infer<typeof PreMatchChunkCategorySchema>;
+
+export const RetrievalPhaseHintSchema = z.enum([
+  'pre_kickoff',
+  'early_match',
+  'quiet_stretch',
+  'general',
+]);
+export type RetrievalPhaseHint = z.infer<typeof RetrievalPhaseHintSchema>;
 
 export const SocialPostSchema = z.object({
   timestamp: z.number(),
@@ -102,6 +120,14 @@ export const SourceChipSchema = z.object({
   label: z.string(),
   source: z.string(),
   relevance: z.number().min(0).max(1),
+  metadata: z
+    .object({
+      chunkCategory: PreMatchChunkCategorySchema.optional(),
+      teamSide: TeamSideSchema.optional(),
+      fixtureId: z.string().optional(),
+      phaseHints: z.array(RetrievalPhaseHintSchema).optional(),
+    })
+    .optional(),
 });
 export type SourceChip = z.infer<typeof SourceChipSchema>;
 
@@ -112,6 +138,14 @@ export const RetrievedFactSchema = z.object({
   source: z.string(),
   timestamp: z.number().nullable(),
   relevance: z.number().min(0).max(1),
+  metadata: z
+    .object({
+      chunkCategory: PreMatchChunkCategorySchema.optional(),
+      teamSide: TeamSideSchema.optional(),
+      fixtureId: z.string().optional(),
+      phaseHints: z.array(RetrievalPhaseHintSchema).optional(),
+    })
+    .optional(),
   sourceChip: SourceChipSchema,
 });
 export type RetrievedFact = z.infer<typeof RetrievedFactSchema>;
@@ -244,6 +278,85 @@ export const LiveMatchStateSchema = z.object({
 });
 export type LiveMatchState = z.infer<typeof LiveMatchStateSchema>;
 
+export const MatchResultSchema = z.enum(['win', 'draw', 'loss', 'unknown']);
+export type MatchResult = z.infer<typeof MatchResultSchema>;
+
+export const PreMatchLoadStatusSchema = z.enum(['pending', 'ready', 'degraded']);
+export type PreMatchLoadStatus = z.infer<typeof PreMatchLoadStatusSchema>;
+
+export const RecentMatchSummarySchema = z.object({
+  fixtureId: z.string(),
+  kickoffAt: z.string(),
+  opponent: z.string(),
+  venue: z.enum(['home', 'away', 'neutral']),
+  scoreFor: z.number(),
+  scoreAgainst: z.number(),
+  result: MatchResultSchema,
+});
+export type RecentMatchSummary = z.infer<typeof RecentMatchSummarySchema>;
+
+export const TeamRecentFormSchema = z.object({
+  teamSide: TeamSideSchema,
+  teamName: z.string(),
+  record: z.object({
+    wins: z.number().int().nonnegative(),
+    draws: z.number().int().nonnegative(),
+    losses: z.number().int().nonnegative(),
+  }),
+  lastFive: z.array(RecentMatchSummarySchema),
+});
+export type TeamRecentForm = z.infer<typeof TeamRecentFormSchema>;
+
+export const HeadToHeadSummarySchema = z.object({
+  meetings: z.array(RecentMatchSummarySchema),
+  homeWins: z.number().int().nonnegative(),
+  awayWins: z.number().int().nonnegative(),
+  draws: z.number().int().nonnegative(),
+  summary: z.string(),
+});
+export type HeadToHeadSummary = z.infer<typeof HeadToHeadSummarySchema>;
+
+export const VenueSummarySchema = z.object({
+  name: z.string(),
+  city: z.string().nullable(),
+  country: z.string().nullable(),
+  capacity: z.number().int().nonnegative().nullable(),
+  surface: z.string().nullable(),
+});
+export type VenueSummary = z.infer<typeof VenueSummarySchema>;
+
+export const WeatherSummarySchema = z.object({
+  summary: z.string(),
+  temperatureC: z.number().nullable(),
+  windKph: z.number().nullable(),
+  precipitationMm: z.number().nullable(),
+  source: z.string(),
+  isFallback: z.boolean(),
+});
+export type WeatherSummary = z.infer<typeof WeatherSummarySchema>;
+
+export const PreMatchSourceMetadataSchema = z.object({
+  provider: z.string(),
+  fetchedAt: z.number(),
+  sourceNotes: z.array(z.string()),
+  usedWeatherFallback: z.boolean(),
+});
+export type PreMatchSourceMetadata = z.infer<typeof PreMatchSourceMetadataSchema>;
+
+export const PreMatchStateSchema = z.object({
+  loadStatus: PreMatchLoadStatusSchema,
+  generatedAt: z.number(),
+  homeRecentForm: TeamRecentFormSchema,
+  awayRecentForm: TeamRecentFormSchema,
+  headToHead: HeadToHeadSummarySchema,
+  venue: VenueSummarySchema,
+  weather: WeatherSummarySchema.nullable(),
+  deterministicOpener: z.string(),
+  aiOpener: z.string().nullable(),
+  sourceMetadata: PreMatchSourceMetadataSchema,
+});
+export type PreMatchState = z.infer<typeof PreMatchStateSchema>;
+
 export function createEmptyLiveMatchState(): LiveMatchState {
   return {
     provider: 'sportmonks',
@@ -274,6 +387,51 @@ export function createEmptyLiveMatchState(): LiveMatchState {
     ],
     substitutions: [],
     stats: [],
+  };
+}
+
+function createEmptyTeamRecentForm(teamSide: TeamSide, teamName: string): TeamRecentForm {
+  return {
+    teamSide,
+    teamName,
+    record: {
+      wins: 0,
+      draws: 0,
+      losses: 0,
+    },
+    lastFive: [],
+  };
+}
+
+export function createEmptyPreMatchState(): PreMatchState {
+  return {
+    loadStatus: 'pending',
+    generatedAt: 0,
+    homeRecentForm: createEmptyTeamRecentForm('home', 'Home'),
+    awayRecentForm: createEmptyTeamRecentForm('away', 'Away'),
+    headToHead: {
+      meetings: [],
+      homeWins: 0,
+      awayWins: 0,
+      draws: 0,
+      summary: 'Head-to-head history is not loaded yet.',
+    },
+    venue: {
+      name: 'Venue pending',
+      city: null,
+      country: null,
+      capacity: null,
+      surface: null,
+    },
+    weather: null,
+    deterministicOpener: 'Pre-match context is loading.',
+    aiOpener: null,
+    sourceMetadata: {
+      provider: 'sportmonks',
+      fetchedAt: 0,
+      sourceNotes: [],
+      usedWeatherFallback: false,
+    },
   };
 }
 
@@ -395,6 +553,7 @@ export const WorldStateSchema = z.object({
   narrative: NarrativeStateSchema,
   retrieval: RetrievalStateSchema,
   assist: AssistCardSchema,
+  preMatch: PreMatchStateSchema,
   liveMatch: LiveMatchStateSchema,
   liveSignals: z.object({
     social: z.array(SocialPostSchema),

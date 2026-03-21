@@ -281,6 +281,15 @@ function createPracticeAssist(boothSignal: BoothSignal) {
   };
 }
 
+function formatFormRecord(
+  form: {
+    record: { wins: number; draws: number; losses: number };
+    lastFive: Array<unknown>;
+  },
+) {
+  return `${form.record.wins}-${form.record.draws}-${form.record.losses} (${form.lastFive.length})`;
+}
+
 function App() {
   const [worldState, setWorldState] = useState(createInitialWorldState);
   const [controls, setControls] = useState<ReplayControlState>({
@@ -689,26 +698,28 @@ function App() {
     isMicListening || boothTranscript.length > 0 || boothInterimTranscript.length > 0;
   const isPracticeMode = true;
   const practiceAssist = createPracticeAssist(boothSignal);
-  const shouldSurfaceAssist =
-    isPracticeMode
-      ? boothHasLiveInput && boothSignal.shouldSurfaceAssist
-      : assist.type !== 'none' &&
-        (controls.forceHesitation ||
-          !boothHasLiveInput ||
-          boothSignal.shouldSurfaceAssist ||
-          worldState.commentator.hesitationScore >= LIVE_HESITATION_GATE);
-  const activeAssist = isPracticeMode
-    ? {
-        ...assist,
-        type: practiceAssist.type,
-        text: practiceAssist.text,
-        whyNow: practiceAssist.whyNow,
-        urgency: practiceAssist.urgency,
-        confidence: practiceAssist.confidence,
-        sourceChips: [],
-        styleMode: 'analyst' as const,
-      }
-    : assist;
+  const workerAssistShouldSurface =
+    assist.type !== 'none' &&
+    (controls.forceHesitation ||
+      !boothHasLiveInput ||
+      boothSignal.shouldSurfaceAssist ||
+      worldState.commentator.hesitationScore >= LIVE_HESITATION_GATE);
+  const practiceAssistShouldSurface = boothHasLiveInput && boothSignal.shouldSurfaceAssist;
+  const shouldSurfaceAssist = workerAssistShouldSurface || practiceAssistShouldSurface;
+  const activeAssist = workerAssistShouldSurface
+    ? assist
+    : isPracticeMode
+      ? {
+          ...assist,
+          type: practiceAssist.type,
+          text: practiceAssist.text,
+          whyNow: practiceAssist.whyNow,
+          urgency: practiceAssist.urgency,
+          confidence: practiceAssist.confidence,
+          sourceChips: [],
+          styleMode: 'analyst' as const,
+        }
+      : assist;
   const assistConfidencePercent = formatPercent(shouldSurfaceAssist ? activeAssist.confidence : 0);
   const hesitationPercent = formatPercent(
     boothHasLiveInput ? boothSignal.hesitationScore : worldState.commentator.hesitationScore,
@@ -748,6 +759,7 @@ function App() {
     boothSignal.repeatedPhrases.length > 0 ? 'repeat-start' : null,
     boothSignal.unfinishedPhrase ? 'unfinished' : null,
   ].filter(Boolean) as string[];
+  const preMatchSummary = worldState.preMatch.aiOpener ?? worldState.preMatch.deterministicOpener;
 
   return (
     <div className="app-shell">
@@ -777,6 +789,74 @@ function App() {
       </header>
 
       {error ? <div className="warning-banner">{error}</div> : null}
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <p className="panel-kicker">Session Opener</p>
+            <h2>Pre-match brief</h2>
+          </div>
+          <span className="panel-tag">{worldState.preMatch.loadStatus}</span>
+        </div>
+
+        <div className="narrative-focus">
+          <p className="narrative-label">Opening read</p>
+          <h3>{preMatchSummary}</h3>
+          <p>
+            {worldState.preMatch.aiOpener
+              ? 'AI-polished from the same structured packet.'
+              : 'Deterministic summary from structured match context.'}
+          </p>
+        </div>
+
+        <div className="narrative-stack">
+          <span className="stack-chip">
+            {worldState.liveMatch.homeTeam.shortCode || 'HOME'} form {formatFormRecord(worldState.preMatch.homeRecentForm)}
+          </span>
+          <span className="stack-chip">
+            {worldState.liveMatch.awayTeam.shortCode || 'AWAY'} form {formatFormRecord(worldState.preMatch.awayRecentForm)}
+          </span>
+          <span className="stack-chip">{worldState.preMatch.venue.name}</span>
+          <span className="stack-chip">
+            {worldState.preMatch.weather?.summary ?? 'Weather unavailable'}
+          </span>
+        </div>
+
+        <div className="memory-strip">
+          <p className="memory-title">Session context</p>
+          <div className="session-context-grid">
+            <article className="context-card context-card--wide">
+              <p className="context-label">Head to head</p>
+              <p className="context-value">{worldState.preMatch.headToHead.summary}</p>
+            </article>
+            <article className="context-card">
+              <p className="context-label">Venue</p>
+              <p className="context-value">
+                {[
+                  worldState.preMatch.venue.name,
+                  worldState.preMatch.venue.city,
+                  worldState.preMatch.venue.country,
+                ]
+                  .filter(Boolean)
+                  .join(', ')}
+              </p>
+            </article>
+            <article className="context-card">
+              <p className="context-label">Weather</p>
+              <p className="context-value">
+                {worldState.preMatch.weather
+                  ? `${worldState.preMatch.weather.summary}${
+                      worldState.preMatch.weather.temperatureC !== null
+                        ? ` · ${Math.round(worldState.preMatch.weather.temperatureC)}C`
+                        : ''
+                    }`
+                  : 'Unavailable'}
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
       <div className="main-grid">
         <section className="panel replay-panel">
           <div className="panel-header">

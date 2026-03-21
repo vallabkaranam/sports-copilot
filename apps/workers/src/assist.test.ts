@@ -63,6 +63,27 @@ function makeRetrievalState(): RetrievalState {
         relevance: 0.64,
         sourceChip: makeSourceChip('static-narrative-n1', 'static:narratives:rivalry', 0.64),
       },
+      {
+        id: 'pre-match-form-home',
+        tier: 'pre_match',
+        text: 'Barcelona recent form: 3-1-1 across the last 5.',
+        source: 'pre-match:recent-form',
+        timestamp: 1_000,
+        relevance: 0.72,
+        metadata: {
+          chunkCategory: 'recent-form',
+          teamSide: 'home',
+          phaseHints: ['pre_kickoff', 'early_match', 'quiet_stretch'],
+        },
+        sourceChip: {
+          ...makeSourceChip('pre-match-form-home', 'pre_match:pre-match:recent-form', 0.72),
+          metadata: {
+            chunkCategory: 'recent-form',
+            teamSide: 'home',
+            phaseHints: ['pre_kickoff', 'early_match', 'quiet_stretch'],
+          },
+        },
+      },
     ],
   };
 }
@@ -206,5 +227,38 @@ describe('assist pipeline', () => {
     });
 
     expect(assist.styleMode).toBe('analyst');
+  });
+
+  it('uses pre-match context when hesitation opens without a recent live event fact', () => {
+    const assist = buildAssistCard({
+      clockMs: 5_000,
+      events: [
+        {
+          id: 'opening-shape',
+          timestamp: 1_000,
+          matchTime: '00:01',
+          type: 'POSSESSION',
+          description: 'Barcelona settle into the opening shape.',
+          highSalience: false,
+          data: { team: 'BAR' },
+        },
+      ],
+      commentator: makeCommentatorState({
+        hesitationScore: 0.52,
+        pauseDurationMs: 2_800,
+      }),
+      narrative: createEmptyNarrativeState(),
+      retrieval: {
+        query: 'opening context',
+        supportingFacts: makeRetrievalState().supportingFacts.filter(
+          (fact) => fact.tier === 'pre_match',
+        ),
+      },
+      preferredStyleMode: 'analyst',
+      forceIntervention: true,
+    });
+
+    expect(assist.type).not.toBe('none');
+    expect(assist.sourceChips.some((chip) => chip.metadata?.chunkCategory === 'recent-form')).toBe(true);
   });
 });

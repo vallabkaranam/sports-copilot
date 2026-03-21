@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { GameEvent, SocialPost, TranscriptEntry, VisionCue } from '@sports-copilot/shared-types';
+import {
+  GameEvent,
+  SocialPost,
+  TranscriptEntry,
+  VisionCue,
+  createEmptyPreMatchState,
+} from '@sports-copilot/shared-types';
 import {
   NarrativeFixture,
   RosterFixture,
@@ -140,5 +146,140 @@ describe('retrieval pipeline', () => {
     });
 
     expect(state.supportingFacts.some((fact) => fact.source.includes('vision:replay'))).toBe(true);
+  });
+
+  it('makes pre-match facts available for downstream assists', () => {
+    const state = buildRetrievalState({
+      clockMs: 5_000,
+      events: [],
+      transcript: [],
+      roster,
+      narratives: [],
+      socialPosts: [],
+      preMatch: {
+        ...createEmptyPreMatchState(),
+        loadStatus: 'ready',
+        generatedAt: 1_000,
+        homeRecentForm: {
+          teamSide: 'home',
+          teamName: 'FC Barcelona',
+          record: { wins: 3, draws: 1, losses: 1 },
+          lastFive: [],
+        },
+        awayRecentForm: {
+          teamSide: 'away',
+          teamName: 'Real Madrid',
+          record: { wins: 4, draws: 0, losses: 1 },
+          lastFive: [],
+        },
+        headToHead: {
+          meetings: [],
+          homeWins: 2,
+          awayWins: 2,
+          draws: 1,
+          summary: 'Barcelona and Madrid have split the last five meetings.',
+        },
+        venue: {
+          name: 'Estadi Olimpic',
+          city: 'Barcelona',
+          country: 'Spain',
+          capacity: null,
+          surface: null,
+        },
+        weather: {
+          summary: 'Clear skies',
+          temperatureC: 18,
+          windKph: 9,
+          precipitationMm: 0,
+          source: 'open-meteo',
+          isFallback: true,
+        },
+        deterministicOpener: 'Deterministic opener.',
+        aiOpener: null,
+        sourceMetadata: {
+          provider: 'sportmonks',
+          fetchedAt: 1_000,
+          sourceNotes: [],
+          usedWeatherFallback: true,
+        },
+      },
+    });
+
+    expect(state.supportingFacts.some((fact) => fact.tier === 'pre_match')).toBe(true);
+    expect(
+      state.supportingFacts.some(
+        (fact) => fact.metadata?.chunkCategory === 'recent-form' || fact.metadata?.chunkCategory === 'venue',
+      ),
+    ).toBe(true);
+  });
+
+  it('lets pre-match chunks outrank static memory before kickoff', () => {
+    const state = buildRetrievalState({
+      clockMs: 0,
+      events: [],
+      transcript: [],
+      roster,
+      narratives,
+      socialPosts: [],
+      liveMatch: {
+        provider: 'sportmonks',
+        fixtureId: 'fixture-1',
+        status: 'not_started',
+        period: 'Pre-match',
+        minute: 0,
+        stoppageMinute: null,
+        lastUpdatedAt: 0,
+        isDegraded: false,
+        degradedReason: null,
+        homeTeam: { id: '1', name: 'FC Barcelona', shortCode: 'BAR', logoUrl: null },
+        awayTeam: { id: '2', name: 'Real Madrid', shortCode: 'RMA', logoUrl: null },
+        lineups: [],
+        cards: [],
+        substitutions: [],
+        stats: [],
+      },
+      preMatch: {
+        ...createEmptyPreMatchState(),
+        loadStatus: 'ready',
+        generatedAt: 1_000,
+        homeRecentForm: {
+          teamSide: 'home',
+          teamName: 'FC Barcelona',
+          record: { wins: 3, draws: 1, losses: 1 },
+          lastFive: [],
+        },
+        awayRecentForm: {
+          teamSide: 'away',
+          teamName: 'Real Madrid',
+          record: { wins: 4, draws: 0, losses: 1 },
+          lastFive: [],
+        },
+        headToHead: {
+          meetings: [],
+          homeWins: 2,
+          awayWins: 2,
+          draws: 1,
+          summary: 'Barcelona and Madrid have split the last five meetings.',
+        },
+        venue: {
+          name: 'Estadi Olimpic',
+          city: 'Barcelona',
+          country: 'Spain',
+          capacity: null,
+          surface: null,
+        },
+        weather: null,
+        deterministicOpener: 'Barcelona arrive with recent form on their side.',
+        aiOpener: null,
+        sourceMetadata: {
+          provider: 'sportmonks',
+          fetchedAt: 1_000,
+          sourceNotes: [],
+          usedWeatherFallback: false,
+        },
+      },
+    });
+
+    expect(state.supportingFacts[0]?.tier).toBe('pre_match');
   });
 });

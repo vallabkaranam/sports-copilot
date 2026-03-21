@@ -2,9 +2,13 @@ import {
   GameEvent,
   LiveMatchState,
   MemoryTier,
+  PreMatchChunkCategory,
+  PreMatchState,
+  RetrievalPhaseHint,
   RetrievedFact,
   RetrievalState,
   SocialPost,
+  TeamSide,
   TranscriptEntry,
   VisionCue,
 } from '@sports-copilot/shared-types';
@@ -17,6 +21,9 @@ const MAX_SUPPORTING_FACTS = 5;
 const LIVE_TIER_WEIGHT = 0.55;
 const SESSION_TIER_WEIGHT = 0.45;
 const STATIC_TIER_WEIGHT = 0.35;
+const PRE_MATCH_TIER_WEIGHT = 0.41;
+const HOT_EVENT_WINDOW_MS = 12_000;
+const QUIET_STRETCH_WINDOW_MS = 120_000;
 
 const STOP_WORDS = new Set([
   'a',
@@ -85,6 +92,7 @@ export interface RetrievalInput {
   socialPosts: SocialPost[];
   visionCues?: VisionCue[];
   liveMatch?: LiveMatchState;
+  preMatch?: PreMatchState;
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -117,6 +125,8 @@ function getTierWeight(tier: MemoryTier) {
   switch (tier) {
     case 'live':
       return LIVE_TIER_WEIGHT;
+    case 'pre_match':
+      return PRE_MATCH_TIER_WEIGHT;
     case 'session':
       return SESSION_TIER_WEIGHT;
     case 'static':
@@ -132,6 +142,7 @@ function buildSourceChip(fact: RankableFact, relevance: number) {
     label: fact.text.length > 72 ? `${fact.text.slice(0, 69)}...` : fact.text,
     source: `${fact.tier}:${fact.source}`,
     relevance,
+    metadata: fact.metadata,
   };
 }
 
@@ -149,6 +160,20 @@ function createRankableFact(
   return {
     ...fact,
     tags: uniqueTokens(fact.tags),
+  };
+}
+
+function buildPreMatchMetadata(params: {
+  chunkCategory: PreMatchChunkCategory;
+  fixtureId?: string;
+  teamSide?: TeamSide;
+  phaseHints?: RetrievalPhaseHint[];
+}) {
+  return {
+    chunkCategory: params.chunkCategory,
+    fixtureId: params.fixtureId,
+    teamSide: params.teamSide,
+    phaseHints: params.phaseHints ?? ['general'],
   };
 }
 
@@ -290,6 +315,149 @@ function buildLiveStatFacts(liveMatch?: LiveMatchState): RankableFact[] {
   );
 }
 
+function buildPreMatchFacts(preMatch?: PreMatchState): RankableFact[] {
+  if (!preMatch || preMatch.loadStatus === 'pending') {
+    return [];
+  }
+  const fixtureId = 'fixtureId' in preMatch ? undefined : undefined;
+  const facts: RankableFact[] = [];
+  const recentForms = [preMatch.homeRecentForm, preMatch.awayRecentForm] as const;
+
+  for (const form of recentForms) {
+    const formSummary = `${form.teamName} recent form: ${form.record.wins}-${form.record.draws}-${form.record.losses} across the last ${form.lastFive.length}.`;
+    facts.push(
+      createRankableFact({
+        id: `pre-match-form-${form.teamSide}`,
+        tier: 'pre_match',
+        text: formSummary,
+        source: 'pre-match:recent-form',
+        timestamp: preMatch.generatedAt,
+        metadata: buildPreMatchMetadata({
+          chunkCategory: 'recent-form',
+          teamSide: form.teamSide,
+          fixtureId,
+          phaseHints: ['pre_kickoff', 'early_match', 'quiet_stretch'],
+        }),
+        tags: [...tokenize(formSummary), normalizeText(form.teamName), normalizeText(form.teamSide)],
+      }),
+    );
+
+    for (const match of form.lastFive.slice(0, 3)) {
+      const text = `${form.teamName} ${match.result} ${match.scoreFor}-${match.scoreAgainst} vs ${match.opponent} in their last-five run.`;
+      facts.push(
+        createRankableFact({
+          id: `pre-match-form-match-${form.teamSide}-${match.fixtureId}`,
+          tier: 'pre_match',
+          text,
+          source: 'pre-match:trend',
+          timestamp: preMatch.generatedAt,
+          metadata: buildPreMatchMetadata({
+            chunkCategory: 'trend',
+            teamSide: form.teamSide,
+            fixtureId,
+            phaseHints: ['pre_kickoff', 'early_match', 'quiet_stretch'],
+          }),
+          tags: [...tokenize(text), normalizeText(form.teamName), normalizeText(match.opponent)],
+        }),
+      );
+    }
+  }
+
+  const headToHeadSummary = preMatch.headToHead.summary;
+  facts.push(
+    createRankableFact({
+      id: 'pre-match-head-to-head-summary',
+      tier: 'pre_match',
+      text: headToHeadSummary,
+      source: 'pre-match:head-to-head',
+      timestamp: preMatch.generatedAt,
+      metadata: buildPreMatchMetadata({
+        chunkCategory: 'head-to-head',
+        fixtureId,
+        phaseHints: ['pre_kickoff', 'early_match', 'quiet_stretch'],
+      }),
+      tags: tokenize(headToHeadSummary),
+    }),
+  );
+
+  for (const meeting of preMatch.headToHead.meetings.slice(0, 3)) {
+    const text = `${preMatch.homeRecentForm.teamName} ${meeting.scoreFor}-${meeting.scoreAgainst} ${meeting.result} against ${meeting.opponent} in a recent head-to-head meeting.`;
+    facts.push(
+      createRankableFact({
+        id: `pre-match-head-to-head-meeting-${meeting.fixtureId}`,
+        tier: 'pre_match',
+        text,
+        source: 'pre-match:head-to-head',
+        timestamp: preMatch.generatedAt,
+        metadata: buildPreMatchMetadata({
+          chunkCategory: 'head-to-head',
+          fixtureId,
+          phaseHints: ['pre_kickoff', 'early_match', 'quiet_stretch'],
+        }),
+        tags: tokenize(text),
+      }),
+    );
+  }
+
+  const venueText = `Venue: ${[preMatch.venue.name, preMatch.venue.city, preMatch.venue.country]
+    .filter(Boolean)
+    .join(', ')}.`;
+  facts.push(
+    createRankableFact({
+      id: 'pre-match-venue',
+      tier: 'pre_match',
+      text: venueText,
+      source: 'pre-match:venue',
+      timestamp: preMatch.generatedAt,
+      metadata: buildPreMatchMetadata({
+        chunkCategory: 'venue',
+        fixtureId,
+        phaseHints: ['pre_kickoff', 'early_match', 'quiet_stretch'],
+      }),
+      tags: tokenize(venueText),
+    }),
+  );
+
+  if (preMatch.weather) {
+    const weatherText = `Weather: ${preMatch.weather.summary}${
+      preMatch.weather.temperatureC !== null ? ` at ${Math.round(preMatch.weather.temperatureC)}C` : ''
+    }.`;
+    facts.push(
+      createRankableFact({
+        id: 'pre-match-weather',
+        tier: 'pre_match',
+        text: weatherText,
+        source: 'pre-match:weather',
+        timestamp: preMatch.generatedAt,
+        metadata: buildPreMatchMetadata({
+          chunkCategory: 'weather',
+          fixtureId,
+          phaseHints: ['pre_kickoff', 'early_match', 'quiet_stretch'],
+        }),
+        tags: tokenize(weatherText),
+      }),
+    );
+  }
+
+  facts.push(
+    createRankableFact({
+      id: 'pre-match-opener',
+      tier: 'pre_match',
+      text: preMatch.deterministicOpener,
+      source: 'pre-match:opener',
+      timestamp: preMatch.generatedAt,
+      metadata: buildPreMatchMetadata({
+        chunkCategory: 'opener',
+        fixtureId,
+        phaseHints: ['pre_kickoff', 'early_match', 'quiet_stretch'],
+      }),
+      tags: tokenize(preMatch.deterministicOpener),
+    }),
+  );
+
+  return facts;
+}
+
 function buildQuery(clockMs: number, events: GameEvent[], transcript: TranscriptEntry[]) {
   const latestEvent = [...events]
     .filter((event) => event.timestamp <= clockMs)
@@ -318,11 +486,32 @@ function buildFocusTokens(clockMs: number, events: GameEvent[], transcript: Tran
   ]);
 }
 
+function determineMatchPhase(clockMs: number, events: GameEvent[], liveMatch?: LiveMatchState): RetrievalPhaseHint {
+  if (!liveMatch || liveMatch.status === 'not_started' || (events.length === 0 && liveMatch.minute === 0)) {
+    return 'pre_kickoff';
+  }
+
+  if (liveMatch.minute > 0 && liveMatch.minute <= 15) {
+    return 'early_match';
+  }
+
+  const latestEvent = [...events]
+    .filter((event) => event.timestamp <= clockMs)
+    .sort((a, b) => b.timestamp - a.timestamp)[0];
+
+  if (!latestEvent || clockMs - latestEvent.timestamp >= QUIET_STRETCH_WINDOW_MS) {
+    return 'quiet_stretch';
+  }
+
+  return 'general';
+}
+
 function scoreFact(
   clockMs: number,
   fact: RankableFact,
   focusTokens: string[],
   latestEvent?: GameEvent,
+  matchPhase: RetrievalPhaseHint = 'general',
 ) {
   let score = getTierWeight(fact.tier);
   const tagSet = new Set(fact.tags);
@@ -340,10 +529,29 @@ function scoreFact(
     score += 0.08;
   }
 
+  if (fact.tier === 'pre_match') {
+    if (fact.metadata?.phaseHints?.includes(matchPhase)) {
+      score += matchPhase === 'pre_kickoff' ? 0.22 : matchPhase === 'early_match' ? 0.16 : 0.12;
+    }
+
+    if (latestEvent && clockMs - latestEvent.timestamp <= HOT_EVENT_WINDOW_MS) {
+      score -= 0.14;
+    }
+
+    if (fact.metadata?.chunkCategory === 'opener' && matchPhase === 'general') {
+      score -= 0.06;
+    }
+  }
+
   if (fact.timestamp !== null) {
     const ageMs = Math.max(0, clockMs - fact.timestamp);
-    const freshnessWindowMs = fact.tier === 'live' ? LIVE_MEMORY_WINDOW_MS : SESSION_EVENT_WINDOW_MS;
-    const freshnessWeight = fact.tier === 'live' ? 0.18 : 0.12;
+    const freshnessWindowMs =
+      fact.tier === 'live'
+        ? LIVE_MEMORY_WINDOW_MS
+        : fact.tier === 'pre_match'
+          ? Math.max(clockMs, 1)
+          : SESSION_EVENT_WINDOW_MS;
+    const freshnessWeight = fact.tier === 'live' ? 0.18 : fact.tier === 'pre_match' ? 0.04 : 0.12;
     const freshnessScore = Math.max(0, 1 - ageMs / freshnessWindowMs) * freshnessWeight;
     score += freshnessScore;
   }
@@ -360,9 +568,11 @@ export function buildRetrievalState({
   socialPosts,
   visionCues = [],
   liveMatch,
+  preMatch,
 }: RetrievalInput): RetrievalState {
   const query = buildQuery(clockMs, events, transcript);
   const focusTokens = buildFocusTokens(clockMs, events, transcript);
+  const matchPhase = determineMatchPhase(clockMs, events, liveMatch);
   const latestEvent = [...events]
     .filter((event) => event.timestamp <= clockMs)
     .sort((a, b) => b.timestamp - a.timestamp)[0];
@@ -371,12 +581,13 @@ export function buildRetrievalState({
     ...buildLiveStatFacts(liveMatch),
     ...buildLiveMemory(clockMs, socialPosts),
     ...buildSessionMemory(clockMs, events, transcript),
+    ...buildPreMatchFacts(preMatch),
     ...buildStaticMemory(roster, narratives),
   ];
 
   const supportingFacts = candidateFacts
     .map((fact) => {
-      const relevance = scoreFact(clockMs, fact, focusTokens, latestEvent);
+      const relevance = scoreFact(clockMs, fact, focusTokens, latestEvent, matchPhase);
 
       return {
         id: fact.id,
@@ -385,6 +596,7 @@ export function buildRetrievalState({
         source: fact.source,
         timestamp: fact.timestamp,
         relevance,
+        metadata: fact.metadata,
         sourceChip: buildSourceChip(fact, relevance),
       };
     })

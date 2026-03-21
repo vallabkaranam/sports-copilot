@@ -5,6 +5,7 @@ import {
   createEmptyCommentatorState,
   createEmptyLiveMatchState,
   createEmptyNarrativeState,
+  createEmptyPreMatchState,
   createEmptyRetrievalState,
   createEmptySessionMemory,
 } from '@sports-copilot/shared-types';
@@ -36,6 +37,7 @@ export function createInitialWorldState(): WorldState {
     narrative: createEmptyNarrativeState(),
     retrieval: createEmptyRetrievalState(),
     assist: createEmptyAssistCard(),
+    preMatch: createEmptyPreMatchState(),
     liveMatch: createEmptyLiveMatchState(),
     liveSignals: {
       social: [],
