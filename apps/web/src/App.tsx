@@ -561,19 +561,30 @@ function App() {
     setBoothError(null);
   }
 
-  async function togglePlayback() {
-    await sendControlPatch({
-      playbackStatus: controls.playbackStatus === 'playing' ? 'paused' : 'playing',
-    });
-  }
-
-  async function toggleMicrophone() {
-    if (isMicListening) {
-      stopMicrophone();
-      return;
+  async function startBroadcast() {
+    if (controls.playbackStatus !== 'playing') {
+      await sendControlPatch({ playbackStatus: 'playing' });
     }
 
-    startMicrophone();
+    if (!isMicListening && isMicSupported) {
+      startMicrophone();
+    }
+  }
+
+  async function stopBroadcast() {
+    if (isMicListening) {
+      stopMicrophone();
+    }
+
+    if (controls.playbackStatus !== 'paused') {
+      await sendControlPatch({ playbackStatus: 'paused' });
+    }
+  }
+
+  async function resetBroadcast() {
+    await stopBroadcast();
+    clearBoothTranscript();
+    await sendControlPatch({ restart: true });
   }
 
   const assist = worldState.assist;
@@ -620,7 +631,7 @@ function App() {
       ? 'Talk through the play and leave a beat. The assist will surface once your cadence breaks.'
       : 'No assist needed right now.';
   const assistType = shouldSurfaceAssist ? assist.type : 'none';
-  const assistStyleMode = shouldSurfaceAssist ? assist.styleMode : controls.preferredStyleMode;
+  const assistStyleMode = shouldSurfaceAssist ? assist.styleMode : 'analyst';
   const assistConfidencePercent = formatPercent(shouldSurfaceAssist ? assist.confidence : 0);
   const hesitationPercent = formatPercent(
     boothHasLiveInput ? boothSignal.hesitationScore : worldState.commentator.hesitationScore,
@@ -658,6 +669,7 @@ function App() {
       : isMicSupported
       ? 'status-pill--ghost'
       : 'status-pill--warning';
+  const isBroadcastLive = controls.playbackStatus === 'playing' || isMicListening;
   const replayToastSignature = `${assist.type}:${assist.text}:${shouldSurfaceAssist}:${controls.restartToken}`;
 
   return (
@@ -677,7 +689,9 @@ function App() {
             {error ? 'Reconnecting' : isHydrated ? 'Live Sync' : 'Booting'}
           </span>
           <span className={`status-pill ${boothStatusTone}`}>{boothStatusLabel}</span>
-          <span className="status-pill status-pill--ghost">{controls.preferredStyleMode} mode</span>
+          <span className="status-pill status-pill--ghost">
+            {isBroadcastLive ? 'Broadcast live' : 'Broadcast idle'}
+          </span>
         </div>
       </header>
 
@@ -823,59 +837,29 @@ function App() {
           <section className="panel control-panel">
             <div className="panel-header">
               <div>
-                <p className="panel-kicker">Commentator Booth</p>
-                <h2>Talk into the replay</h2>
+                <p className="panel-kicker">Broadcast Control</p>
+                <h2>Start the booth</h2>
               </div>
               <span className="panel-tag">{isUpdatingControls ? 'Applying' : boothStatusLabel}</span>
             </div>
 
             <div className="control-group">
-              <p className="control-label">Booth Controls</p>
+              <p className="control-label">Broadcast</p>
               <div className="primary-controls">
                 <button
                   type="button"
-                  className={controls.playbackStatus === 'playing' ? 'is-active' : ''}
-                  onClick={() => void togglePlayback()}
+                  className={isBroadcastLive ? 'is-active' : ''}
+                  onClick={() => void (isBroadcastLive ? stopBroadcast() : startBroadcast())}
                 >
-                  {controls.playbackStatus === 'playing' ? 'Pause Replay' : 'Play Replay'}
-                </button>
-                <button
-                  type="button"
-                  className={isMicListening ? 'is-active' : ''}
-                  onClick={() => void toggleMicrophone()}
-                  disabled={!isMicSupported && !isMicListening}
-                >
-                  {isMicListening ? 'Stop Mic' : 'Start Mic'}
+                  {isBroadcastLive ? 'Stop Broadcast' : 'Start Broadcast'}
                 </button>
               </div>
               <div className="inline-actions">
-                <button type="button" className="text-button" onClick={() => void sendControlPatch({ restart: true })}>
-                  Restart replay
+                <button type="button" className="text-button" onClick={() => void resetBroadcast()}>
+                  Reset broadcast
                 </button>
                 <button type="button" className="text-button" onClick={clearBoothTranscript}>
                   Clear transcript
-                </button>
-              </div>
-            </div>
-
-            <div className="control-group">
-              <p className="control-label">Style Mode</p>
-              <div className="segmented-control segmented-control--compact">
-                <button
-                  type="button"
-                  aria-pressed={controls.preferredStyleMode === 'analyst'}
-                  className={controls.preferredStyleMode === 'analyst' ? 'is-active' : ''}
-                  onClick={() => void sendControlPatch({ preferredStyleMode: 'analyst' })}
-                >
-                  Analyst
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={controls.preferredStyleMode === 'hype'}
-                  className={controls.preferredStyleMode === 'hype' ? 'is-active' : ''}
-                  onClick={() => void sendControlPatch({ preferredStyleMode: 'hype' })}
-                >
-                  Hype
                 </button>
               </div>
             </div>
@@ -924,20 +908,6 @@ function App() {
                 ) : null}
               </div>
             </article>
-
-            <div className="control-group">
-              <p className="control-label">Demo Backup</p>
-              <button
-                type="button"
-                className={`toggle-button ${controls.forceHesitation ? 'toggle-button--on' : ''}`}
-                aria-pressed={controls.forceHesitation}
-                onClick={() =>
-                  void sendControlPatch({ forceHesitation: !controls.forceHesitation })
-                }
-              >
-                {controls.forceHesitation ? 'Forced assist is on' : 'Force assist if needed'}
-              </button>
-            </div>
           </section>
 
           <section className="panel assist-panel">
@@ -970,7 +940,7 @@ function App() {
                 <span className="meta-pill">
                   {shouldSurfaceAssist ? assist.urgency : 'standing by'} urgency
                 </span>
-                <span className="meta-pill">{controls.preferredStyleMode} preference</span>
+                <span className="meta-pill">{assistStyleMode} delivery</span>
                 <span className="meta-pill">
                   {shouldSurfaceAssist ? assist.sourceChips.length : 0} sources grounded
                 </span>

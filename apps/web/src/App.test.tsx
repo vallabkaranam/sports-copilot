@@ -242,7 +242,7 @@ describe('App dashboard', () => {
     expect(container.textContent).toContain('Barcelona');
     expect(container.textContent).toContain('Real Madrid');
     expect(container.textContent).toContain('Load Replay Clip');
-    expect(container.textContent).toContain('Talk into the replay');
+    expect(container.textContent).toContain('Start the booth');
     expect(container.textContent).toContain('Event Timeline');
     expect(container.textContent).toContain('Narrative Stack');
     expect(container.textContent).toContain('Booth hesitation tracker');
@@ -253,28 +253,19 @@ describe('App dashboard', () => {
     await renderApp();
 
     const playButton = container.querySelector('button');
-    expect(playButton?.textContent).toBe('Play Replay');
+    expect(playButton?.textContent).toBe('Start Broadcast');
 
     await act(async () => {
       playButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
-    const hypeButton = [...container.querySelectorAll('button')].find(
-      (button) => button.textContent === 'Hype',
+    const resetButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Reset broadcast'),
     );
 
     await act(async () => {
-      hypeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    const forceButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Force assist'),
-    );
-
-    await act(async () => {
-      forceButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      resetButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
@@ -285,8 +276,7 @@ describe('App dashboard', () => {
     expect(postBodies).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ playbackStatus: 'playing' }),
-        expect.objectContaining({ preferredStyleMode: 'hype' }),
-        expect.objectContaining({ forceHesitation: true }),
+        expect.objectContaining({ restart: true }),
       ]),
     );
   });

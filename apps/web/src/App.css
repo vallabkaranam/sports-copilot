@@ -491,17 +491,6 @@
   margin-top: 10px;
 }
 
-.segmented-control {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-}
-
-.segmented-control--compact {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.segmented-control button,
 .toggle-button,
 .primary-controls button {
   border-radius: 18px;
@@ -517,10 +506,8 @@
   cursor: pointer;
 }
 
-.segmented-control button:hover,
 .toggle-button:hover,
 .primary-controls button:hover,
-.segmented-control button:focus-visible,
 .toggle-button:focus-visible,
 .primary-controls button:focus-visible {
   transform: translateY(-1px);
@@ -529,7 +516,6 @@
   outline: none;
 }
 
-.segmented-control .is-active,
 .toggle-button--on,
 .primary-controls .is-active {
   border-color: rgba(52, 121, 111, 0.32);
@@ -537,7 +523,6 @@
   color: var(--teal-deep);
 }
 
-.segmented-control button:disabled,
 .primary-controls button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
@@ -783,8 +768,7 @@
 
   .timeline-item,
   .commentary-metadata,
-  .primary-controls,
-  .segmented-control {
+  .primary-controls {
     grid-template-columns: 1fr;
   }
 
