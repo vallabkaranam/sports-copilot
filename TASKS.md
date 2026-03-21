@@ -206,6 +206,14 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 - [x] style mode switch
 - [x] optional manual “force hesitation” control for demo backup
 
+### Interactive Booth Polish
+- [x] load a local replay clip into the UI
+- [x] show clip timing next to fixture timing
+- [x] capture booth speech with browser mic input
+- [x] track live hesitation in the browser booth
+- [x] gate assist reveal on live booth hesitation when mic input is active
+- [x] soften the visual design for live demo usability
+
 ### Tests
 - [x] e2e test dashboard render
 - [x] e2e test replay controls

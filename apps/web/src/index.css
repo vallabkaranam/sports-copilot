@@ -2,26 +2,29 @@
   font-family: 'Sora', 'Avenir Next', 'Trebuchet MS', sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color: #f5efe1;
+  color: #142330;
   background:
-    radial-gradient(circle at top, rgba(255, 197, 92, 0.18), transparent 32%),
-    radial-gradient(circle at 20% 20%, rgba(46, 167, 118, 0.18), transparent 28%),
-    linear-gradient(135deg, #08131c 0%, #102331 45%, #17333c 100%);
+    radial-gradient(circle at top, rgba(98, 164, 182, 0.18), transparent 34%),
+    radial-gradient(circle at 10% 15%, rgba(240, 214, 181, 0.34), transparent 28%),
+    linear-gradient(145deg, #edf3f4 0%, #f7f3eb 48%, #e3ecef 100%);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
-  --bg-panel: rgba(8, 18, 28, 0.76);
-  --bg-panel-strong: rgba(10, 22, 34, 0.92);
-  --border: rgba(255, 255, 255, 0.12);
-  --copy-muted: rgba(245, 239, 225, 0.7);
-  --copy-soft: rgba(245, 239, 225, 0.54);
-  --lime: #81f2ad;
-  --gold: #ffce78;
-  --crimson: #ff7e72;
-  --ice: #b6edff;
-  --shadow: 0 18px 55px rgba(2, 10, 18, 0.38);
+  --bg-panel: rgba(252, 250, 246, 0.78);
+  --bg-panel-strong: rgba(248, 244, 238, 0.94);
+  --border: rgba(20, 35, 48, 0.08);
+  --border-strong: rgba(20, 35, 48, 0.12);
+  --copy-strong: #142330;
+  --copy-muted: rgba(20, 35, 48, 0.72);
+  --copy-soft: rgba(20, 35, 48, 0.5);
+  --ink: #142330;
+  --teal: #78b6b0;
+  --teal-deep: #34796f;
+  --sand: #ecd3ab;
+  --terracotta: #b55d46;
+  --shadow: 0 20px 48px rgba(24, 41, 54, 0.12);
 }
 
 * {
@@ -36,6 +39,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  color: var(--copy-strong);
 }
 
 button,

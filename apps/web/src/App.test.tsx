@@ -235,16 +235,17 @@ describe('App dashboard', () => {
     });
   }
 
-  it('renders the broadcast dashboard with replay, timeline, narrative, and assist panels', async () => {
+  it('renders the live booth dashboard with replay, booth, timeline, and assist panels', async () => {
     await renderApp();
 
     expect(container.textContent).toContain('Sports Copilot');
     expect(container.textContent).toContain('Barcelona');
     expect(container.textContent).toContain('Real Madrid');
-    expect(container.textContent).toContain('Broadcast view');
+    expect(container.textContent).toContain('Load Replay Clip');
+    expect(container.textContent).toContain('Talk into the replay');
     expect(container.textContent).toContain('Event Timeline');
     expect(container.textContent).toContain('Narrative Stack');
-    expect(container.textContent).toContain('Hesitation Meter');
+    expect(container.textContent).toContain('Booth hesitation tracker');
     expect(container.textContent).toContain('Courtois is keeping Madrid alive in this pressure wave.');
   });
 

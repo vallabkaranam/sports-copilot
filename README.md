@@ -25,14 +25,18 @@ That command starts:
 - `apps/workers` replay loop pointed at the local fixtures
 - `apps/web` on `http://localhost:5173`
 
-Open `http://localhost:5173`, then use the control desk to:
+Open the web URL Vite prints, then use the booth controls to:
 - play, pause, and restart the replay
 - switch between `analyst` and `hype`
+- load a local replay clip so the footage is visible in the UI
+- start the browser mic to test live hesitation tracking
 - trigger the manual `force hesitation` backup if needed
 
 ## Demo Notes
 - The replay is deterministic and runs from local JSON fixtures in [data/demo_match](/Users/vallabkaranam/Desktop/sports-copilot/data/demo_match).
 - The dashboard is intentionally broadcast-oriented, not chat-oriented.
+- The browser booth mode is local-first: clip loading is done from your machine and mic transcription uses in-browser speech recognition.
+- Chrome or Edge currently give the best microphone support for the live booth flow.
 - Source chips, hesitation state, narrative stack, recent events, and vision cues all update from the shared world state.
 
 ## Verification
