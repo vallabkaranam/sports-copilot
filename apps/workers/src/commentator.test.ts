@@ -56,6 +56,7 @@ describe('commentary analysis', () => {
     expect(state.activeSpeaker).toBe('cohost');
     expect(state.coHostIsSpeaking).toBe(true);
     expect(state.shouldSuppressAssist).toBe(true);
+    expect(state.coHostTossUp).toBeNull();
   });
 
   it('clamps hesitation scores to the valid range', () => {
@@ -101,5 +102,32 @@ describe('commentary analysis', () => {
     ];
 
     expect(detectRepeatedPhrases(transcript)).toContain('barcelona pressing');
+  });
+
+  it('creates a co-host toss-up cue after a high-salience event and lead hesitation', () => {
+    const events: GameEvent[] = [
+      {
+        id: 'save-1',
+        timestamp: 75_000,
+        matchTime: '01:15',
+        type: 'SAVE',
+        description: 'Courtois gets across to make the stop.',
+        highSalience: true,
+        data: { player: 'Courtois' },
+      },
+    ];
+    const transcript: TranscriptEntry[] = [
+      { timestamp: 74_000, speaker: 'lead', text: 'He hits it hard—' },
+    ];
+
+    const state = analyzeCommentary({ clockMs: 77_500, events, transcript });
+
+    expect(state.coHostTossUp).toEqual({
+      question: "What did you make of Courtois's save there?",
+      reason: 'Recent high-salience action and lead hesitation make a co-host handoff timely.',
+      confidence: 0.85,
+      sourceEventId: 'save-1',
+      sourceEventType: 'SAVE',
+    });
   });
 });

@@ -1,5 +1,6 @@
 import {
   CommentatorState,
+  CoHostTossUpCue,
   GameEvent,
   TranscriptEntry,
   createEmptyCommentatorState,
@@ -11,6 +12,9 @@ const ACTIVE_SPEECH_WINDOW_MS = 2_500;
 const HIGH_SALIENCE_LOOKBACK_MS = 10_000;
 const HIGH_SALIENCE_SILENCE_TRIGGER_MS = 2_000;
 const UNFINISHED_PHRASE_TRIGGER_MS = 1_500;
+const COHOST_TOSS_UP_LOOKBACK_MS = 12_000;
+const COHOST_TOSS_UP_MIN_PAUSE_MS = 1_500;
+const COHOST_TOSS_UP_MIN_HESITATION_SCORE = 0.35;
 
 const FILLER_PATTERNS = [
   { label: 'uh', regex: /\buh\b/gi },
@@ -29,6 +33,10 @@ export interface CommentaryAnalysisInput {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+function roundToHundredths(value: number) {
+  return Number(value.toFixed(2));
 }
 
 function isEntryActive(entry: TranscriptEntry, clockMs: number) {
@@ -67,6 +75,31 @@ function getLeadingFragment(text: string) {
 
 function isUnfinishedPhrase(text: string) {
   return /(?:-|—|\.{3}|…)\s*$/.test(text.trim());
+}
+
+function getEventPlayer(event: GameEvent) {
+  return typeof event.data?.player === 'string' ? event.data.player : null;
+}
+
+function buildCoHostQuestion(event: GameEvent) {
+  const player = getEventPlayer(event);
+
+  switch (event.type) {
+    case 'SAVE':
+      return player
+        ? `What did you make of ${player}'s save there?`
+        : 'What did you make of that save?';
+    case 'CHANCE':
+      return player
+        ? `How did ${player} find that pocket of space?`
+        : 'How did that chance open up so quickly?';
+    case 'COUNTER_ATTACK':
+      return player
+        ? `How dangerous does ${player} look on the break right now?`
+        : 'How dangerous does that counter look to you?';
+    default:
+      return 'What stood out to you in that last sequence?';
+  }
 }
 
 function findLatestEntry(
@@ -111,6 +144,51 @@ export function detectRepeatedPhrases(transcript: TranscriptEntry[]) {
     .filter(([, count]) => count > 1)
     .map(([fragment]) => fragment)
     .sort();
+}
+
+function buildCoHostTossUp(params: {
+  clockMs: number;
+  hesitationScore: number;
+  pauseDurationMs: number;
+  unfinishedPhrase: boolean;
+  isSpeaking: boolean;
+  coHostIsSpeaking: boolean;
+  latestHighSalienceEvent?: GameEvent;
+}): CoHostTossUpCue | null {
+  const {
+    clockMs,
+    hesitationScore,
+    pauseDurationMs,
+    unfinishedPhrase,
+    isSpeaking,
+    coHostIsSpeaking,
+    latestHighSalienceEvent,
+  } = params;
+
+  if (!latestHighSalienceEvent || isSpeaking || coHostIsSpeaking) {
+    return null;
+  }
+
+  if (clockMs - latestHighSalienceEvent.timestamp > COHOST_TOSS_UP_LOOKBACK_MS) {
+    return null;
+  }
+
+  const shouldPrompt =
+    hesitationScore >= COHOST_TOSS_UP_MIN_HESITATION_SCORE ||
+    unfinishedPhrase ||
+    pauseDurationMs >= COHOST_TOSS_UP_MIN_PAUSE_MS;
+
+  if (!shouldPrompt) {
+    return null;
+  }
+
+  return {
+    question: buildCoHostQuestion(latestHighSalienceEvent),
+    reason: 'Recent high-salience action and lead hesitation make a co-host handoff timely.',
+    confidence: roundToHundredths(clamp(0.45 + hesitationScore * 0.5, 0, 1)),
+    sourceEventId: latestHighSalienceEvent.id,
+    sourceEventType: latestHighSalienceEvent.type,
+  };
 }
 
 export function analyzeCommentary({
@@ -182,16 +260,28 @@ export function analyzeCommentary({
     hesitationReasons.push('Lead commentator is repeating the same setup phrase.');
   }
 
+  const clampedHesitationScore = clamp(hesitationScore, 0, 1);
+  const coHostTossUp = buildCoHostTossUp({
+    clockMs,
+    hesitationScore: clampedHesitationScore,
+    pauseDurationMs,
+    unfinishedPhrase,
+    isSpeaking,
+    coHostIsSpeaking,
+    latestHighSalienceEvent,
+  });
+
   return {
     ...baseState,
     activeSpeaker: latestActiveEntry?.speaker ?? 'none',
     isSpeaking,
     coHostIsSpeaking,
+    coHostTossUp,
     pauseDurationMs,
     fillerWords,
     repeatedPhrases,
     unfinishedPhrase,
-    hesitationScore: clamp(hesitationScore, 0, 1),
+    hesitationScore: clampedHesitationScore,
     hesitationReasons,
     shouldSuppressAssist: coHostIsSpeaking,
     lastLeadSpokeAt,

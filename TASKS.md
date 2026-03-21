@@ -98,7 +98,7 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 ### Co-Host Agent
 - [x] model co-host speaking state
 - [x] suppress assist if co-host is actively speaking
-- [ ] allow toss-up prompt generation
+- [x] allow toss-up prompt generation
 
 ### Hesitation Agent
 - [x] compute hesitation score

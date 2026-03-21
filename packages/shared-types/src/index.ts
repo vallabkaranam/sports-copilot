@@ -26,6 +26,18 @@ export const TranscriptEntrySchema = z.object({
 export type TranscriptEntry = z.infer<typeof TranscriptEntrySchema>;
 
 /**
+ * Suggested toss-up cues for bringing in the co-host
+ */
+export const CoHostTossUpCueSchema = z.object({
+  question: z.string(),
+  reason: z.string(),
+  confidence: z.number().min(0).max(1),
+  sourceEventId: z.string(),
+  sourceEventType: z.string(),
+});
+export type CoHostTossUpCue = z.infer<typeof CoHostTossUpCueSchema>;
+
+/**
  * Source attribution chips
  */
 export const SourceChipSchema = z.object({
@@ -77,6 +89,7 @@ export const CommentatorStateSchema = z.object({
   activeSpeaker: ActiveSpeakerSchema,
   isSpeaking: z.boolean(),
   coHostIsSpeaking: z.boolean(),
+  coHostTossUp: CoHostTossUpCueSchema.nullable(),
   pauseDurationMs: z.number(),
   fillerWords: z.array(z.string()),
   repeatedPhrases: z.array(z.string()),
@@ -94,6 +107,7 @@ export function createEmptyCommentatorState(): CommentatorState {
     activeSpeaker: 'none',
     isSpeaking: false,
     coHostIsSpeaking: false,
+    coHostTossUp: null,
     pauseDurationMs: 0,
     fillerWords: [],
     repeatedPhrases: [],
