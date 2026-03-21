@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GameEvent, SocialPost, TranscriptEntry } from '@sports-copilot/shared-types';
+import { GameEvent, SocialPost, TranscriptEntry, VisionCue } from '@sports-copilot/shared-types';
 import {
   NarrativeFixture,
   RosterFixture,
@@ -67,6 +67,14 @@ describe('retrieval pipeline', () => {
     },
   ];
 
+  const visionCues: VisionCue[] = [
+    {
+      timestamp: 76_000,
+      tag: 'replay',
+      label: 'Replay isolates Courtois stretching full length',
+    },
+  ];
+
   it('prefers live memory over session and static when all tiers are relevant', () => {
     const state = buildRetrievalState({
       clockMs: 78_000,
@@ -118,5 +126,19 @@ describe('retrieval pipeline', () => {
 
     expect(ingestLiveSocialPosts(20_000, posts)).toHaveLength(1);
     expect(ingestLiveSocialPosts(80_000, posts)).toHaveLength(2);
+  });
+
+  it('makes active vision cues available in retrieval output', () => {
+    const state = buildRetrievalState({
+      clockMs: 78_000,
+      events,
+      transcript,
+      roster,
+      narratives,
+      socialPosts,
+      visionCues,
+    });
+
+    expect(state.supportingFacts.some((fact) => fact.source.includes('vision:replay'))).toBe(true);
   });
 });

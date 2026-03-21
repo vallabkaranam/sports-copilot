@@ -9,6 +9,9 @@ export type StyleMode = z.infer<typeof StyleModeSchema>;
 export const AssistUrgencySchema = z.enum(['low', 'medium', 'high']);
 export type AssistUrgency = z.infer<typeof AssistUrgencySchema>;
 
+export const ReplayPlaybackStatusSchema = z.enum(['playing', 'paused']);
+export type ReplayPlaybackStatus = z.infer<typeof ReplayPlaybackStatusSchema>;
+
 /**
  * Transcript speaker labels
  */
@@ -50,6 +53,25 @@ export const SocialPostSchema = z.object({
   sentiment: z.string(),
 });
 export type SocialPost = z.infer<typeof SocialPostSchema>;
+
+export const VisionCueTagSchema = z.enum([
+  'attack',
+  'replay',
+  'crowd-reaction',
+  'player-close-up',
+  'coach-reaction',
+  'celebration',
+  'set-piece',
+  'stoppage',
+]);
+export type VisionCueTag = z.infer<typeof VisionCueTagSchema>;
+
+export const VisionCueSchema = z.object({
+  timestamp: z.number(),
+  tag: VisionCueTagSchema,
+  label: z.string(),
+});
+export type VisionCue = z.infer<typeof VisionCueSchema>;
 
 /**
  * Source attribution chips
@@ -127,6 +149,21 @@ export const GameEventSchema = z.object({
 });
 export type GameEvent = z.infer<typeof GameEventSchema>;
 
+export const SessionMemorySchema = z.object({
+  recentEvents: z.array(GameEventSchema),
+  surfacedAssists: z.array(AssistCardSchema),
+  recentCommentary: z.array(TranscriptEntrySchema),
+});
+export type SessionMemory = z.infer<typeof SessionMemorySchema>;
+
+export function createEmptySessionMemory(): SessionMemory {
+  return {
+    recentEvents: [],
+    surfacedAssists: [],
+    recentCommentary: [],
+  };
+}
+
 /**
  * Commentator state trackers
  */
@@ -192,6 +229,23 @@ export function createEmptyNarrativeState(): NarrativeState {
   };
 }
 
+export const ReplayControlStateSchema = z.object({
+  playbackStatus: ReplayPlaybackStatusSchema,
+  preferredStyleMode: StyleModeSchema,
+  forceHesitation: z.boolean(),
+  restartToken: z.number().int().nonnegative(),
+});
+export type ReplayControlState = z.infer<typeof ReplayControlStateSchema>;
+
+export function createDefaultReplayControlState(): ReplayControlState {
+  return {
+    playbackStatus: 'paused',
+    preferredStyleMode: 'analyst',
+    forceHesitation: false,
+    restartToken: 0,
+  };
+}
+
 /**
  * Global World State
  */
@@ -203,14 +257,17 @@ export const WorldStateSchema = z.object({
     away: z.number(),
   }),
   possession: z.string(),
+  gameStateSummary: z.string(),
+  highSalienceMoments: z.array(GameEventSchema),
   recentEvents: z.array(GameEventSchema),
+  sessionMemory: SessionMemorySchema,
   commentator: CommentatorStateSchema,
   narrative: NarrativeStateSchema,
   retrieval: RetrievalStateSchema,
   assist: AssistCardSchema,
   liveSignals: z.object({
     social: z.array(SocialPostSchema),
-    vision: z.array(z.any()),
+    vision: z.array(VisionCueSchema),
   }),
 });
 export type WorldState = z.infer<typeof WorldStateSchema>;

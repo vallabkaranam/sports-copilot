@@ -30,6 +30,8 @@ export interface AssistPipelineInput {
   commentator: CommentatorState;
   narrative: NarrativeState;
   retrieval: RetrievalState;
+  preferredStyleMode?: StyleMode;
+  forceIntervention?: boolean;
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -278,11 +280,12 @@ function groundCandidate(draft: AssistDraft) {
 }
 
 export function generateAssistCandidates(input: AssistPipelineInput) {
-  const { clockMs, commentator, events, narrative, retrieval } = input;
+  const { clockMs, commentator, events, narrative, retrieval, preferredStyleMode } = input;
   const latestEvent = getLatestEvent(clockMs, events);
   const latestHighSalienceEvent = getLatestHighSalienceEvent(clockMs, events);
   const urgency = chooseAssistUrgency({ clockMs, commentator, events });
-  const preferredStyleMode = chooseStyleMode({ clockMs, commentator, events, urgency });
+  const rankedStyleMode =
+    preferredStyleMode ?? chooseStyleMode({ clockMs, commentator, events, urgency });
 
   if (!latestEvent) {
     return [];
@@ -344,7 +347,7 @@ export function generateAssistCandidates(input: AssistPipelineInput) {
     drafts.push({
       type: 'transition',
       text: buildTransitionLine(latestEvent),
-      styleMode: preferredStyleMode,
+      styleMode: rankedStyleMode,
       urgency: urgency === 'high' ? 'medium' : urgency,
       confidence: 0.58,
       whyNow: 'A short bridge line keeps the commentary lane active.',
@@ -383,12 +386,17 @@ export function rankAssistCandidates(candidates: AssistCard[], preferredStyleMod
 }
 
 export function buildAssistCard(input: AssistPipelineInput): AssistCard {
-  if (!shouldIntervene(input)) {
+  if (input.commentator.shouldSuppressAssist || input.commentator.coHostIsSpeaking) {
+    return createEmptyAssistCard();
+  }
+
+  if (!shouldIntervene(input) && !input.forceIntervention) {
     return createEmptyAssistCard();
   }
 
   const urgency = chooseAssistUrgency(input);
-  const preferredStyleMode = chooseStyleMode({ ...input, urgency });
+  const preferredStyleMode =
+    input.preferredStyleMode ?? chooseStyleMode({ ...input, urgency });
   const candidates = generateAssistCandidates(input);
 
   if (candidates.length === 0) {

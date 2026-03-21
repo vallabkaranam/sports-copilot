@@ -1,0 +1,27 @@
+[
+  {
+    "timestamp": 0,
+    "tag": "crowd-reaction",
+    "label": "Camp Nou crowd shot sets the atmosphere"
+  },
+  {
+    "timestamp": 60000,
+    "tag": "attack",
+    "label": "Barcelona break the midfield line"
+  },
+  {
+    "timestamp": 74000,
+    "tag": "player-close-up",
+    "label": "Tight angle on Lewandowski as the chance develops"
+  },
+  {
+    "timestamp": 76000,
+    "tag": "replay",
+    "label": "Replay isolates Courtois stretching to save"
+  },
+  {
+    "timestamp": 86000,
+    "tag": "crowd-reaction",
+    "label": "Crowd gasps after the near miss"
+  }
+]

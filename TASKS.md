@@ -60,29 +60,29 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 ## P1 — Replay + World State
 
 ### Replay Engine
-- [ ] build replay engine for 1–2 minute soccer clip
-- [ ] replay event timeline deterministically
-- [ ] support play / pause / restart
-- [ ] emit world-state updates every tick
+- [x] build replay engine for 1–2 minute soccer clip
+- [x] replay event timeline deterministically
+- [x] support play / pause / restart
+- [x] emit world-state updates every tick
 
 ### Game State Agent
-- [ ] track score
-- [ ] track match clock
-- [ ] track possession
-- [ ] track recent events
-- [ ] track high-salience moments
-- [ ] expose current game-state summary
+- [x] track score
+- [x] track match clock
+- [x] track possession
+- [x] track recent events
+- [x] track high-salience moments
+- [x] expose current game-state summary
 
 ### Session Memory
-- [ ] store recent events in rolling session memory
-- [ ] store previously surfaced assists
-- [ ] store recent commentary context
+- [x] store recent events in rolling session memory
+- [x] store previously surfaced assists
+- [x] store recent commentary context
 
 ### Tests
-- [ ] test replay timing
-- [ ] test world state transitions
-- [ ] test score updates
-- [ ] test possession/event updates
+- [x] test replay timing
+- [x] test world state transitions
+- [x] test score updates
+- [x] test possession/event updates
 
 ---
 

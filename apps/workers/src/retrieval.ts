@@ -5,7 +5,9 @@ import {
   RetrievalState,
   SocialPost,
   TranscriptEntry,
+  VisionCue,
 } from '@sports-copilot/shared-types';
+import { buildVisionMemory } from './vision';
 
 const SESSION_EVENT_WINDOW_MS = 30_000;
 const SESSION_TRANSCRIPT_WINDOW_MS = 20_000;
@@ -80,6 +82,7 @@ export interface RetrievalInput {
   roster: RosterFixture;
   narratives: NarrativeFixture[];
   socialPosts: SocialPost[];
+  visionCues?: VisionCue[];
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -249,6 +252,19 @@ export function buildLiveMemory(clockMs: number, socialPosts: SocialPost[]): Ran
     );
 }
 
+function buildLiveVisionFacts(clockMs: number, visionCues: VisionCue[]): RankableFact[] {
+  return buildVisionMemory(clockMs, visionCues).map((fact) =>
+    createRankableFact({
+      id: fact.id,
+      tier: fact.tier,
+      text: fact.text,
+      source: fact.source,
+      timestamp: fact.timestamp,
+      tags: [...tokenize(fact.text), ...tokenize(fact.source)],
+    }),
+  );
+}
+
 function buildQuery(clockMs: number, events: GameEvent[], transcript: TranscriptEntry[]) {
   const latestEvent = [...events]
     .filter((event) => event.timestamp <= clockMs)
@@ -317,6 +333,7 @@ export function buildRetrievalState({
   roster,
   narratives,
   socialPosts,
+  visionCues = [],
 }: RetrievalInput): RetrievalState {
   const query = buildQuery(clockMs, events, transcript);
   const focusTokens = buildFocusTokens(clockMs, events, transcript);
@@ -324,6 +341,7 @@ export function buildRetrievalState({
     .filter((event) => event.timestamp <= clockMs)
     .sort((a, b) => b.timestamp - a.timestamp)[0];
   const candidateFacts = [
+    ...buildLiveVisionFacts(clockMs, visionCues),
     ...buildLiveMemory(clockMs, socialPosts),
     ...buildSessionMemory(clockMs, events, transcript),
     ...buildStaticMemory(roster, narratives),

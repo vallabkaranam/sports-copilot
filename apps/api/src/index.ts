@@ -1,10 +1,13 @@
 import fastify from 'fastify';
 import {
   createEmptyAssistCard,
+  ReplayControlState,
   WorldState,
+  createDefaultReplayControlState,
   createEmptyCommentatorState,
   createEmptyNarrativeState,
   createEmptyRetrievalState,
+  createEmptySessionMemory,
 } from '@sports-copilot/shared-types';
 import fs from 'fs/promises';
 import path from 'path';
@@ -17,7 +20,10 @@ let worldState: Partial<WorldState> = {
   clock: '00:00',
   score: { home: 0, away: 0 },
   possession: 'BAR',
+  gameStateSummary: 'El Clasico is underway and both sides are settling into shape.',
+  highSalienceMoments: [],
   recentEvents: [],
+  sessionMemory: createEmptySessionMemory(),
   assist: createEmptyAssistCard(),
   commentator: createEmptyCommentatorState(),
   narrative: createEmptyNarrativeState(),
@@ -25,7 +31,7 @@ let worldState: Partial<WorldState> = {
   liveSignals: { social: [], vision: [] },
 };
 
-let controlState = { status: 'paused' }; // 'playing' | 'paused' | 'stopped'
+let controlState: ReplayControlState = createDefaultReplayControlState();
 
 server.get('/health', async () => {
   return { status: 'ok', matchId: worldState.matchId };
@@ -50,8 +56,16 @@ server.post('/internal/state', async (request, reply) => {
 server.get('/controls', async () => controlState);
 
 server.post('/controls', async (request) => {
-  const { status } = request.body as any;
-  if (status) controlState.status = status;
+  const { playbackStatus, preferredStyleMode, forceHesitation, restart } = request.body as Partial<
+    ReplayControlState
+  > & {
+    restart?: boolean;
+  };
+
+  if (playbackStatus) controlState.playbackStatus = playbackStatus;
+  if (preferredStyleMode) controlState.preferredStyleMode = preferredStyleMode;
+  if (typeof forceHesitation === 'boolean') controlState.forceHesitation = forceHesitation;
+  if (restart) controlState.restartToken += 1;
   return controlState;
 });
 
