@@ -19,6 +19,7 @@ import {
   fetchBoothSessionReview,
   fetchBoothSessions,
   fetchControlState,
+  getPresetFeedUrl,
   fetchWorldState,
   finishBoothSession,
   interpretBooth,
@@ -47,6 +48,7 @@ import {
 } from './dashboard';
 import {
   ProgramFeedSlotId,
+  ProgramFeedSlot,
   StoredProgramFeed,
   clearProgramFeed,
   listStoredProgramFeeds,
@@ -61,9 +63,21 @@ const AUDIO_ACTIVITY_SAMPLE_MS = 120;
 const MIN_AUDIO_ACTIVITY_THRESHOLD = 0.012;
 const MAX_AUDIO_ACTIVITY_THRESHOLD = 0.08;
 const ASSIST_WEAN_OFF_MS = 2600;
-const PROGRAM_FEED_SLOTS: Array<{ id: ProgramFeedSlotId; label: string; tone: string }> = [
-  { id: 'program-a', label: 'Channel 1', tone: 'Match feed' },
-  { id: 'program-b', label: 'Channel 2', tone: 'Studio return' },
+const PROGRAM_FEED_SLOTS: ProgramFeedSlot[] = [
+  {
+    id: 'program-a',
+    label: 'Channel 1',
+    tone: 'Preset match feed',
+    source: 'preset',
+    presetUrl: getPresetFeedUrl('barca'),
+    presetFileName: 'barca.mov',
+  },
+  {
+    id: 'program-b',
+    label: 'Channel 2',
+    tone: 'Manual backup feed',
+    source: 'upload',
+  },
 ];
 
 function supportsAudioMonitoring() {
@@ -389,18 +403,25 @@ function App() {
 
       setStoredProgramFeeds(nextFeeds);
 
-      const firstAvailable = PROGRAM_FEED_SLOTS.find((slot) => nextFeeds[slot.id]);
-      if (firstAvailable && nextFeeds[firstAvailable.id]) {
-        const blob = nextFeeds[firstAvailable.id]?.blob;
-        if (blob) {
-          if (clipObjectUrlRef.current) {
-            URL.revokeObjectURL(clipObjectUrlRef.current);
+      const presetSlot = PROGRAM_FEED_SLOTS.find((slot) => slot.source === 'preset');
+      if (presetSlot?.presetUrl) {
+        setSelectedProgramFeedId(presetSlot.id);
+        setLoadedClipUrl(presetSlot.presetUrl);
+        setLoadedClipName(presetSlot.presetFileName ?? presetSlot.label);
+      } else {
+        const firstUploadSlot = PROGRAM_FEED_SLOTS.find((slot) => nextFeeds[slot.id]);
+        if (firstUploadSlot && nextFeeds[firstUploadSlot.id]) {
+          const blob = nextFeeds[firstUploadSlot.id]?.blob;
+          if (blob) {
+            if (clipObjectUrlRef.current) {
+              URL.revokeObjectURL(clipObjectUrlRef.current);
+            }
+            const nextUrl = URL.createObjectURL(blob);
+            clipObjectUrlRef.current = nextUrl;
+            setSelectedProgramFeedId(firstUploadSlot.id);
+            setLoadedClipUrl(nextUrl);
+            setLoadedClipName(nextFeeds[firstUploadSlot.id]?.fileName ?? '');
           }
-          const nextUrl = URL.createObjectURL(blob);
-          clipObjectUrlRef.current = nextUrl;
-          setSelectedProgramFeedId(firstAvailable.id);
-          setLoadedClipUrl(nextUrl);
-          setLoadedClipName(nextFeeds[firstAvailable.id]?.fileName ?? '');
         }
       }
     });
@@ -580,7 +601,14 @@ function App() {
     setIsMicPrepared(false);
     setSpeechStreakStartedAtMs(-1);
     setSilenceStreakStartedAtMs(-1);
-    setSelectedProgramFeedId(null);
+    const presetSlot = PROGRAM_FEED_SLOTS.find((slot) => slot.source === 'preset');
+    if (presetSlot?.presetUrl) {
+      setSelectedProgramFeedId(presetSlot.id);
+      setLoadedClipUrl(presetSlot.presetUrl);
+      setLoadedClipName(presetSlot.presetFileName ?? presetSlot.label);
+    } else {
+      setSelectedProgramFeedId(null);
+    }
   }
 
   async function refreshBoothSessions() {
@@ -868,6 +896,22 @@ function App() {
   }
 
   async function loadProgramFeed(slotId: ProgramFeedSlotId, feed: StoredProgramFeed) {
+    const slot = PROGRAM_FEED_SLOTS.find((candidate) => candidate.id === slotId);
+    if (slot?.source === 'preset' && slot.presetUrl) {
+      if (clipObjectUrlRef.current) {
+        URL.revokeObjectURL(clipObjectUrlRef.current);
+        clipObjectUrlRef.current = null;
+      }
+      setSelectedProgramFeedId(slotId);
+      setLoadedClipName(slot.presetFileName ?? slot.label);
+      setLoadedClipUrl(slot.presetUrl);
+      setClipPositionMs(0);
+      setClipDurationMs(0);
+      setIsClipMuted(true);
+      setBoothError(null);
+      return;
+    }
+
     if (clipObjectUrlRef.current) {
       URL.revokeObjectURL(clipObjectUrlRef.current);
     }
@@ -1529,6 +1573,8 @@ function App() {
               {PROGRAM_FEED_SLOTS.map((slot) => {
                 const feed = storedProgramFeeds[slot.id];
                 const isSelected = selectedProgramFeedId === slot.id;
+                const isPreset = slot.source === 'preset';
+                const slotFeedName = isPreset ? slot.presetFileName ?? 'Preset feed' : feed?.fileName ?? 'No reel loaded';
 
                 return (
                   <article
@@ -1537,11 +1583,27 @@ function App() {
                   >
                     <div className="feed-switcher__copy">
                       <span className="feed-switcher__label">{slot.label}</span>
-                      <strong>{feed ? feed.fileName : 'No reel loaded'}</strong>
+                      <strong>{slotFeedName}</strong>
                       <small>{slot.tone}</small>
                     </div>
                     <div className="feed-switcher__actions">
-                      {feed ? (
+                      {isPreset ? (
+                        <button
+                          type="button"
+                          className={isSelected ? 'ghost-button ghost-button--active' : 'ghost-button'}
+                          onClick={() =>
+                            void loadProgramFeed(slot.id, {
+                              slotId: slot.id,
+                              fileName: slot.presetFileName ?? slot.label,
+                              fileSize: 0,
+                              updatedAt: '',
+                              blob: new Blob(),
+                            })
+                          }
+                        >
+                          {isSelected ? 'On deck' : 'Take feed'}
+                        </button>
+                      ) : feed ? (
                         <button
                           type="button"
                           className={isSelected ? 'ghost-button ghost-button--active' : 'ghost-button'}
@@ -1550,15 +1612,17 @@ function App() {
                           {isSelected ? 'On deck' : 'Take feed'}
                         </button>
                       ) : null}
-                      <label className="file-chip file-chip--slot">
-                        <span>{feed ? 'Replace reel' : 'Load reel'}</span>
-                        <input
-                          type="file"
-                          accept="video/*"
-                          onChange={(event) => void handleProgramFeedChange(slot.id, event)}
-                        />
-                      </label>
-                      {feed ? (
+                      {!isPreset ? (
+                        <label className="file-chip file-chip--slot">
+                          <span>{feed ? 'Replace reel' : 'Load reel'}</span>
+                          <input
+                            type="file"
+                            accept="video/*"
+                            onChange={(event) => void handleProgramFeedChange(slot.id, event)}
+                          />
+                        </label>
+                      ) : null}
+                      {!isPreset && feed ? (
                         <button
                           type="button"
                           className="text-button"

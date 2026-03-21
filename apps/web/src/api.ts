@@ -111,3 +111,7 @@ export async function connectRealtimeBoothSession(offerSdp: string) {
 
   return response.text();
 }
+
+export function getPresetFeedUrl(feedId: string) {
+  return `${API_BASE_URL}/preset-feeds/${feedId}`;
+}

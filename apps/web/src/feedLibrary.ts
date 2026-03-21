@@ -8,6 +8,15 @@ export type StoredProgramFeed = {
   blob: Blob;
 };
 
+export type ProgramFeedSlot = {
+  id: ProgramFeedSlotId;
+  label: string;
+  tone: string;
+  source: 'preset' | 'upload';
+  presetUrl?: string;
+  presetFileName?: string;
+};
+
 const DATABASE_NAME = 'and-one-feed-library';
 const DATABASE_VERSION = 1;
 const STORE_NAME = 'program-feeds';

@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import fastify from 'fastify';
+import fsSync from 'fs';
 import {
   AppendBoothSessionSampleInputSchema,
   BoothInterpretation,
@@ -34,6 +35,12 @@ const server = fastify({ logger: true });
 const API_PORT = Number(process.env.PORT ?? 3001);
 const API_HOST = process.env.HOST ?? '0.0.0.0';
 let boothSessionStore: Awaited<ReturnType<typeof createBoothSessionStore>> | null = null;
+const PRESET_FEEDS: Record<string, { filePath: string; contentType: string }> = {
+  barca: {
+    filePath: process.env.AND_ONE_PRESET_BARCA_PATH ?? '/Users/vallabkaranam/Desktop/barca.mov',
+    contentType: 'video/quicktime',
+  },
+};
 
 server.addContentTypeParser(['application/sdp', 'text/plain'], { parseAs: 'string' }, (_req, body, done) => {
   done(null, body);
@@ -81,6 +88,42 @@ controlState.activeFixtureId = process.env.SPORTMONKS_FIXTURE_ID;
 
 server.get('/health', async () => {
   return { status: 'ok', matchId: worldState.matchId };
+});
+
+server.get('/preset-feeds/:feedId', async (request, reply) => {
+  const { feedId } = request.params as { feedId: string };
+  const preset = PRESET_FEEDS[feedId];
+
+  if (!preset || !fsSync.existsSync(preset.filePath)) {
+    reply.status(404).send({ error: 'Preset feed not found' });
+    return;
+  }
+
+  const stats = await fs.stat(preset.filePath);
+  const fileSize = stats.size;
+  const rangeHeader = request.headers.range;
+
+  reply.header('Accept-Ranges', 'bytes');
+  reply.header('Content-Type', preset.contentType);
+  reply.header('Cache-Control', 'no-store');
+
+  if (rangeHeader) {
+    const rangeMatch = /bytes=(\d*)-(\d*)/.exec(rangeHeader);
+    const start = rangeMatch?.[1] ? Number(rangeMatch[1]) : 0;
+    const requestedEnd = rangeMatch?.[2] ? Number(rangeMatch[2]) : fileSize - 1;
+    const end = Math.min(requestedEnd, fileSize - 1);
+    const chunkSize = end - start + 1;
+
+    reply
+      .code(206)
+      .header('Content-Range', `bytes ${start}-${end}/${fileSize}`)
+      .header('Content-Length', String(chunkSize));
+
+    return reply.send(fsSync.createReadStream(preset.filePath, { start, end }));
+  }
+
+  reply.header('Content-Length', String(fileSize));
+  return reply.send(fsSync.createReadStream(preset.filePath));
 });
 
 server.get('/world-state', async () => {

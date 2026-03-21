@@ -681,19 +681,20 @@ describe('App dashboard', () => {
     expect(container.textContent).toContain('Channel 2');
     expect(container.textContent).toContain('Live control');
     expect(container.textContent).toContain('Show Details');
-    expect(container.textContent).toContain('Select a program feed');
+    expect(container.textContent).toContain('Channel 1 selected');
+    expect(container.textContent).toContain('barca.mov');
     expect(container.textContent).not.toContain('Pre-match brief');
   });
 
-  it('keeps the booth in setup mode until a clip is loaded', async () => {
+  it('starts in preflight with the preset program feed ready', async () => {
     await renderApp();
 
     const playButton = [...container.querySelectorAll('button')].find((button) =>
       button.textContent?.includes('Go live'),
     );
     expect(playButton?.textContent).toBe('Go live');
-    expect(playButton?.hasAttribute('disabled')).toBe(true);
-    expect(container.textContent).toContain('Bring in a replay clip first.');
+    expect(playButton?.hasAttribute('disabled')).toBe(false);
+    expect(container.textContent).toContain('Channel 1 · barca.mov');
     expect(container.textContent).toContain('And-One will request access when you go live.');
   });
 
