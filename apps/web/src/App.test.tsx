@@ -294,44 +294,30 @@ describe('App dashboard', () => {
     await renderApp();
 
     expect(container.textContent).toContain('Sports Copilot');
-    expect(container.textContent).toContain('Barcelona');
-    expect(container.textContent).toContain('Real Madrid');
+    expect(container.textContent).toContain('Practice Booth');
     expect(container.textContent).toContain('Load Replay Clip');
-    expect(container.textContent).toContain('Talk into the live match');
-    expect(container.textContent).toContain('Event Timeline');
-    expect(container.textContent).toContain('Cards, substitutions, and lineups');
-    expect(container.textContent).toContain('Booth hesitation tracker');
-    expect(container.textContent).toContain('Courtois is keeping Madrid alive in this pressure wave.');
-    expect(container.textContent).toContain('Rodrygo');
-    expect(container.textContent).toContain('Possession');
+    expect(container.textContent).toContain('Start the booth');
+    expect(container.textContent).toContain('Show system details');
+    expect(container.textContent).toContain('Load a clip and start talking.');
   });
 
   it('posts replay and backup control updates back to the API', async () => {
     await renderApp();
 
     const playButton = container.querySelector('button');
-    expect(playButton?.textContent).toBe('Play');
+    expect(playButton?.textContent).toBe('Start Broadcast');
 
     await act(async () => {
       playButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
-    const hypeButton = [...container.querySelectorAll('button')].find(
-      (button) => button.textContent === 'Hype',
+    const resetButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Reset broadcast'),
     );
 
     await act(async () => {
-      hypeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    const forceButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Force Hesitation'),
-    );
-
-    await act(async () => {
-      forceButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      resetButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
@@ -342,20 +328,19 @@ describe('App dashboard', () => {
     expect(postBodies).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ playbackStatus: 'playing' }),
-        expect.objectContaining({ preferredStyleMode: 'hype' }),
-        expect.objectContaining({ forceHesitation: true }),
+        expect.objectContaining({ restart: true }),
       ]),
     );
   });
 
-  it('surfaces a fresh assist card when the polled world state changes', async () => {
+  it('keeps the landing screen focused on practice mode instead of fixture assists', async () => {
     currentWorldState = createWorldState({
       assist: createEmptyAssistCard(),
       sessionMemory: createEmptySessionMemory(),
     });
 
     await renderApp();
-    expect(container.textContent).toContain('System holding its fire until the booth needs help.');
+    expect(container.textContent).not.toContain('Courtois keeps Madrid alive with an enormous reflex stop.');
 
     currentWorldState = createWorldState({
       assist: {
@@ -382,7 +367,7 @@ describe('App dashboard', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('Courtois keeps Madrid alive with an enormous reflex stop.');
-    expect(container.textContent).toContain('THIBAUT COURTOIS IS WORLD CLASS.');
+    expect(container.textContent).not.toContain('Courtois keeps Madrid alive with an enormous reflex stop.');
+    expect(container.textContent).toContain('Show system details');
   });
 });

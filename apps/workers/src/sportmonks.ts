@@ -22,7 +22,6 @@ const CORE_INCLUDES = [
   'events.type',
   'lineups.player',
   'lineups.position',
-  'lineups.formation',
   'statistics.type',
 ].join(';');
 
