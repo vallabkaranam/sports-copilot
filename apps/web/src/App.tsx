@@ -239,6 +239,8 @@ function App() {
   const [loadedClipUrl, setLoadedClipUrl] = useState<string | null>(null);
   const [clipPositionMs, setClipPositionMs] = useState(0);
   const [clipDurationMs, setClipDurationMs] = useState(0);
+  const [isClipMuted, setIsClipMuted] = useState(true);
+  const [showDetails, setShowDetails] = useState(false);
   const [boothTranscript, setBoothTranscript] = useState<TranscriptEntry[]>([]);
   const [boothInterimTranscript, setBoothInterimTranscript] = useState('');
   const [boothError, setBoothError] = useState<string | null>(null);
@@ -403,6 +405,7 @@ function App() {
     setLoadedClipUrl(null);
     setClipPositionMs(0);
     setClipDurationMs(0);
+    setIsClipMuted(true);
   }
 
   function handleClipChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -422,6 +425,7 @@ function App() {
     setLoadedClipUrl(nextClipUrl);
     setClipPositionMs(0);
     setClipDurationMs(0);
+    setIsClipMuted(true);
     setBoothError(null);
     event.currentTarget.value = '';
   }
@@ -751,11 +755,23 @@ function App() {
             <div className="media-meta">
               <span className="meta-pill">{loadedClipName || 'No local clip loaded yet'}</span>
               <span className="meta-pill">{clipSyncLabel}</span>
+              {loadedClipUrl ? (
+                <span className="meta-pill">{isClipMuted ? 'Clip audio muted' : 'Clip audio on'}</span>
+              ) : null}
             </div>
             {loadedClipUrl ? (
-              <button type="button" className="text-button" onClick={clearLoadedClip}>
-                Clear clip
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => setIsClipMuted((current) => !current)}
+                >
+                  {isClipMuted ? 'Monitor clip audio' : 'Mute clip audio'}
+                </button>
+                <button type="button" className="text-button" onClick={clearLoadedClip}>
+                  Clear clip
+                </button>
+              </>
             ) : null}
           </div>
 
@@ -767,6 +783,7 @@ function App() {
                 src={loadedClipUrl}
                 playsInline
                 controls
+                muted={isClipMuted}
                 onLoadedMetadata={(event) => {
                   setClipDurationMs(Math.round(event.currentTarget.duration * 1_000));
                 }}
@@ -884,8 +901,8 @@ function App() {
               </div>
 
               <p className="field-copy">
-                Browser speech recognition is local to the tab. Chrome or Edge work best for live
-                hesitation testing.
+                The clip is muted by default so the booth mic tracks your voice instead of the
+                program feed. Chrome or Edge work best for live hesitation testing.
               </p>
               {boothError ? <p className="inline-warning">{boothError}</p> : null}
 
@@ -964,8 +981,19 @@ function App() {
         </div>
       </div>
 
-      <div className="bottom-grid">
-        <section className="panel">
+      <div className="details-toggle-row">
+        <button
+          type="button"
+          className="text-button"
+          onClick={() => setShowDetails((current) => !current)}
+        >
+          {showDetails ? 'Hide dashboard details' : 'Show dashboard details'}
+        </button>
+      </div>
+
+      {showDetails ? (
+        <div className="bottom-grid">
+          <section className="panel">
           <div className="panel-header">
             <div>
               <p className="panel-kicker">Match Flow</p>
@@ -1110,8 +1138,9 @@ function App() {
               <strong>{boothSignal.repeatedPhrases[0] ?? 'None'}</strong>
             </div>
           </div>
-        </section>
-      </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

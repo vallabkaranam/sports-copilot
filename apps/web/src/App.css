@@ -624,6 +624,12 @@
   gap: 20px;
 }
 
+.details-toggle-row {
+  display: flex;
+  justify-content: flex-end;
+  margin: 2px 0 16px;
+}
+
 .timeline-list,
 .reason-list,
 .meter-cluster {

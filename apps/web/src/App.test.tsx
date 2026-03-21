@@ -243,9 +243,7 @@ describe('App dashboard', () => {
     expect(container.textContent).toContain('Real Madrid');
     expect(container.textContent).toContain('Load Replay Clip');
     expect(container.textContent).toContain('Start the booth');
-    expect(container.textContent).toContain('Event Timeline');
-    expect(container.textContent).toContain('Narrative Stack');
-    expect(container.textContent).toContain('Booth hesitation tracker');
+    expect(container.textContent).toContain('Show dashboard details');
     expect(container.textContent).toContain('Courtois is keeping Madrid alive in this pressure wave.');
   });
 
