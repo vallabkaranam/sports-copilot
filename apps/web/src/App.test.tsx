@@ -677,10 +677,11 @@ describe('App dashboard', () => {
 
     expect(container.textContent).toContain('Live Commentary Copilot');
     expect(container.textContent).toContain('And-One');
-    expect(container.textContent).toContain('Load Clip');
+    expect(container.textContent).toContain('Channel 1');
+    expect(container.textContent).toContain('Channel 2');
     expect(container.textContent).toContain('Live control');
     expect(container.textContent).toContain('Show Details');
-    expect(container.textContent).toContain('Attach a video input');
+    expect(container.textContent).toContain('Select a program feed');
     expect(container.textContent).not.toContain('Pre-match brief');
   });
 

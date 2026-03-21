@@ -45,6 +45,13 @@ import {
   formatPercent,
   parseClock,
 } from './dashboard';
+import {
+  ProgramFeedSlotId,
+  StoredProgramFeed,
+  clearProgramFeed,
+  listStoredProgramFeeds,
+  saveProgramFeed,
+} from './feedLibrary';
 
 type MicrophoneAvailability = 'supported' | 'degraded' | 'unsupported';
 type CoachingTone = 'standby' | 'steady' | 'supporting' | 'step-in';
@@ -54,6 +61,10 @@ const AUDIO_ACTIVITY_SAMPLE_MS = 120;
 const MIN_AUDIO_ACTIVITY_THRESHOLD = 0.012;
 const MAX_AUDIO_ACTIVITY_THRESHOLD = 0.08;
 const ASSIST_WEAN_OFF_MS = 2600;
+const PROGRAM_FEED_SLOTS: Array<{ id: ProgramFeedSlotId; label: string; tone: string }> = [
+  { id: 'program-a', label: 'Channel 1', tone: 'Match feed' },
+  { id: 'program-b', label: 'Channel 2', tone: 'Studio return' },
+];
 
 function supportsAudioMonitoring() {
   return (
@@ -313,6 +324,11 @@ function App() {
   const [activeBoothSessionId, setActiveBoothSessionId] = useState<string | null>(null);
   const [loadedClipName, setLoadedClipName] = useState('');
   const [loadedClipUrl, setLoadedClipUrl] = useState<string | null>(null);
+  const [selectedProgramFeedId, setSelectedProgramFeedId] = useState<ProgramFeedSlotId | null>(null);
+  const [storedProgramFeeds, setStoredProgramFeeds] = useState<Record<ProgramFeedSlotId, StoredProgramFeed | null>>({
+    'program-a': null,
+    'program-b': null,
+  });
   const [clipPositionMs, setClipPositionMs] = useState(0);
   const [clipDurationMs, setClipDurationMs] = useState(0);
   const [isClipMuted, setIsClipMuted] = useState(true);
@@ -353,6 +369,46 @@ function App() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const clipObjectUrlRef = useRef<string | null>(null);
   const lastRestartTokenRef = useRef(controls.restartToken);
+
+  useEffect(() => {
+    let isActive = true;
+
+    void listStoredProgramFeeds().then((feeds) => {
+      if (!isActive) {
+        return;
+      }
+
+      const nextFeeds: Record<ProgramFeedSlotId, StoredProgramFeed | null> = {
+        'program-a': null,
+        'program-b': null,
+      };
+
+      for (const feed of feeds) {
+        nextFeeds[feed.slotId] = feed;
+      }
+
+      setStoredProgramFeeds(nextFeeds);
+
+      const firstAvailable = PROGRAM_FEED_SLOTS.find((slot) => nextFeeds[slot.id]);
+      if (firstAvailable && nextFeeds[firstAvailable.id]) {
+        const blob = nextFeeds[firstAvailable.id]?.blob;
+        if (blob) {
+          if (clipObjectUrlRef.current) {
+            URL.revokeObjectURL(clipObjectUrlRef.current);
+          }
+          const nextUrl = URL.createObjectURL(blob);
+          clipObjectUrlRef.current = nextUrl;
+          setSelectedProgramFeedId(firstAvailable.id);
+          setLoadedClipUrl(nextUrl);
+          setLoadedClipName(nextFeeds[firstAvailable.id]?.fileName ?? '');
+        }
+      }
+    });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   useEffect(() => {
     let isActive = true;
@@ -524,6 +580,7 @@ function App() {
     setIsMicPrepared(false);
     setSpeechStreakStartedAtMs(-1);
     setSilenceStreakStartedAtMs(-1);
+    setSelectedProgramFeedId(null);
   }
 
   async function refreshBoothSessions() {
@@ -810,26 +867,69 @@ function App() {
     setSilenceStreakStartedAtMs(-1);
   }
 
-  function handleClipChange(event: React.ChangeEvent<HTMLInputElement>) {
+  async function loadProgramFeed(slotId: ProgramFeedSlotId, feed: StoredProgramFeed) {
+    if (clipObjectUrlRef.current) {
+      URL.revokeObjectURL(clipObjectUrlRef.current);
+    }
+
+    const nextClipUrl = URL.createObjectURL(feed.blob);
+    clipObjectUrlRef.current = nextClipUrl;
+    setSelectedProgramFeedId(slotId);
+    setLoadedClipName(feed.fileName);
+    setLoadedClipUrl(nextClipUrl);
+    setClipPositionMs(0);
+    setClipDurationMs(0);
+    setIsClipMuted(true);
+    setBoothError(null);
+  }
+
+  async function handleProgramFeedChange(
+    slotId: ProgramFeedSlotId,
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) {
+    const inputElement = event.currentTarget;
     const file = event.target.files?.[0];
 
     if (!file) {
       return;
     }
 
-    if (clipObjectUrlRef.current) {
-      URL.revokeObjectURL(clipObjectUrlRef.current);
+    const savedFeed = await saveProgramFeed(slotId, file);
+    if (savedFeed) {
+      setStoredProgramFeeds((current) => ({
+        ...current,
+        [slotId]: savedFeed,
+      }));
+      await loadProgramFeed(slotId, savedFeed);
+    } else {
+      const fallbackFeed: StoredProgramFeed = {
+        slotId,
+        fileName: file.name,
+        fileSize: file.size,
+        updatedAt: new Date().toISOString(),
+        blob: file,
+      };
+      setStoredProgramFeeds((current) => ({
+        ...current,
+        [slotId]: fallbackFeed,
+      }));
+      await loadProgramFeed(slotId, fallbackFeed);
     }
+    if (inputElement) {
+      inputElement.value = '';
+    }
+  }
 
-    const nextClipUrl = URL.createObjectURL(file);
-    clipObjectUrlRef.current = nextClipUrl;
-    setLoadedClipName(file.name);
-    setLoadedClipUrl(nextClipUrl);
-    setClipPositionMs(0);
-    setClipDurationMs(0);
-    setIsClipMuted(true);
-    setBoothError(null);
-    event.currentTarget.value = '';
+  async function clearProgramFeedSlot(slotId: ProgramFeedSlotId) {
+    await clearProgramFeed(slotId);
+    setStoredProgramFeeds((current) => ({
+      ...current,
+      [slotId]: null,
+    }));
+
+    if (selectedProgramFeedId === slotId) {
+      clearLoadedClip();
+    }
   }
 
   function startMicrophone() {
@@ -1082,7 +1182,10 @@ function App() {
   const clipProgress = clipDurationMs > 0 ? Math.min(100, Math.round((clipPositionMs / clipDurationMs) * 100)) : 0;
   const isBroadcastLive =
     hasStartedBroadcast && (controls.playbackStatus === 'playing' || isMicListening);
-  const feedHeading = loadedClipName || 'Attach a video input';
+  const selectedProgramSlot = PROGRAM_FEED_SLOTS.find((slot) => slot.id === selectedProgramFeedId) ?? null;
+  const feedHeading = selectedProgramSlot
+    ? `${selectedProgramSlot.label} · ${loadedClipName}`
+    : 'Select a program feed';
   const replayToastSignature = `${activeAssist.type}:${activeAssist.text}:${shouldSurfaceAssist}:${controls.restartToken}`;
   const activeTriggerBadges = [
     boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS ? 'pause' : null,
@@ -1422,12 +1525,58 @@ function App() {
           </div>
 
           <div className="media-toolbar">
-            <label className="file-chip">
-              <span>{loadedClipUrl ? 'Replace Clip' : 'Load Clip'}</span>
-              <input type="file" accept="video/*" onChange={handleClipChange} />
-            </label>
+            <div className="feed-switcher" role="group" aria-label="Program feeds">
+              {PROGRAM_FEED_SLOTS.map((slot) => {
+                const feed = storedProgramFeeds[slot.id];
+                const isSelected = selectedProgramFeedId === slot.id;
+
+                return (
+                  <article
+                    key={slot.id}
+                    className={`feed-switcher__slot ${isSelected ? 'feed-switcher__slot--selected' : ''}`}
+                  >
+                    <div className="feed-switcher__copy">
+                      <span className="feed-switcher__label">{slot.label}</span>
+                      <strong>{feed ? feed.fileName : 'No reel loaded'}</strong>
+                      <small>{slot.tone}</small>
+                    </div>
+                    <div className="feed-switcher__actions">
+                      {feed ? (
+                        <button
+                          type="button"
+                          className={isSelected ? 'ghost-button ghost-button--active' : 'ghost-button'}
+                          onClick={() => void loadProgramFeed(slot.id, feed)}
+                        >
+                          {isSelected ? 'On deck' : 'Take feed'}
+                        </button>
+                      ) : null}
+                      <label className="file-chip file-chip--slot">
+                        <span>{feed ? 'Replace reel' : 'Load reel'}</span>
+                        <input
+                          type="file"
+                          accept="video/*"
+                          onChange={(event) => void handleProgramFeedChange(slot.id, event)}
+                        />
+                      </label>
+                      {feed ? (
+                        <button
+                          type="button"
+                          className="text-button"
+                          onClick={() => void clearProgramFeedSlot(slot.id)}
+                        >
+                          Clear
+                        </button>
+                      ) : null}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
             <div className="media-meta">
-              <span className="meta-pill">{loadedClipName || 'No local clip loaded yet'}</span>
+              <span className="meta-pill">
+                {selectedProgramSlot ? `${selectedProgramSlot.label} selected` : 'No program feed selected'}
+              </span>
+              <span className="meta-pill">{loadedClipName || 'Load a saved reel into Channel 1 or Channel 2'}</span>
               {loadedClipUrl ? (
                 <span className="meta-pill">{isClipMuted ? 'Clip audio muted' : 'Clip audio on'}</span>
               ) : null}
@@ -1440,9 +1589,6 @@ function App() {
                   onClick={() => setIsClipMuted((current) => !current)}
                 >
                   {isClipMuted ? 'Monitor clip audio' : 'Mute clip audio'}
-                </button>
-                <button type="button" className="text-button" onClick={clearLoadedClip}>
-                  Clear clip
                 </button>
               </>
             ) : null}
@@ -1480,7 +1626,7 @@ function App() {
                       : resolvedPostSessionReview
                         ? resolvedPostSessionReview.headline
                       : 'Go live and And-One will request microphone access if needed.'
-                    : 'Attach a video input to begin.'}
+                    : 'Load a reel into Channel 1 or Channel 2 to begin.'}
                 </h3>
               </div>
 
@@ -1503,7 +1649,7 @@ function App() {
               ) : loadedClipUrl && !hasStartedBroadcast ? (
                 <div className="replay-toast replay-toast--hint">
                   <p className="assist-type">Preflight</p>
-                  <h3>Finish setup, then start.</h3>
+                  <h3>Go live when the desk is ready.</h3>
                 </div>
               ) : null}
 
