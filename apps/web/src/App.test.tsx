@@ -237,6 +237,18 @@ describe('App dashboard', () => {
         return jsonResponse(currentBoothSessions);
       }
 
+      if (url.includes('/booth/interpret') && init?.method === 'POST') {
+        return jsonResponse({
+          state: 'monitoring',
+          hesitationScore: 0.18,
+          recoveryScore: 0.34,
+          shouldSurfaceAssist: false,
+          summary: 'Tracking the booth without stepping in.',
+          reasons: ['No strong hesitation cue is active in the current booth window.'],
+          source: 'heuristic',
+        });
+      }
+
       if (url.includes('/controls') && (!init?.method || init.method === 'GET')) {
         return jsonResponse(currentControls);
       }

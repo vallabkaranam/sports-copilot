@@ -1,5 +1,7 @@
 import { startTransition, useEffect, useRef, useState } from 'react';
 import {
+  BoothFeatureSnapshot,
+  BoothInterpretation,
   BoothSessionAnalytics,
   BoothSessionSummary,
   ReplayControlState,
@@ -13,6 +15,7 @@ import {
   fetchControlState,
   fetchWorldState,
   finishBoothSession,
+  interpretBooth,
   startBoothSession,
   updateControlState,
 } from './api';
@@ -222,6 +225,7 @@ function App() {
   const [silenceStreakStartedAtMs, setSilenceStreakStartedAtMs] = useState(-1);
   const [audioLevel, setAudioLevel] = useState(0);
   const [boothClockMs, setBoothClockMs] = useState(() => Date.now());
+  const [boothInterpretation, setBoothInterpretation] = useState<BoothInterpretation | null>(null);
   const [microphoneAvailability, setMicrophoneAvailability] =
     useState<MicrophoneAvailability>('supported');
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -799,7 +803,9 @@ function App() {
     hasStartedBroadcast &&
     (isMicListening || boothTranscript.length > 0 || boothInterimTranscript.length > 0);
   const practiceAssist = createPracticeAssist(boothSignal);
-  const shouldSurfaceAssist = boothHasLiveInput && boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS;
+  const shouldSurfaceAssist =
+    boothHasLiveInput &&
+    (boothInterpretation?.shouldSurfaceAssist ?? boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS);
   const activeAssist = {
     ...worldState.assist,
     type: practiceAssist.type,
@@ -810,15 +816,23 @@ function App() {
     sourceChips: [],
     styleMode: 'analyst' as const,
   };
-  const boothHesitationPercent = formatPercent(boothSignal.hesitationScore);
+  const boothHesitationPercent = formatPercent(
+    boothInterpretation?.hesitationScore ?? boothSignal.hesitationScore,
+  );
   const visibleReasons =
-    boothSignal.hesitationReasons.length > 0
-      ? boothSignal.hesitationReasons
+    boothInterpretation?.reasons && boothInterpretation.reasons.length > 0
+      ? boothInterpretation.reasons
+      : boothSignal.hesitationReasons.length > 0
+        ? boothSignal.hesitationReasons
       : ['Hesitation is currently driven by live silence after active speech.'];
   const coachingTone = getCoachingTone({
     hasStartedBroadcast,
     boothHasLiveInput,
-    boothSignal,
+    boothSignal: {
+      ...boothSignal,
+      hesitationScore: boothInterpretation?.hesitationScore ?? boothSignal.hesitationScore,
+      confidenceScore: boothInterpretation?.recoveryScore ?? boothSignal.confidenceScore,
+    },
     shouldSurfaceAssist,
   });
   const readinessChecks = [
@@ -856,6 +870,8 @@ function App() {
   const primaryActionDisabled = !isBroadcastLive && (!isBroadcastReady || isUpdatingControls);
   const guidanceSummary = shouldSurfaceAssist
     ? activeAssist.whyNow
+    : boothInterpretation?.summary
+      ? boothInterpretation.summary
     : coachingTone.tone === 'steady'
       ? 'Hesitation is falling. And-One is backing off.'
       : coachingTone.copy;
@@ -924,8 +940,8 @@ function App() {
 
     void appendBoothSessionSample(activeBoothSessionId, {
       timestamp: sampleTimestamp,
-      hesitationScore: boothSignal.hesitationScore,
-      confidenceScore: boothSignal.confidenceScore,
+      hesitationScore: boothInterpretation?.hesitationScore ?? boothSignal.hesitationScore,
+      confidenceScore: boothInterpretation?.recoveryScore ?? boothSignal.confidenceScore,
       pauseDurationMs: boothSignal.pauseDurationMs,
       audioLevel: boothSignal.audioLevel,
       isSpeaking: boothSignal.isSpeaking,
@@ -943,8 +959,77 @@ function App() {
     boothSignal.hesitationScore,
     boothSignal.isSpeaking,
     boothSignal.pauseDurationMs,
+    boothInterpretation?.hesitationScore,
+    boothInterpretation?.recoveryScore,
     hasStartedBroadcast,
     shouldSurfaceAssist,
+  ]);
+
+  useEffect(() => {
+    if (!hasStartedBroadcast || !isMicListening) {
+      setBoothInterpretation(null);
+      return;
+    }
+
+    const hasTranscriptContext =
+      boothTranscript.length > 0 ||
+      boothInterimTranscript.trim().length > 0 ||
+      boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS;
+
+    if (!hasTranscriptContext) {
+      return;
+    }
+
+    const features: BoothFeatureSnapshot = {
+      timestamp: boothClockMs,
+      hesitationScore: boothSignal.hesitationScore,
+      confidenceScore: boothSignal.confidenceScore,
+      pauseDurationMs: Math.round(boothSignal.pauseDurationMs),
+      speechStreakMs: Math.round(boothSignal.speechStreakMs),
+      silenceStreakMs: Math.round(boothSignal.silenceStreakMs),
+      audioLevel: boothSignal.audioLevel,
+      isSpeaking: boothSignal.isSpeaking,
+      hasVoiceActivity: boothSignal.hasVoiceActivity,
+      fillerWords: boothSignal.fillerWords,
+      repeatedPhrases: boothSignal.repeatedPhrases,
+      unfinishedPhrase: boothSignal.unfinishedPhrase,
+      hesitationReasons: boothSignal.hesitationReasons,
+      transcriptWindow: boothTranscript.slice(-LOCAL_TRANSCRIPT_LIMIT),
+      interimTranscript: boothInterimTranscript,
+    };
+
+    const timeoutId = window.setTimeout(() => {
+      void interpretBooth(features)
+        .then((nextInterpretation) => {
+          setBoothInterpretation(nextInterpretation);
+          setBoothError(null);
+        })
+        .catch(() => {
+          // Keep the local booth flow running even if interpretation is unavailable.
+        });
+    }, 900);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    boothClockMs,
+    boothInterimTranscript,
+    boothSignal.audioLevel,
+    boothSignal.confidenceScore,
+    boothSignal.fillerWords,
+    boothSignal.hasVoiceActivity,
+    boothSignal.hesitationReasons,
+    boothSignal.hesitationScore,
+    boothSignal.isSpeaking,
+    boothSignal.pauseDurationMs,
+    boothSignal.repeatedPhrases,
+    boothSignal.silenceStreakMs,
+    boothSignal.speechStreakMs,
+    boothSignal.unfinishedPhrase,
+    boothTranscript,
+    hasStartedBroadcast,
+    isMicListening,
   ]);
 
   return (

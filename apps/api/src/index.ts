@@ -2,8 +2,10 @@ import 'dotenv/config';
 import fastify from 'fastify';
 import {
   AppendBoothSessionSampleInputSchema,
+  BoothInterpretation,
   BoothSessionsResponse,
   FinishBoothSessionInputSchema,
+  InterpretBoothInputSchema,
   StartBoothSessionInputSchema,
   StartBoothSessionResponse,
   createEmptyAssistCard,
@@ -17,6 +19,7 @@ import {
 } from '@sports-copilot/shared-types';
 import fs from 'fs/promises';
 import path from 'path';
+import { interpretBoothWithOpenAI } from './booth-interpretation';
 import { createBoothSessionStore } from './booth-session-store';
 
 const server = fastify({ logger: true });
@@ -94,6 +97,16 @@ server.get('/booth-sessions', async (): Promise<BoothSessionsResponse> => {
     analytics: boothSessionStore.getAnalytics(),
     sessions: boothSessionStore.listSessions(),
   };
+});
+
+server.post('/booth/interpret', async (request, reply): Promise<BoothInterpretation | void> => {
+  const parsed = InterpretBoothInputSchema.safeParse(request.body);
+  if (!parsed.success) {
+    reply.status(400).send({ error: 'Invalid booth interpretation payload' });
+    return;
+  }
+
+  return interpretBoothWithOpenAI(parsed.data.features);
 });
 
 server.post('/booth-sessions/start', async (request, reply): Promise<StartBoothSessionResponse | void> => {
