@@ -47,6 +47,7 @@ Recommended hosted setup:
 3. Set `API_BASE_URL` on the worker to your Render API URL, for example `https://sports-copilot-api.onrender.com`
 4. Deploy the repo to Vercel with `VITE_API_BASE_URL` set to that same Render API URL
 5. Set `OPENAI_API_KEY` on the Render API service if you want server-side hesitation interpretation enabled
+6. Set `SUPABASE_URL` and `DATABASE_URL` on the Render API service if you want hosted booth analytics persistence
 
 ## Local Env
 
@@ -54,18 +55,20 @@ Create `.env.local` in the repo root for server-side secrets:
 
 ```bash
 OPENAI_API_KEY=your_openai_api_key
+SUPABASE_URL=https://your-project-ref.supabase.co
+DATABASE_URL=postgresql://postgres.your-project-ref:your_password@your-supabase-pooler:6543/postgres
 ```
 
 Notes:
 - the worker now exposes a `/health` endpoint so Render can keep it as a web service
 - the API now respects the host platform `PORT`
-- booth session persistence is still local SQLite, so on free hosted platforms it should be treated as ephemeral until we move it to Postgres
+- booth session persistence now uses hosted Postgres whenever `DATABASE_URL` is present, and falls back to local SQLite only when no database is configured
 
 ## Demo Notes
 - The replay is deterministic and runs from local JSON fixtures in [data/demo_match](/Users/vallabkaranam/Desktop/sports-copilot/data/demo_match).
 - The current landing screen is a practice-first booth for testing hesitation on arbitrary local clips.
-- The browser booth mode is local-first: clip loading is done from your machine, pause detection uses live mic activity, and transcript text uses in-browser speech recognition when available.
-- Booth sessions and analytics are now persisted locally in SQLite at `data/app/sports-copilot.sqlite`.
+- The browser booth mode is local-first: clip loading is done from your machine, pause detection uses live mic activity, and transcript text now prefers the API-backed OpenAI transcription path when available.
+- Booth sessions and analytics now persist to hosted Postgres when `DATABASE_URL` is configured, or to local SQLite at `data/app/sports-copilot.sqlite` as a fallback.
 - Chrome or Edge currently give the best microphone support for the live booth flow.
 - Deterministic fixtures still exist in the repo for the original demo path, but the next work phase is replacing the primary path with real free-input integrations.
 

@@ -680,3 +680,15 @@ export const InterpretBoothInputSchema = z.object({
   features: BoothFeatureSnapshotSchema,
 });
 export type InterpretBoothInput = z.infer<typeof InterpretBoothInputSchema>;
+
+export const TranscribeBoothAudioInputSchema = z.object({
+  audioBase64: z.string().min(1),
+  mimeType: z.string().min(1),
+});
+export type TranscribeBoothAudioInput = z.infer<typeof TranscribeBoothAudioInputSchema>;
+
+export const TranscribeBoothAudioResponseSchema = z.object({
+  transcript: z.string(),
+  source: z.enum(['openai', 'unavailable']),
+});
+export type TranscribeBoothAudioResponse = z.infer<typeof TranscribeBoothAudioResponseSchema>;

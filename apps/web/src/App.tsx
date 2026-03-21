@@ -18,6 +18,7 @@ import {
   finishBoothSession,
   interpretBooth,
   startBoothSession,
+  transcribeBoothAudio,
   updateControlState,
 } from './api';
 import { buildBoothAssist } from './boothAssist';
@@ -126,6 +127,43 @@ function formatFormRecord(
   return `${form.record.wins}-${form.record.draws}-${form.record.losses} (${form.lastFive.length})`;
 }
 
+function getSupportedRecorderMimeType() {
+  if (typeof window === 'undefined' || typeof window.MediaRecorder === 'undefined') {
+    return null;
+  }
+
+  const candidates = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/ogg;codecs=opus',
+    'audio/mp4',
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof window.MediaRecorder.isTypeSupported !== 'function') {
+      return candidate;
+    }
+
+    if (window.MediaRecorder.isTypeSupported(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+async function encodeBlobAsBase64(blob: Blob) {
+  const buffer = await blob.arrayBuffer();
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+  return window.btoa(binary);
+}
+
 function getCoachingTone({
   hasStartedBroadcast,
   boothHasLiveInput,
@@ -229,6 +267,10 @@ function App() {
   const microphoneStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioMonitorIntervalRef = useRef<number | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const transcriptionQueueRef = useRef(Promise.resolve());
+  const isApiTranscriptionActiveRef = useRef(false);
+  const lastApiTranscriptRef = useRef('');
   const lastPersistedSampleAtRef = useRef<number>(-1);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const clipObjectUrlRef = useRef<string | null>(null);
@@ -342,6 +384,7 @@ function App() {
       if (audioMonitorIntervalRef.current !== null) {
         window.clearInterval(audioMonitorIntervalRef.current);
       }
+      mediaRecorderRef.current?.stop();
       audioContextRef.current?.close().catch(() => undefined);
       microphoneStreamRef.current?.getTracks().forEach((track) => track.stop());
 
@@ -430,13 +473,75 @@ function App() {
     }
   }
 
+  function startRealtimeTranscription(stream: MediaStream) {
+    const supportedMimeType = getSupportedRecorderMimeType();
+
+    if (typeof window === 'undefined' || typeof window.MediaRecorder === 'undefined' || !supportedMimeType) {
+      isApiTranscriptionActiveRef.current = false;
+      return false;
+    }
+
+    const recorder = new window.MediaRecorder(stream, { mimeType: supportedMimeType });
+    mediaRecorderRef.current = recorder;
+    isApiTranscriptionActiveRef.current = true;
+
+    recorder.ondataavailable = (event) => {
+      if (!event.data || event.data.size === 0) {
+        return;
+      }
+
+      const currentMimeType = recorder.mimeType || supportedMimeType;
+      transcriptionQueueRef.current = transcriptionQueueRef.current
+        .then(async () => {
+          const audioBase64 = await encodeBlobAsBase64(event.data);
+          const result = await transcribeBoothAudio(audioBase64, currentMimeType);
+
+          if (!result.transcript || result.source !== 'openai') {
+            return;
+          }
+
+          const transcriptText = result.transcript.trim();
+          if (!transcriptText || transcriptText === lastApiTranscriptRef.current) {
+            return;
+          }
+
+          lastApiTranscriptRef.current = transcriptText;
+          const currentTime = Date.now();
+          const baseTimestamp = getCurrentTranscriptTimestamp();
+          setBoothClockMs(currentTime);
+          setBoothTranscript((current) =>
+            [...current, createTranscriptEntry(baseTimestamp, transcriptText)].slice(
+              -LOCAL_TRANSCRIPT_LIMIT,
+            ),
+          );
+          setBoothInterimTranscript('');
+          setLastSpeechAtMs(currentTime);
+        })
+        .catch(() => {
+          // Keep the booth running even if a transcription chunk fails.
+        });
+    };
+
+    recorder.onerror = () => {
+      isApiTranscriptionActiveRef.current = false;
+    };
+
+    recorder.onstop = () => {
+      isApiTranscriptionActiveRef.current = false;
+      mediaRecorderRef.current = null;
+    };
+
+    recorder.start(2_000);
+    return true;
+  }
+
   async function startAudioMonitoring() {
     if (
       microphoneStreamRef.current &&
       audioContextRef.current &&
       audioMonitorIntervalRef.current !== null
     ) {
-      return;
+      return microphoneStreamRef.current;
     }
 
     if (!supportsAudioMonitoring()) {
@@ -472,6 +577,8 @@ function App() {
         setLastVoiceActivityAtMs(Date.now());
       }
     }, AUDIO_ACTIVITY_SAMPLE_MS);
+
+    return stream;
   }
 
   async function prepareMicrophone() {
@@ -507,6 +614,10 @@ function App() {
   }
 
   function stopAudioMonitoring() {
+    mediaRecorderRef.current?.stop();
+    mediaRecorderRef.current = null;
+    isApiTranscriptionActiveRef.current = false;
+    lastApiTranscriptRef.current = '';
     if (audioMonitorIntervalRef.current !== null) {
       window.clearInterval(audioMonitorIntervalRef.current);
       audioMonitorIntervalRef.current = null;
@@ -651,9 +762,13 @@ function App() {
     setBoothClockMs(Date.now());
 
     void startAudioMonitoring()
-      .then(() => {
+      .then((stream) => {
         setMicrophoneAvailability('supported');
         setIsMicPrepared(true);
+
+        if (stream) {
+          startRealtimeTranscription(stream);
+        }
       })
       .catch(() => {
         shouldKeepMicLiveRef.current = false;
@@ -668,9 +783,15 @@ function App() {
 
     if (!SpeechRecognition) {
       setMicrophoneAvailability('degraded');
-      setBoothError(
-        'Voice activity is live, but browser speech transcription is unavailable in this tab.',
-      );
+      if (!isApiTranscriptionActiveRef.current) {
+        setBoothError(
+          'Voice activity is live, but browser speech transcription is unavailable in this tab.',
+        );
+      }
+      return;
+    }
+
+    if (isApiTranscriptionActiveRef.current) {
       return;
     }
 
@@ -710,6 +831,7 @@ function App() {
   function clearBoothTranscript() {
     setBoothTranscript([]);
     setBoothInterimTranscript('');
+    lastApiTranscriptRef.current = '';
     setLastSpeechAtMs(-1);
     setLastVoiceActivityAtMs(-1);
     setSpeechStreakStartedAtMs(-1);

@@ -24,11 +24,11 @@ function createTempDatabasePath() {
 }
 
 describe('booth session store', () => {
-  it('persists session samples and analytics in sqlite', () => {
-    const store = createBoothSessionStore(createTempDatabasePath());
-    const session = store.createSession('demo-clip.mp4');
+  it('persists session samples and analytics in sqlite', async () => {
+    const store = await createBoothSessionStore(createTempDatabasePath());
+    const session = await store.createSession('demo-clip.mp4');
 
-    store.appendSample(session.id, {
+    await store.appendSample(session.id, {
       timestamp: 1_000,
       hesitationScore: 0.42,
       confidenceScore: 0.58,
@@ -38,7 +38,7 @@ describe('booth session store', () => {
       triggerBadges: ['pause'],
       activeAssistText: 'Reset with a simple scene call and one short takeaway.',
     });
-    const updatedSession = store.appendSample(session.id, {
+    const updatedSession = await store.appendSample(session.id, {
       timestamp: 2_000,
       hesitationScore: 0.91,
       confidenceScore: 0.24,
@@ -48,9 +48,9 @@ describe('booth session store', () => {
       triggerBadges: ['pause', 'repeat-start'],
       activeAssistText: null,
     });
-    const finishedSession = store.finishSession(session.id);
-    const record = store.getSession(session.id);
-    const analytics = store.getAnalytics();
+    const finishedSession = await store.finishSession(session.id);
+    const record = await store.getSession(session.id);
+    const analytics = await store.getAnalytics();
 
     expect(updatedSession.sampleCount).toBe(2);
     expect(updatedSession.maxHesitationScore).toBe(0.91);
@@ -62,5 +62,6 @@ describe('booth session store', () => {
     expect(analytics.totalSessions).toBe(1);
     expect(analytics.completedSessions).toBe(1);
     expect(analytics.totalAssistCount).toBe(1);
+    await store.close?.();
   });
 });
