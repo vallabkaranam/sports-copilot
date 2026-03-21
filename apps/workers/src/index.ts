@@ -64,7 +64,7 @@ async function syncState(state: Partial<WorldState>) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Content-Length': data.length,
+          'Content-Length': Buffer.byteLength(data),
         },
       },
       () => resolve(true),
