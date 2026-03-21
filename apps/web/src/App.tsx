@@ -854,11 +854,6 @@ function App() {
   ].filter(Boolean) as string[];
   const primaryActionLabel = isBroadcastLive ? 'End session' : 'Start session';
   const primaryActionDisabled = !isBroadcastLive && (!isBroadcastReady || isUpdatingControls);
-  const readinessSummary = isBroadcastLive
-    ? 'Live and tracking'
-    : isBroadcastReady
-      ? 'Ready to go live'
-      : 'Finish setup';
   const guidanceSummary = shouldSurfaceAssist
     ? activeAssist.whyNow
     : coachingTone.tone === 'steady'
@@ -977,12 +972,11 @@ function App() {
         <section className="panel replay-panel stage-panel">
           <div className="panel-header panel-header--stage">
             <div>
-              <p className="panel-kicker">Live Feed</p>
+              <p className="panel-kicker">Program</p>
               <h2>{feedHeading}</h2>
             </div>
             <div className="panel-chip-row">
               <span className="panel-tag">{loadedClipUrl ? `${clipClockLabel} / ${clipDurationLabel}` : 'Awaiting upload'}</span>
-              <span className={`panel-tag panel-tag--${coachingTone.tone}`}>{coachingTone.label}</span>
             </div>
           </div>
 
@@ -1079,7 +1073,6 @@ function App() {
 
               <div className="replay-footer">
                 <div className={`coach-lane coach-lane--${coachingTone.tone}`}>
-                  <span className="coach-lane__signal">{coachingTone.label}</span>
                   <strong>{coachingTone.headline}</strong>
                 </div>
                 <div className="progress-track" aria-label="Replay progress">
@@ -1094,10 +1087,9 @@ function App() {
           <section className={`panel control-panel control-panel--${coachingTone.tone}`}>
             <div className="panel-header panel-header--compact">
               <div>
-                <p className="panel-kicker">Control</p>
+                <p className="panel-kicker">Session</p>
                 <h2>Go live</h2>
               </div>
-              <span className="panel-tag">{readinessSummary}</span>
             </div>
 
             <div className="readiness-list">
@@ -1136,11 +1128,8 @@ function App() {
             <article className={`booth-card booth-card--${coachingTone.tone}`}>
               <div className="booth-card__header">
                 <div>
-                  <p className="control-label">Live signal</p>
+                  <p className="control-label">Status</p>
                   <strong>{coachingTone.headline}</strong>
-                </div>
-                <div className={`metric-badge metric-badge--${coachingTone.tone}`}>
-                  <span>{coachingTone.label}</span>
                 </div>
               </div>
 
