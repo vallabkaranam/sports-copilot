@@ -243,14 +243,46 @@ describe('App dashboard', () => {
     expect(container.textContent).toContain('Load Replay Clip');
     expect(container.textContent).toContain('Start the booth');
     expect(container.textContent).toContain('Show system details');
-    expect(container.textContent).toContain('Load a clip and start talking.');
+    expect(container.textContent).toContain('Upload a clip, then start the booth.');
   });
 
-  it('posts replay and backup control updates back to the API', async () => {
+  it('keeps the booth in setup mode until a clip is loaded', async () => {
     await renderApp();
 
     const playButton = container.querySelector('button');
     expect(playButton?.textContent).toBe('Start Broadcast');
+    expect(playButton?.hasAttribute('disabled')).toBe(true);
+    expect(container.textContent).toContain('Load clip first');
+  });
+
+  it('posts replay and backup control updates back to the API after a clip is loaded', async () => {
+    await renderApp();
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null;
+    expect(fileInput).not.toBeNull();
+
+    const file = new File(['video'], 'test.mp4', { type: 'video/mp4' });
+    const createObjectUrl = vi.fn(() => 'blob:test');
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL: createObjectUrl,
+      revokeObjectURL: vi.fn(),
+    });
+
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      });
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    const playButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Start Broadcast'),
+    );
+
+    expect(playButton?.hasAttribute('disabled')).toBe(false);
 
     await act(async () => {
       playButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -276,6 +308,7 @@ describe('App dashboard', () => {
         expect.objectContaining({ restart: true }),
       ]),
     );
+    expect(createObjectUrl).toHaveBeenCalled();
   });
 
   it('keeps the landing screen focused on practice mode instead of fixture assists', async () => {

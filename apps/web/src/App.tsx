@@ -92,6 +92,14 @@ function createTranscriptEntry(timestamp: number, text: string): TranscriptEntry
   };
 }
 
+function safelyPlayVideo(videoElement: HTMLVideoElement, onBlocked: () => void) {
+  const playResult = videoElement.play();
+
+  if (playResult && typeof playResult.catch === 'function') {
+    void playResult.catch(onBlocked);
+  }
+}
+
 function createPracticeAssist(boothSignal: BoothSignal) {
   const confidence = clamp(0.28 + boothSignal.hesitationScore * 0.72);
 
@@ -155,6 +163,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
   const [isUpdatingControls, setIsUpdatingControls] = useState(false);
+  const [hasStartedBroadcast, setHasStartedBroadcast] = useState(false);
   const [loadedClipName, setLoadedClipName] = useState('');
   const [loadedClipUrl, setLoadedClipUrl] = useState<string | null>(null);
   const [clipPositionMs, setClipPositionMs] = useState(0);
@@ -240,7 +249,7 @@ function App() {
     }
 
     if (controls.playbackStatus === 'playing') {
-      void videoRef.current.play().catch(() => {
+      safelyPlayVideo(videoRef.current, () => {
         setBoothError('Press play on the loaded clip if the browser blocks autoplay.');
       });
       return;
@@ -270,7 +279,7 @@ function App() {
     videoRef.current.currentTime = 0;
 
     if (controls.playbackStatus === 'playing') {
-      void videoRef.current.play().catch(() => {
+      safelyPlayVideo(videoRef.current, () => {
         setBoothError('Press play on the loaded clip if the browser blocks autoplay.');
       });
     }
@@ -338,6 +347,7 @@ function App() {
     setClipPositionMs(0);
     setClipDurationMs(0);
     setIsClipMuted(true);
+    setHasStartedBroadcast(false);
   }
 
   async function startAudioMonitoring() {
@@ -588,6 +598,13 @@ function App() {
   }
 
   async function startBroadcast() {
+    if (!loadedClipUrl) {
+      setBoothError('Load a clip before starting the booth.');
+      return;
+    }
+
+    setHasStartedBroadcast(true);
+
     if (controls.playbackStatus !== 'playing') {
       await sendControlPatch({ playbackStatus: 'playing' });
     }
@@ -598,6 +615,8 @@ function App() {
   }
 
   async function stopBroadcast() {
+    setHasStartedBroadcast(false);
+
     if (isMicListening) {
       stopMicrophone();
     }
@@ -635,7 +654,8 @@ function App() {
     nowMs: boothClockMs,
   });
   const boothHasLiveInput =
-    isMicListening || boothTranscript.length > 0 || boothInterimTranscript.length > 0;
+    hasStartedBroadcast &&
+    (isMicListening || boothTranscript.length > 0 || boothInterimTranscript.length > 0);
   const isPracticeMode = true;
   const practiceAssist = createPracticeAssist(boothSignal);
   const shouldSurfaceAssist =
@@ -674,15 +694,19 @@ function App() {
   const clipClockLabel = formatDurationMs(clipPositionMs);
   const clipDurationLabel = clipDurationMs > 0 ? formatDurationMs(clipDurationMs) : '--:--';
   const clipProgress = clipDurationMs > 0 ? Math.min(100, Math.round((clipPositionMs / clipDurationMs) * 100)) : 0;
-  const boothStatusLabel = isMicListening
-    ? boothSignal.isSpeaking
-      ? 'Mic live'
-      : 'Listening for the next beat'
-    : isMicSupported
-      ? microphoneAvailability === 'degraded'
-        ? 'Mic degraded'
-        : 'Mic ready'
-      : 'Mic unavailable';
+  const boothStatusLabel = !loadedClipUrl
+    ? 'Load clip first'
+    : !hasStartedBroadcast
+      ? 'Ready to start'
+      : isMicListening
+        ? boothSignal.isSpeaking
+          ? 'Mic live'
+          : 'Listening for the next beat'
+        : isMicSupported
+          ? microphoneAvailability === 'degraded'
+            ? 'Mic degraded'
+            : 'Mic ready'
+          : 'Mic unavailable';
   const boothStatusTone = isMicListening
     ? 'status-pill--live'
     : microphoneAvailability === 'degraded'
@@ -690,7 +714,8 @@ function App() {
       : isMicSupported
       ? 'status-pill--ghost'
       : 'status-pill--warning';
-  const isBroadcastLive = controls.playbackStatus === 'playing' || isMicListening;
+  const isBroadcastLive =
+    hasStartedBroadcast && (controls.playbackStatus === 'playing' || isMicListening);
   const replayToastSignature = `${activeAssist.type}:${activeAssist.text}:${shouldSurfaceAssist}:${controls.restartToken}`;
   const activeTriggerBadges = [
     boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS ? 'pause' : null,
@@ -788,8 +813,14 @@ function App() {
 
             <div className="replay-stage__content">
               <div className="replay-copy">
-                <span className="live-chip">{loadedClipUrl ? 'Practice clip' : 'Ready for practice'}</span>
-                <h3>{loadedClipUrl ? 'Test your booth timing against the clip.' : 'Load a clip and start talking.'}</h3>
+                <span className="live-chip">{loadedClipUrl ? 'Practice clip ready' : 'Ready for upload'}</span>
+                <h3>
+                  {loadedClipUrl
+                    ? hasStartedBroadcast
+                      ? 'Talk through the clip and let the booth react.'
+                      : 'Clip loaded. Start the booth when you are ready.'
+                    : 'Upload a clip, then start the booth.'}
+                </h3>
                 <p>
                   Speak naturally, leave a beat, repeat yourself, or use filler words to test the
                   hesitation tracker.
@@ -807,6 +838,12 @@ function App() {
                   <p className="assist-type">Booth monitor</p>
                   <h3>{latestBoothLine ?? 'Talk through the play.'}</h3>
                   <p>Leave a beat and the grounded assist will surface when the hesitation is real.</p>
+                </div>
+              ) : loadedClipUrl && !hasStartedBroadcast ? (
+                <div className="replay-toast replay-toast--hint">
+                  <p className="assist-type">Booth ready</p>
+                  <h3>Start broadcast when you want the booth to listen.</h3>
+                  <p>The clip is loaded and muted. Nothing will react until you deliberately start.</p>
                 </div>
               ) : null}
 
@@ -856,6 +893,7 @@ function App() {
                 <button
                   type="button"
                   className={isBroadcastLive ? 'is-active' : ''}
+                  disabled={!loadedClipUrl}
                   onClick={() => void (isBroadcastLive ? stopBroadcast() : startBroadcast())}
                 >
                   {isBroadcastLive ? 'Stop Broadcast' : 'Start Broadcast'}
@@ -916,7 +954,11 @@ function App() {
                   ))
                 ) : (
                   <p className="transcript-line transcript-line--muted">
-                    {isMicSupported
+                    {!loadedClipUrl
+                      ? 'Load a clip first, then start the booth.'
+                      : !hasStartedBroadcast
+                        ? 'Start the booth to begin live mic tracking.'
+                        : isMicSupported
                       ? 'Start the mic and talk through the replay to see live booth transcript here.'
                       : 'This browser does not expose usable mic APIs, so live hesitation is unavailable here.'}
                   </p>
