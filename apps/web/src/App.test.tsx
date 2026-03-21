@@ -252,7 +252,7 @@ describe('App dashboard', () => {
     const playButton = container.querySelector('button');
     expect(playButton?.textContent).toBe('Start Broadcast');
     expect(playButton?.hasAttribute('disabled')).toBe(true);
-    expect(container.textContent).toContain('Load clip first');
+    expect(container.textContent).toContain('Waiting for clip upload');
   });
 
   it('posts replay and backup control updates back to the API after a clip is loaded', async () => {

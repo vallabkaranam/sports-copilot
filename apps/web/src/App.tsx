@@ -707,15 +707,13 @@ function App() {
             ? 'Mic degraded'
             : 'Mic ready'
           : 'Mic unavailable';
-  const boothStatusTone = isMicListening
-    ? 'status-pill--live'
-    : microphoneAvailability === 'degraded'
-      ? 'status-pill--warning'
-      : isMicSupported
-      ? 'status-pill--ghost'
-      : 'status-pill--warning';
   const isBroadcastLive =
     hasStartedBroadcast && (controls.playbackStatus === 'playing' || isMicListening);
+  const setupStatusLabel = !loadedClipUrl
+    ? 'Waiting for clip upload'
+    : !hasStartedBroadcast
+      ? 'Clip loaded. Booth standing by'
+      : boothStatusLabel;
   const replayToastSignature = `${activeAssist.type}:${activeAssist.text}:${shouldSurfaceAssist}:${controls.restartToken}`;
   const activeTriggerBadges = [
     boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS ? 'pause' : null,
@@ -735,16 +733,6 @@ function App() {
               ? 'Test hesitation tracking, confidence, and assist timing against your own commentary on any clip.'
               : 'A replay-aware commentator booth with a real clip window, live hesitation tracking, and grounded assist timing.'}
           </p>
-        </div>
-
-        <div className="hero-meta">
-          <span className={`status-pill ${error ? 'status-pill--warning' : 'status-pill--live'}`}>
-            {error ? 'Reconnecting' : isHydrated ? 'Live Sync' : 'Booting'}
-          </span>
-          <span className={`status-pill ${boothStatusTone}`}>{boothStatusLabel}</span>
-          <span className="status-pill status-pill--ghost">
-            {isBroadcastLive ? 'Broadcast live' : 'Broadcast idle'}
-          </span>
         </div>
       </header>
 
@@ -879,8 +867,22 @@ function App() {
                 <p className="panel-kicker">Broadcast Control</p>
                 <h2>Start the booth</h2>
               </div>
-              <span className="panel-tag">{isUpdatingControls ? 'Applying' : boothStatusLabel}</span>
             </div>
+
+            <article className="booth-summary">
+              <div>
+                <p className="control-label">System</p>
+                <strong>{error ? 'Reconnecting' : isHydrated ? 'Ready' : 'Booting'}</strong>
+              </div>
+              <div>
+                <p className="control-label">Broadcast</p>
+                <strong>{isBroadcastLive ? 'Live' : 'Idle'}</strong>
+              </div>
+              <div>
+                <p className="control-label">Booth</p>
+                <strong>{isUpdatingControls ? 'Applying changes' : setupStatusLabel}</strong>
+              </div>
+            </article>
 
             <div className="control-group">
               <p className="control-label">Broadcast</p>
@@ -910,7 +912,9 @@ function App() {
                   <p className="control-label">Live hesitation</p>
                   <strong>{boothHesitationPercent}</strong>
                 </div>
-                <span className={`status-pill ${boothStatusTone}`}>{boothSignal.activeSpeaker}</span>
+                <div className="metric-badge">
+                  <span>{boothSignal.activeSpeaker === 'lead' ? 'Speaking' : 'Quiet'}</span>
+                </div>
               </div>
 
               <div className="meter-track">
