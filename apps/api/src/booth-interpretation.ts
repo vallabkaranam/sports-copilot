@@ -12,13 +12,51 @@ function clamp(value: number, minimum = 0, maximum = 1) {
   return Math.min(maximum, Math.max(minimum, value));
 }
 
-function buildSignals(features: BoothFeatureSnapshot): BoothInterpretationSignal[] {
+function detectWakePhrase(features: BoothFeatureSnapshot, profile?: BoothSpeakerProfile) {
+  const wakePhrase = profile?.wakePhrase?.trim().toLowerCase();
+  if (!wakePhrase) {
+    return false;
+  }
+
+  const transcriptText = [
+    ...features.transcriptWindow.map((entry) => entry.text.toLowerCase()),
+    features.interimTranscript.toLowerCase(),
+  ].join(' ');
+
+  return transcriptText.includes(wakePhrase);
+}
+
+function buildSignals(
+  features: BoothFeatureSnapshot,
+  profile?: BoothSpeakerProfile,
+): BoothInterpretationSignal[] {
+  const pauseVsBaseline =
+    profile && profile.averagePauseDurationMs > 0
+      ? features.pauseDurationMs / Math.max(1, profile.averagePauseDurationMs)
+      : 1;
+  const fillerVsBaseline =
+    profile && profile.averageFillerDensity > 0
+      ? features.fillerDensity / Math.max(0.01, profile.averageFillerDensity)
+      : features.fillerDensity > 0
+        ? 1
+        : 0;
+  const wakePhraseDetected = detectWakePhrase(features, profile);
+
   return [
     {
       key: 'pauseDurationMs',
       label: 'Pause after speech',
       value: features.pauseDurationMs,
       detail: `${(features.pauseDurationMs / 1000).toFixed(1)}s`,
+    },
+    {
+      key: 'pauseVsBaseline',
+      label: 'Pause vs baseline',
+      value: pauseVsBaseline,
+      detail:
+        profile && profile.averagePauseDurationMs > 0
+          ? `${pauseVsBaseline.toFixed(2)}x your usual pause`
+          : 'No baseline yet',
     },
     {
       key: 'speechStreakMs',
@@ -51,6 +89,15 @@ function buildSignals(features: BoothFeatureSnapshot): BoothInterpretationSignal
       detail: `${Math.round(features.fillerDensity * 100)}%`,
     },
     {
+      key: 'fillerVsBaseline',
+      label: 'Filler vs baseline',
+      value: fillerVsBaseline,
+      detail:
+        profile && profile.averageFillerDensity > 0
+          ? `${fillerVsBaseline.toFixed(2)}x your usual filler rate`
+          : 'No baseline yet',
+    },
+    {
       key: 'repeatedOpeningCount',
       label: 'Repeated openings',
       value: features.repeatedOpeningCount,
@@ -67,6 +114,12 @@ function buildSignals(features: BoothFeatureSnapshot): BoothInterpretationSignal
       label: 'Transcript stability',
       value: features.transcriptStabilityScore,
       detail: `${Math.round(features.transcriptStabilityScore * 100)}%`,
+    },
+    {
+      key: 'wakePhraseDetected',
+      label: 'Wake phrase',
+      value: wakePhraseDetected,
+      detail: wakePhraseDetected ? 'detected' : 'not detected',
     },
   ];
 }
@@ -87,7 +140,7 @@ function buildUnavailableBoothInterpretation(
         ? `Historical profile is loaded from ${profile.totalSamples} samples, but live model inference is not available.`
         : 'No historical booth profile is available yet.',
     ],
-    signals: buildSignals(features),
+    signals: buildSignals(features, profile),
     source: 'unavailable',
   };
 }
@@ -119,6 +172,8 @@ export async function interpretBoothWithOpenAI(
     return buildUnavailableBoothInterpretation(features, profile);
   }
 
+  const observedSignals = buildSignals(features, profile);
+
   const prompt = [
     'You are classifying a live sports commentator booth state.',
     'Use only the observed signal data, speaker profile, and supplied live context. Do not invent facts.',
@@ -129,7 +184,7 @@ export async function interpretBoothWithOpenAI(
     'Compare the current moment against the historical speaker profile when deciding whether this behavior is actually unusual for this commentator.',
     'Be conservative. Only choose step-in when help is clearly needed now. Prefer monitoring or weaning-off when the user is recovering.',
     '',
-    JSON.stringify({ features, profile }),
+    JSON.stringify({ features, profile, observedSignals }),
   ].join('\n');
 
   const response = await fetch(OPENAI_API_URL, {
@@ -184,7 +239,7 @@ export async function interpretBoothWithOpenAI(
                     (typeof (signal as BoothInterpretationSignal).value === 'number' ||
                       typeof (signal as BoothInterpretationSignal).value === 'boolean'),
                 )
-              : buildSignals(features),
+              : observedSignals,
             source: 'openai',
           };
     }

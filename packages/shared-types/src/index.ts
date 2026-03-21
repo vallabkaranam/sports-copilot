@@ -687,14 +687,17 @@ export type BoothFeatureSnapshot = z.infer<typeof BoothFeatureSnapshotSchema>;
 export const BoothInterpretationSignalSchema = z.object({
   key: z.enum([
     'pauseDurationMs',
+    'pauseVsBaseline',
     'speechStreakMs',
     'silenceStreakMs',
     'audioLevel',
     'fillerCount',
     'fillerDensity',
+    'fillerVsBaseline',
     'repeatedOpeningCount',
     'unfinishedPhrase',
     'transcriptStabilityScore',
+    'wakePhraseDetected',
   ]),
   label: z.string(),
   value: z.union([z.number(), z.boolean()]),
