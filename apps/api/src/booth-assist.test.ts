@@ -94,6 +94,25 @@ describe('booth cue generation', () => {
 
     const result = await generateBoothCueWithOpenAI({
       features: makeFeatures(),
+      contextBundle: {
+        summary: 'Live moment: Courtois save | Social pulse: fans are calling it world class',
+        items: [
+          {
+            id: 'fact-1',
+            lane: 'live-moment',
+            headline: 'Live moment',
+            detail: 'Courtois stands tall to keep Madrid alive during the pressure spell.',
+            expiresAt: 90_000,
+            salience: 0.94,
+            sourceChip: {
+              id: 'fact-1',
+              label: 'Courtois save',
+              source: 'live:event-feed:save',
+              relevance: 0.94,
+            },
+          },
+        ],
+      },
       retrievalFacts: [makeFact()],
     });
 

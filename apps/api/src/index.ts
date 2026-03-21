@@ -19,6 +19,7 @@ import {
   WorldState,
   createDefaultReplayControlState,
   createEmptyCommentatorState,
+  createEmptyContextBundle,
   createEmptyLiveMatchState,
   createEmptyNarrativeState,
   createEmptyPreMatchState,
@@ -81,6 +82,7 @@ let worldState: Partial<WorldState> = {
   commentator: createEmptyCommentatorState(),
   narrative: createEmptyNarrativeState(),
   retrieval: createEmptyRetrievalState(),
+  contextBundle: createEmptyContextBundle(),
   preMatch: createEmptyPreMatchState(),
   liveMatch: createEmptyLiveMatchState(),
   liveSignals: { social: [], vision: [] },
@@ -221,6 +223,7 @@ server.post('/booth/generate-cue', async (request, reply): Promise<GenerateBooth
     features: parsed.data.features,
     interpretation: parsed.data.interpretation,
     retrievalFacts: parsed.data.retrieval.supportingFacts,
+    contextBundle: parsed.data.contextBundle,
     recentEvents: parsed.data.recentEvents?.map((event) => ({
       matchTime: event.matchTime,
       description: event.description,

@@ -109,6 +109,26 @@ function createWorldState(overrides: Partial<WorldState> = {}): WorldState {
         },
       ],
     },
+    contextBundle: {
+      summary:
+        'Live moment: Courtois stands tall to deny Barcelona. | Social pulse: @MadridXtra says he is world class.',
+      items: [
+        {
+          id: 'fact-1',
+          lane: 'live-moment',
+          headline: 'Live moment',
+          detail: 'Courtois stands tall to deny Barcelona.',
+          expiresAt: 90_000,
+          salience: 0.96,
+          sourceChip: {
+            id: 'fact-1',
+            label: 'THIBAUT COURTOIS IS WORLD CLASS.',
+            source: 'live:social:@MadridXtra',
+            relevance: 0.96,
+          },
+        },
+      ],
+    },
     assist: {
       type: 'context',
       text: 'Courtois is keeping Madrid alive in this pressure wave.',

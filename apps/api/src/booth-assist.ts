@@ -1,5 +1,6 @@
 import {
   AssistCard,
+  ContextBundle,
   BoothInterpretation,
   BoothFeatureSnapshot,
   createEmptyAssistCard,
@@ -66,6 +67,7 @@ function buildPrompt(params: {
   clipName?: string;
   expectedTopics?: string[];
   recentCueTexts?: string[];
+  contextBundle?: ContextBundle;
   retrievedFacts: RetrievedFact[];
   recentEvents?: Array<{ matchTime: string; description: string; highSalience: boolean }>;
 }) {
@@ -77,6 +79,7 @@ function buildPrompt(params: {
     clipName,
     expectedTopics = [],
     recentCueTexts = [],
+    contextBundle,
     retrievedFacts,
     recentEvents = [],
   } = params;
@@ -87,6 +90,7 @@ function buildPrompt(params: {
     'Your job is to offer one short, broadcaster-friendly line that gets the speaker moving again without taking over.',
     'Use only the supplied facts and context. Never invent a stat, event, player detail, or narrative.',
     'If the facts are thin, generate a generic bridge line that stays grounded in the current moment instead of hallucinating.',
+    'Prefer the rolling context bundle first when it has relevant items, because it represents the freshest session rack.',
     'Keep the cue to a single line, ideally 8-18 words, and keep whyNow short.',
     'Prefer a fresh angle if recentCueTexts show you already used the same framing.',
     'Return strict JSON with keys: type, text, whyNow, confidence, sourceFactIds, refreshAfterMs.',
@@ -100,6 +104,7 @@ function buildPrompt(params: {
       preMatchSummary,
       expectedTopics,
       recentCueTexts,
+      contextBundle,
       features,
       interpretation,
       recentEvents,
@@ -125,6 +130,7 @@ export async function generateBoothCueWithOpenAI(params: {
   preMatchSummary?: string;
   expectedTopics?: string[];
   recentCueTexts?: string[];
+  contextBundle?: ContextBundle;
 }): Promise<GenerateBoothCueResponse> {
   if (!process.env.OPENAI_API_KEY) {
     return buildUnavailableCue();
@@ -153,6 +159,7 @@ export async function generateBoothCueWithOpenAI(params: {
         clipName: params.clipName,
         expectedTopics: params.expectedTopics,
         recentCueTexts: params.recentCueTexts,
+        contextBundle: params.contextBundle,
         retrievedFacts,
         recentEvents: params.recentEvents,
       }),

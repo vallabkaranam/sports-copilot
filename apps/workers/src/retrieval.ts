@@ -1,4 +1,6 @@
 import {
+  ContextBundle,
+  ContextBundleItem,
   GameEvent,
   LiveMatchState,
   MemoryTier,
@@ -24,6 +26,7 @@ const STATIC_TIER_WEIGHT = 0.35;
 const PRE_MATCH_TIER_WEIGHT = 0.41;
 const HOT_EVENT_WINDOW_MS = 12_000;
 const QUIET_STRETCH_WINDOW_MS = 120_000;
+const CONTEXT_LANE_LIMIT = 2;
 
 const STOP_WORDS = new Set([
   'a',
@@ -616,5 +619,119 @@ export function buildRetrievalState({
   return {
     query,
     supportingFacts,
+  };
+}
+
+function summarizeFactText(text: string) {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= 108) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, 105).trimEnd()}...`;
+}
+
+function pickContextLane(fact: RetrievedFact): ContextBundleItem['lane'] {
+  if (fact.tier === 'pre_match') {
+    return 'pre-match';
+  }
+  if (fact.source.startsWith('social:')) {
+    return 'social-pulse';
+  }
+  if (fact.tier === 'session') {
+    return 'session-thread';
+  }
+  return 'live-moment';
+}
+
+function buildContextHeadline(fact: RetrievedFact) {
+  if (fact.source.startsWith('social:')) {
+    return 'Social pulse';
+  }
+  if (fact.source.startsWith('stats:')) {
+    return 'Stat line';
+  }
+  if (fact.source.startsWith('event-feed:')) {
+    return 'Live moment';
+  }
+  if (fact.source.startsWith('vision:')) {
+    return 'Visual cue';
+  }
+  if (fact.tier === 'pre_match') {
+    switch (fact.metadata?.chunkCategory) {
+      case 'recent-form':
+        return 'Form line';
+      case 'head-to-head':
+        return 'Head to head';
+      case 'weather':
+        return 'Weather';
+      case 'venue':
+        return 'Venue';
+      case 'trend':
+        return 'Trend';
+      default:
+        return 'Pre-match note';
+    }
+  }
+  return 'Session thread';
+}
+
+function buildContextExpiry(clockMs: number, fact: RetrievedFact) {
+  if (fact.timestamp === null) {
+    return null;
+  }
+
+  const windowMs =
+    fact.tier === 'pre_match'
+      ? QUIET_STRETCH_WINDOW_MS
+      : fact.tier === 'session'
+        ? SESSION_EVENT_WINDOW_MS
+        : LIVE_MEMORY_WINDOW_MS;
+
+  return fact.timestamp + windowMs > clockMs ? fact.timestamp + windowMs : clockMs;
+}
+
+export function buildContextBundle(clockMs: number, retrieval: RetrievalState): ContextBundle {
+  const laneBuckets = new Map<ContextBundleItem['lane'], ContextBundleItem[]>();
+
+  for (const fact of retrieval.supportingFacts) {
+    const lane = pickContextLane(fact);
+    const item: ContextBundleItem = {
+      id: fact.id,
+      lane,
+      headline: buildContextHeadline(fact),
+      detail: summarizeFactText(fact.text),
+      expiresAt: buildContextExpiry(clockMs, fact),
+      salience: fact.relevance,
+      sourceChip: fact.sourceChip,
+    };
+
+    const current = laneBuckets.get(lane) ?? [];
+    current.push(item);
+    laneBuckets.set(lane, current);
+  }
+
+  const orderedLanes: ContextBundleItem['lane'][] = [
+    'live-moment',
+    'social-pulse',
+    'pre-match',
+    'session-thread',
+  ];
+
+  const items = orderedLanes.flatMap((lane) =>
+    (laneBuckets.get(lane) ?? [])
+      .sort((left, right) => right.salience - left.salience)
+      .slice(0, CONTEXT_LANE_LIMIT),
+  );
+
+  return {
+    summary:
+      items.length > 0
+        ? items
+            .slice(0, 4)
+            .map((item) => `${item.headline}: ${item.detail}`)
+            .join(' | ')
+        : 'Context rack is waiting for the next live beat.',
+    items,
   };
 }

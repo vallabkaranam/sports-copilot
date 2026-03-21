@@ -156,6 +156,38 @@ export const RetrievalStateSchema = z.object({
 });
 export type RetrievalState = z.infer<typeof RetrievalStateSchema>;
 
+export const ContextBundleLaneSchema = z.enum([
+  'live-moment',
+  'social-pulse',
+  'pre-match',
+  'session-thread',
+]);
+export type ContextBundleLane = z.infer<typeof ContextBundleLaneSchema>;
+
+export const ContextBundleItemSchema = z.object({
+  id: z.string(),
+  lane: ContextBundleLaneSchema,
+  headline: z.string(),
+  detail: z.string(),
+  expiresAt: z.number().int().nonnegative().nullable(),
+  salience: z.number().min(0).max(1),
+  sourceChip: SourceChipSchema,
+});
+export type ContextBundleItem = z.infer<typeof ContextBundleItemSchema>;
+
+export const ContextBundleSchema = z.object({
+  summary: z.string(),
+  items: z.array(ContextBundleItemSchema),
+});
+export type ContextBundle = z.infer<typeof ContextBundleSchema>;
+
+export function createEmptyContextBundle(): ContextBundle {
+  return {
+    summary: 'Context rack is waiting for the next live beat.',
+    items: [],
+  };
+}
+
 /**
  * Assist cards displayed to the commentator
  */
@@ -552,6 +584,7 @@ export const WorldStateSchema = z.object({
   commentator: CommentatorStateSchema,
   narrative: NarrativeStateSchema,
   retrieval: RetrievalStateSchema,
+  contextBundle: ContextBundleSchema,
   assist: AssistCardSchema,
   preMatch: PreMatchStateSchema,
   liveMatch: LiveMatchStateSchema,
@@ -748,6 +781,7 @@ export const GenerateBoothCueInputSchema = z.object({
   features: BoothFeatureSnapshotSchema,
   interpretation: BoothInterpretationSchema.optional(),
   retrieval: RetrievalStateSchema,
+  contextBundle: ContextBundleSchema.optional(),
   recentEvents: z.array(GameEventSchema).optional(),
   clipName: z.string().optional(),
   contextSummary: z.string().optional(),

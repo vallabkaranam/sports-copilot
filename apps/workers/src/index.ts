@@ -8,6 +8,7 @@ import { analyzeCommentary } from './commentator';
 import { buildNarrativeState } from './narrative';
 import { buildPreMatchContext, createDegradedPreMatchState } from './pre-match';
 import {
+  buildContextBundle,
   buildRetrievalState,
   ingestLiveSocialPosts,
   NarrativeFixture,
@@ -33,6 +34,7 @@ import {
   createDefaultReplayControlState,
   createEmptyAssistCard,
   createEmptyCommentatorState,
+  createEmptyContextBundle,
   createEmptyLiveMatchState,
   createEmptyNarrativeState,
   createEmptyPreMatchState,
@@ -196,6 +198,7 @@ async function run() {
     commentator: createEmptyCommentatorState(),
     narrative: createEmptyNarrativeState(),
     retrieval: createEmptyRetrievalState(),
+    contextBundle: createEmptyContextBundle(),
     assist: createEmptyAssistCard(),
     preMatch: createEmptyPreMatchState(),
     liveMatch: buildDegradedState('Waiting for Sportmonks data.', process.env.SPORTMONKS_FIXTURE_ID ?? ''),
@@ -325,6 +328,7 @@ async function run() {
         liveMatch: snapshot.liveMatch,
         preMatch,
       });
+      const contextBundle = buildContextBundle(clockMs, retrieval);
       const assist = buildAssistCard({
         clockMs,
         events: snapshot.events,
@@ -359,6 +363,7 @@ async function run() {
         commentator,
         narrative,
         retrieval,
+        contextBundle,
         assist,
         preMatch,
         liveMatch: snapshot.liveMatch,
