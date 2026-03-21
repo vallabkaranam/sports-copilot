@@ -688,7 +688,7 @@ describe('App dashboard', () => {
     expect(container.textContent).toContain('And-One');
     expect(container.textContent).toContain('Channel 1');
     expect(container.textContent).toContain('Channel 2');
-    expect(container.textContent).toContain('Live control');
+    expect(container.textContent).toContain('Control room');
     expect(container.textContent).toContain('Show Details');
     expect(container.textContent).toContain('Channel 1 selected');
     expect(container.textContent).toContain('Barca preset');
@@ -812,8 +812,8 @@ describe('App dashboard', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('Booth reviews');
-    expect(container.textContent).toContain('Selected session');
+    expect(container.textContent).toContain('Past live runs');
+    expect(container.textContent).toContain('Review');
     expect(container.textContent).toContain('Peak hesitation');
     expect(container.textContent).toContain('The saved booth trace shows a long pause, a quick assist, and a solid recovery.');
     expect(container.textContent).not.toContain('Assist live on this beat.');

@@ -1676,6 +1676,7 @@ function App() {
         <div className="brand-lockup">
           <p className="eyebrow">{BRAND.eyebrow}</p>
           <h1>{BRAND.heroTitle}</h1>
+          <p className="hero-copy">{BRAND.heroCopy}</p>
         </div>
 
         <div className="header-actions">
@@ -1715,12 +1716,12 @@ function App() {
       <div className="main-grid">
         <section className="panel replay-panel stage-panel">
           <div className="panel-header panel-header--stage">
-            <div>
-              <p className="panel-kicker">Program</p>
+              <div>
+              <p className="panel-kicker">Control room</p>
               <h2>{feedHeading}</h2>
             </div>
             <div className="panel-chip-row">
-              <span className="panel-tag">{loadedClipUrl ? `${clipClockLabel} / ${clipDurationLabel}` : 'Awaiting upload'}</span>
+              <span className="panel-tag">{loadedClipUrl ? `${clipClockLabel} / ${clipDurationLabel}` : 'No feed live'}</span>
             </div>
           </div>
 
@@ -1847,7 +1848,7 @@ function App() {
                     ? hasStartedBroadcast
                       ? coachingTone.headline
                       : resolvedPostSessionReview
-                        ? resolvedPostSessionReview.headline
+                        ? 'Session complete. Review it from Sessions.'
                       : 'Go live and And-One will request microphone access if needed.'
                     : 'Load a reel into Channel 1 or Channel 2 to begin.'}
                 </h3>
@@ -1896,7 +1897,7 @@ function App() {
             <div className="panel-header panel-header--compact">
               <div>
                 <p className="panel-kicker">Session</p>
-                <h2>Live control</h2>
+                <h2>Control room</h2>
               </div>
             </div>
 
@@ -1972,49 +1973,7 @@ function App() {
               <p className="field-copy">
                 The clip stays muted by default so the booth tracks your voice, not the program feed.
               </p>
-              {boothError ? <p className="inline-warning">{boothError}</p> : null}
             </article>
-
-            {!hasStartedBroadcast && resolvedPostSessionReview ? (
-              <article className="session-review-card">
-                <div className="panel-header panel-header--compact">
-                  <div>
-                    <p className="control-label">Saved review</p>
-                    <h3>Post-session analytics</h3>
-                  </div>
-                  <span className="panel-tag">Stored in DB</span>
-                </div>
-
-                <p className="field-copy field-copy--tight">{resolvedPostSessionReview.summary}</p>
-
-                <div className="commentary-metadata commentary-metadata--review">
-                  {(postSessionReview?.metrics ?? []).map((metric) => (
-                    <div key={metric.label}>
-                      <p className="control-label">{metric.label}</p>
-                      <strong>{metric.value}</strong>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="reason-list">
-                  {resolvedPostSessionReview.strengths.map((note) => (
-                    <p key={`strength-${note}`}>{note}</p>
-                  ))}
-                </div>
-
-                <div className="reason-list">
-                  {resolvedPostSessionReview.watchouts.map((note) => (
-                    <p key={`watchout-${note}`}>{note}</p>
-                  ))}
-                </div>
-
-                <div className="reason-list">
-                  {resolvedPostSessionReview.coachingNotes.map((note) => (
-                    <p key={`coach-${note}`}>{note}</p>
-                  ))}
-                </div>
-              </article>
-            ) : null}
 
             <div className="inline-actions inline-actions--compact">
               <button type="button" className="text-button" onClick={() => void resetBroadcast()}>
@@ -2033,8 +1992,8 @@ function App() {
           <section className="panel">
             <div className="panel-header">
               <div>
-                <p className="panel-kicker">Saved sessions</p>
-                <h2>Booth reviews</h2>
+                <p className="panel-kicker">Session archive</p>
+                <h2>Past live runs</h2>
               </div>
               <span className="panel-tag">{recentBoothSessions.length} runs</span>
             </div>
@@ -2113,7 +2072,7 @@ function App() {
           <section className="panel">
             <div className="panel-header">
               <div>
-                <p className="panel-kicker">Selected session</p>
+                <p className="panel-kicker">Review</p>
                 <h2>{latestCompletedSession?.clipName ?? 'No session selected'}</h2>
               </div>
               <span className="panel-tag">{reviewStatusLabel}</span>
