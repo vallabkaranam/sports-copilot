@@ -1,5 +1,6 @@
 import fastify from 'fastify';
 import {
+  createEmptyAssistCard,
   WorldState,
   createEmptyCommentatorState,
   createEmptyNarrativeState,
@@ -17,6 +18,7 @@ let worldState: Partial<WorldState> = {
   score: { home: 0, away: 0 },
   possession: 'BAR',
   recentEvents: [],
+  assist: createEmptyAssistCard(),
   commentator: createEmptyCommentatorState(),
   narrative: createEmptyNarrativeState(),
   retrieval: createEmptyRetrievalState(),

@@ -6,6 +6,9 @@ import { z } from 'zod';
 export const StyleModeSchema = z.enum(['hype', 'analyst']);
 export type StyleMode = z.infer<typeof StyleModeSchema>;
 
+export const AssistUrgencySchema = z.enum(['low', 'medium', 'high']);
+export type AssistUrgency = z.infer<typeof AssistUrgencySchema>;
+
 /**
  * Transcript speaker labels
  */
@@ -90,11 +93,25 @@ export const AssistCardSchema = z.object({
     'none',
   ]),
   text: z.string(),
+  styleMode: StyleModeSchema,
+  urgency: AssistUrgencySchema,
   confidence: z.number().min(0).max(1),
   whyNow: z.string(),
   sourceChips: z.array(SourceChipSchema),
 });
 export type AssistCard = z.infer<typeof AssistCardSchema>;
+
+export function createEmptyAssistCard(): AssistCard {
+  return {
+    type: 'none',
+    text: '',
+    styleMode: 'analyst',
+    urgency: 'low',
+    confidence: 0,
+    whyNow: 'No assist needed right now.',
+    sourceChips: [],
+  };
+}
 
 /**
  * Individual Match Events
@@ -190,6 +207,7 @@ export const WorldStateSchema = z.object({
   commentator: CommentatorStateSchema,
   narrative: NarrativeStateSchema,
   retrieval: RetrievalStateSchema,
+  assist: AssistCardSchema,
   liveSignals: z.object({
     social: z.array(SocialPostSchema),
     vision: z.array(z.any()),

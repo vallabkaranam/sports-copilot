@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import http from 'http';
+import { buildAssistCard } from './assist';
 import { ReplayEngine } from './engine';
 import { analyzeCommentary } from './commentator';
 import { buildNarrativeState } from './narrative';
@@ -95,11 +96,19 @@ async function run() {
         narratives,
         socialPosts,
       });
+      const assist = buildAssistCard({
+        clockMs,
+        events,
+        commentator,
+        narrative,
+        retrieval,
+      });
       const ingestedSocialPosts = ingestLiveSocialPosts(clockMs, socialPosts);
 
       // 3. Sync to API
       await syncState({
         ...status,
+        assist,
         commentator,
         narrative,
         retrieval,

@@ -129,7 +129,7 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 - [x] attach source metadata
 
 ### Narrative Agent
-- [ ] maintain active narratives:
+- [x] maintain active narratives:
   - [x] rivalry
   - [x] momentum shift
   - [x] player spotlight
@@ -152,34 +152,34 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 ## P4 — Assist Generation
 
 ### Supervisor Agent
-- [ ] decide whether to intervene
-- [ ] choose assist type
-- [ ] choose style mode
-- [ ] choose urgency
+- [x] decide whether to intervene
+- [x] choose assist type
+- [x] choose style mode
+- [x] choose urgency
 
 ### Generator Agent
-- [ ] generate:
-  - [ ] hype line
-  - [ ] context line
-  - [ ] stat line
-  - [ ] transition line
-  - [ ] co-host toss-up
-- [ ] keep output under strict length target
+- [x] generate:
+  - [x] hype line
+  - [x] context line
+  - [x] stat line
+  - [x] transition line
+  - [x] co-host toss-up
+- [x] keep output under strict length target
 
 ### Grounding Agent
-- [ ] verify claims against retrieved context
-- [ ] suppress unsupported facts
-- [ ] attach source chips
+- [x] verify claims against retrieved context
+- [x] suppress unsupported facts
+- [x] attach source chips
 
 ### Ranking Agent
-- [ ] rank multiple candidate assists
-- [ ] return only top assist
+- [x] rank multiple candidate assists
+- [x] return only top assist
 
 ### Tests
-- [ ] test assist length
-- [ ] test supported source chips
-- [ ] test no assist when not needed
-- [ ] test intervention after high-salience hesitation
+- [x] test assist length
+- [x] test supported source chips
+- [x] test no assist when not needed
+- [x] test intervention after high-salience hesitation
 
 ---
 
