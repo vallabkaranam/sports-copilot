@@ -8,6 +8,7 @@ import {
   WorldState,
   createEmptyAssistCard,
   createEmptyCommentatorState,
+  createEmptyLiveMatchState,
   createEmptyNarrativeState,
   createEmptyRetrievalState,
   createEmptySessionMemory,
@@ -119,6 +120,60 @@ function createWorldState(overrides: Partial<WorldState> = {}): WorldState {
           source: 'live:social:@MadridXtra',
           relevance: 0.96,
         },
+      ],
+    },
+    liveMatch: {
+      ...createEmptyLiveMatchState(),
+      fixtureId: '19427573',
+      status: 'live',
+      period: 'Second Half',
+      minute: 75,
+      homeTeam: {
+        id: '14',
+        name: 'Barcelona',
+        shortCode: 'BAR',
+        logoUrl: null,
+      },
+      awayTeam: {
+        id: '15',
+        name: 'Real Madrid',
+        shortCode: 'RMA',
+        logoUrl: null,
+      },
+      cards: [
+        { teamSide: 'home', yellow: 2, red: 0 },
+        { teamSide: 'away', yellow: 1, red: 0 },
+      ],
+      substitutions: [
+        {
+          id: 'sub-1',
+          timestamp: 70_000,
+          matchTime: '01:10',
+          teamSide: 'away',
+          playerOff: 'Rodrygo',
+          playerOn: 'Joselu',
+        },
+      ],
+      lineups: [
+        {
+          teamSide: 'home',
+          teamId: '14',
+          teamName: 'Barcelona',
+          formation: '4-3-3',
+          startingXI: Array.from({ length: 11 }, (_, index) => ({
+            id: `bar-${index}`,
+            name: `Bar Starter ${index + 1}`,
+            number: index + 1,
+            position: 'MF',
+            formationPosition: `${index + 1}`,
+            starter: true,
+          })),
+          bench: [],
+        },
+      ],
+      stats: [
+        { teamSide: 'home', label: 'Possession', value: '58%' },
+        { teamSide: 'away', label: 'Shots On Target', value: '4' },
       ],
     },
     liveSignals: {
@@ -242,11 +297,13 @@ describe('App dashboard', () => {
     expect(container.textContent).toContain('Barcelona');
     expect(container.textContent).toContain('Real Madrid');
     expect(container.textContent).toContain('Load Replay Clip');
-    expect(container.textContent).toContain('Talk into the replay');
+    expect(container.textContent).toContain('Talk into the live match');
     expect(container.textContent).toContain('Event Timeline');
-    expect(container.textContent).toContain('Narrative Stack');
+    expect(container.textContent).toContain('Cards, substitutions, and lineups');
     expect(container.textContent).toContain('Booth hesitation tracker');
     expect(container.textContent).toContain('Courtois is keeping Madrid alive in this pressure wave.');
+    expect(container.textContent).toContain('Rodrygo');
+    expect(container.textContent).toContain('Possession');
   });
 
   it('posts replay and backup control updates back to the API', async () => {

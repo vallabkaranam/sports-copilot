@@ -3,6 +3,7 @@ import {
   WorldState,
   createEmptyAssistCard,
   createEmptyCommentatorState,
+  createEmptyLiveMatchState,
   createEmptyNarrativeState,
   createEmptyRetrievalState,
   createEmptySessionMemory,
@@ -23,11 +24,11 @@ export const TEAM_META = {
 
 export function createInitialWorldState(): WorldState {
   return {
-    matchId: 'clasico-demo',
+    matchId: 'sportmonks-live',
     clock: '00:00',
     score: { home: 0, away: 0 },
-    possession: TEAM_META.home.code,
-    gameStateSummary: 'Awaiting replay kickoff.',
+    possession: 'LIVE',
+    gameStateSummary: 'Waiting for Sportmonks live data.',
     highSalienceMoments: [],
     recentEvents: [],
     sessionMemory: createEmptySessionMemory(),
@@ -35,6 +36,7 @@ export function createInitialWorldState(): WorldState {
     narrative: createEmptyNarrativeState(),
     retrieval: createEmptyRetrievalState(),
     assist: createEmptyAssistCard(),
+    liveMatch: createEmptyLiveMatchState(),
     liveSignals: {
       social: [],
       vision: [],

@@ -5,6 +5,7 @@ import {
   WorldState,
   createDefaultReplayControlState,
   createEmptyCommentatorState,
+  createEmptyLiveMatchState,
   createEmptyNarrativeState,
   createEmptyRetrievalState,
   createEmptySessionMemory,
@@ -26,11 +27,11 @@ server.addHook('onRequest', async (request, reply) => {
 
 // Minimal initial state
 let worldState: Partial<WorldState> = {
-  matchId: 'clásico-2024-demo',
+  matchId: 'sportmonks-live',
   clock: '00:00',
   score: { home: 0, away: 0 },
-  possession: 'BAR',
-  gameStateSummary: 'El Clasico is underway and both sides are settling into shape.',
+  possession: 'LIVE',
+  gameStateSummary: 'Waiting for Sportmonks live data.',
   highSalienceMoments: [],
   recentEvents: [],
   sessionMemory: createEmptySessionMemory(),
@@ -38,10 +39,12 @@ let worldState: Partial<WorldState> = {
   commentator: createEmptyCommentatorState(),
   narrative: createEmptyNarrativeState(),
   retrieval: createEmptyRetrievalState(),
+  liveMatch: createEmptyLiveMatchState(),
   liveSignals: { social: [], vision: [] },
 };
 
 let controlState: ReplayControlState = createDefaultReplayControlState();
+controlState.activeFixtureId = process.env.SPORTMONKS_FIXTURE_ID;
 
 server.get('/health', async () => {
   return { status: 'ok', matchId: worldState.matchId };
@@ -66,7 +69,7 @@ server.post('/internal/state', async (request, reply) => {
 server.get('/controls', async () => controlState);
 
 server.post('/controls', async (request) => {
-  const { playbackStatus, preferredStyleMode, forceHesitation, restart } = request.body as Partial<
+  const { playbackStatus, preferredStyleMode, forceHesitation, restart, activeFixtureId } = request.body as Partial<
     ReplayControlState
   > & {
     restart?: boolean;
@@ -75,6 +78,7 @@ server.post('/controls', async (request) => {
   if (playbackStatus) controlState.playbackStatus = playbackStatus;
   if (preferredStyleMode) controlState.preferredStyleMode = preferredStyleMode;
   if (typeof forceHesitation === 'boolean') controlState.forceHesitation = forceHesitation;
+  if (activeFixtureId) controlState.activeFixtureId = activeFixtureId;
   if (restart) controlState.restartToken += 1;
   return controlState;
 });

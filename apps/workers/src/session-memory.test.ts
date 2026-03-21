@@ -5,7 +5,6 @@ import {
   TranscriptEntry,
   createEmptyAssistCard,
 } from '@sports-copilot/shared-types';
-import { ReplayEngine } from './engine';
 import { createSessionMemoryTracker } from './session-memory';
 
 const mockEvents: GameEvent[] = [
@@ -46,16 +45,13 @@ function makeAssist(text: string): AssistCard {
 
 describe('session memory tracker', () => {
   it('stores rolling recent events, surfaced assists, and commentary context', () => {
-    const engine = new ReplayEngine({ events: mockEvents, tickRateMs: 500 });
     const tracker = createSessionMemoryTracker();
-    engine.play();
-    engine.tick(2_500);
 
     tracker.rememberAssist(makeAssist('Courtois is keeping Madrid alive.'));
     tracker.rememberAssist(makeAssist('Courtois is keeping Madrid alive.'));
     tracker.rememberAssist(makeAssist('That save keeps the Clasico tense.'));
 
-    const state = tracker.getState(engine, transcript);
+    const state = tracker.getState(mockEvents, transcript);
 
     expect(state.recentEvents.map((event) => event.id)).toEqual(['e1', 'e2']);
     expect(state.surfacedAssists.map((assist) => assist.text)).toEqual([
@@ -69,14 +65,11 @@ describe('session memory tracker', () => {
   });
 
   it('clears stored assist history on reset', () => {
-    const engine = new ReplayEngine({ events: mockEvents, tickRateMs: 500 });
     const tracker = createSessionMemoryTracker();
-    engine.play();
-    engine.tick(2_500);
 
     tracker.rememberAssist(makeAssist('Temporary assist.'));
     tracker.reset();
 
-    expect(tracker.getState(engine, transcript).surfacedAssists).toEqual([]);
+    expect(tracker.getState(mockEvents, transcript).surfacedAssists).toEqual([]);
   });
 });

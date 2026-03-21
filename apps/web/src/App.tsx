@@ -548,6 +548,25 @@ function App() {
   }
 
   const assist = worldState.assist;
+  const homeTeam = worldState.liveMatch.homeTeam.name || TEAM_META.home.name;
+  const awayTeam = worldState.liveMatch.awayTeam.name || TEAM_META.away.name;
+  const homeCode = worldState.liveMatch.homeTeam.shortCode || TEAM_META.home.code;
+  const awayCode = worldState.liveMatch.awayTeam.shortCode || TEAM_META.away.code;
+  const homeCards =
+    worldState.liveMatch.cards.find((entry) => entry.teamSide === 'home') ?? {
+      teamSide: 'home',
+      yellow: 0,
+      red: 0,
+    };
+  const awayCards =
+    worldState.liveMatch.cards.find((entry) => entry.teamSide === 'away') ?? {
+      teamSide: 'away',
+      yellow: 0,
+      red: 0,
+    };
+  const substitutions = [...worldState.liveMatch.substitutions].reverse();
+  const lineupSummary = worldState.liveMatch.lineups;
+  const statSummary = worldState.liveMatch.stats.slice(0, 8);
   const latestTranscript =
     worldState.commentator.recentTranscript[
       worldState.commentator.recentTranscript.length - 1
@@ -630,11 +649,11 @@ function App() {
     <div className="app-shell">
       <header className="hero">
         <div>
-          <p className="eyebrow">Controlled El Clasico Replay</p>
+          <p className="eyebrow">Sportmonks Live Soccer Feed</p>
           <h1>Sports Copilot</h1>
           <p className="hero-copy">
-            A replay-aware commentator booth with a real clip window, live hesitation tracking,
-            and grounded assist timing.
+            A live soccer copilot with real match state, optional clip sync, live hesitation
+            tracking, and grounded assist timing.
           </p>
         </div>
 
@@ -644,6 +663,9 @@ function App() {
           </span>
           <span className={`status-pill ${boothStatusTone}`}>{boothStatusLabel}</span>
           <span className="status-pill status-pill--ghost">{controls.preferredStyleMode} mode</span>
+          <span className="status-pill status-pill--ghost">
+            {worldState.liveMatch.fixtureId ? `Fixture ${worldState.liveMatch.fixtureId}` : 'No fixture'}
+          </span>
         </div>
       </header>
 
@@ -651,15 +673,15 @@ function App() {
 
       <section className="panel score-strip">
         <div className="team-block">
-          <span className="team-code">{TEAM_META.home.code}</span>
+          <span className="team-code">{homeCode}</span>
           <div>
-            <p className="team-name">{TEAM_META.home.name}</p>
-            <p className="team-note">Fixture lane</p>
+            <p className="team-name">{homeTeam}</p>
+            <p className="team-note">Home side</p>
           </div>
         </div>
 
         <div className="score-center">
-          <p className="score-label">Replay Clock</p>
+          <p className="score-label">Match Clock</p>
           <div className="scoreline">
             <span>{worldState.score.home}</span>
             <span className="score-divider">:</span>
@@ -670,15 +692,21 @@ function App() {
 
         <div className="team-block team-block--away">
           <div>
-            <p className="team-name">{TEAM_META.away.name}</p>
-            <p className="team-note">Counter threat live</p>
+            <p className="team-name">{awayTeam}</p>
+            <p className="team-note">Away side</p>
           </div>
-          <span className="team-code">{TEAM_META.away.code}</span>
+          <span className="team-code">{awayCode}</span>
         </div>
 
         <div className="score-sidecar">
-          <p className="score-label">Possession</p>
-          <strong>{worldState.possession}</strong>
+          <p className="score-label">
+            {worldState.liveMatch.status.replace(/_/g, ' ') || 'Match status'}
+          </p>
+          <strong>
+            {worldState.liveMatch.period
+              ? `${worldState.liveMatch.period} ${worldState.liveMatch.minute}'`
+              : worldState.possession}
+          </strong>
           <p className="score-sidecar-copy">{worldState.gameStateSummary}</p>
         </div>
       </section>
@@ -688,7 +716,7 @@ function App() {
           <div className="panel-header">
             <div>
               <p className="panel-kicker">Replay Booth</p>
-              <h2>See the clip and the cue timing together</h2>
+              <h2>Live match state with optional clip sync</h2>
             </div>
             <span className="panel-tag">
               {loadedClipUrl ? `${clipClockLabel} / ${clipDurationLabel}` : `${replayProgress}% through fixture`}
@@ -778,7 +806,9 @@ function App() {
                 <p className="pulse-copy">
                   {latestSocial
                     ? `${latestSocial.handle}: ${latestSocial.text}`
-                    : 'Social pulse and crowd reaction will populate as the sequence heats up.'}
+                    : worldState.liveMatch.isDegraded
+                      ? worldState.liveMatch.degradedReason
+                      : 'Social pulse and crowd reaction will populate as the match heats up.'}
                 </p>
               </div>
             </div>
@@ -789,8 +819,8 @@ function App() {
           <section className="panel control-panel">
             <div className="panel-header">
               <div>
-                <p className="panel-kicker">Commentator Booth</p>
-                <h2>Talk into the replay</h2>
+              <p className="panel-kicker">Commentator Booth</p>
+              <h2>Talk into the live match</h2>
               </div>
               <span className="panel-tag">{isUpdatingControls ? 'Applying' : boothStatusLabel}</span>
             </div>
@@ -894,8 +924,8 @@ function App() {
                 ) : (
                   <p className="transcript-line transcript-line--muted">
                     {isMicSupported
-                      ? 'Start the mic and talk through the replay to see live booth transcript here.'
-                      : 'This browser does not expose speech recognition, so the booth stays in replay-only mode.'}
+                      ? 'Start the mic and talk through the match to see live booth transcript here.'
+                      : 'This browser does not expose speech recognition, so the booth stays in live-feed-only mode.'}
                   </p>
                 )}
                 {boothInterimTranscript ? (
@@ -998,7 +1028,50 @@ function App() {
                 </article>
               ))
             ) : (
-              <p className="empty-copy">Recent match events will roll in here as the replay advances.</p>
+              <p className="empty-copy">Recent match events will roll in here as the live feed advances.</p>
+            )}
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="panel-header">
+            <div>
+              <p className="panel-kicker">Live Match</p>
+              <h2>Cards, substitutions, and lineups</h2>
+            </div>
+            <span className="panel-tag">{worldState.liveMatch.status.replace(/_/g, ' ')}</span>
+          </div>
+
+          <div className="narrative-focus">
+            <p className="narrative-label">Cards</p>
+            <h3>
+              {homeCode} {homeCards.yellow}Y/{homeCards.red}R · {awayCode} {awayCards.yellow}Y/{awayCards.red}R
+            </h3>
+            <p>{substitutions.length} substitutions tracked</p>
+          </div>
+
+          <div className="narrative-stack">
+            {substitutions.length > 0 ? (
+              substitutions.slice(0, 4).map((substitution) => (
+                <span className="stack-chip" key={substitution.id}>
+                  {substitution.matchTime} {substitution.playerOn} for {substitution.playerOff}
+                </span>
+              ))
+            ) : (
+              <span className="stack-chip stack-chip--muted">Substitutions will appear here.</span>
+            )}
+          </div>
+
+          <div className="memory-strip">
+            <p className="memory-title">Projected starters</p>
+            {lineupSummary.length > 0 ? (
+              lineupSummary.map((lineup) => (
+                <p className="memory-line" key={lineup.teamSide}>
+                  {lineup.teamName}: {lineup.formation ?? 'formation TBD'} · {lineup.startingXI.length} starters
+                </p>
+              ))
+            ) : (
+              <p className="memory-line">Lineups will populate once Sportmonks returns them.</p>
             )}
           </div>
         </section>
@@ -1007,7 +1080,7 @@ function App() {
           <div className="panel-header">
             <div>
               <p className="panel-kicker">Narrative Stack</p>
-              <h2>Storylines</h2>
+              <h2>Storylines and stats</h2>
             </div>
             <span className="panel-tag">{formatMomentum(worldState.narrative.momentum)}</span>
           </div>
@@ -1031,15 +1104,21 @@ function App() {
           </div>
 
           <div className="memory-strip">
-            <p className="memory-title">Recent assist memory</p>
-            {surfacedAssists.length > 0 ? (
+            <p className="memory-title">Live team stats</p>
+            {statSummary.length > 0 ? (
+              statSummary.map((stat, index) => (
+                <p className="memory-line" key={`${stat.teamSide}-${stat.label}-${index}`}>
+                  {(stat.teamSide === 'home' ? homeCode : awayCode).toUpperCase()} {stat.label}: {stat.value}
+                </p>
+              ))
+            ) : surfacedAssists.length > 0 ? (
               surfacedAssists.slice(0, 3).map((savedAssist) => (
                 <p className="memory-line" key={`${savedAssist.type}:${savedAssist.text}`}>
                   {savedAssist.text}
                 </p>
               ))
             ) : (
-              <p className="memory-line">No assists have been surfaced yet.</p>
+              <p className="memory-line">Stats will populate once the live feed returns them.</p>
             )}
           </div>
         </section>

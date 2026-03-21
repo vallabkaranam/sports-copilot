@@ -3,10 +3,20 @@ import path from 'path';
 import http from 'http';
 import { buildAssistCard } from './assist';
 import { analyzeCommentary } from './commentator';
-import { ReplayEngine } from './engine';
 import { buildNarrativeState } from './narrative';
-import { buildRetrievalState, ingestLiveSocialPosts, NarrativeFixture, RosterFixture } from './retrieval';
+import {
+  buildRetrievalState,
+  ingestLiveSocialPosts,
+  NarrativeFixture,
+} from './retrieval';
 import { createSessionMemoryTracker } from './session-memory';
+import {
+  buildLiveGameStateSummary,
+  buildPossessionLabel,
+  buildRosterFromLiveMatch,
+  fetchSportmonksFixture,
+  normalizeSportmonksFixture,
+} from './sportmonks';
 import { getActiveVisionCues, ingestVisionFrames } from './vision';
 import {
   CommentatorState,
@@ -18,11 +28,16 @@ import {
   VisionFrame,
   WorldState,
   createDefaultReplayControlState,
+  createEmptyAssistCard,
+  createEmptyCommentatorState,
+  createEmptyLiveMatchState,
+  createEmptyNarrativeState,
+  createEmptyRetrievalState,
 } from '@sports-copilot/shared-types';
 
 const API_HOSTNAME = 'localhost';
 const API_PORT = 3001;
-const TICK_RATE_MS = 500;
+const POLL_INTERVAL_MS = 15_000;
 
 async function loadFixture<T>(fixturePath: string) {
   const data = await fs.readFile(fixturePath, 'utf8');
@@ -41,14 +56,10 @@ async function loadRequiredFixture<T>(fixturePath: string, label: string) {
   }
 }
 
-async function loadOptionalFixture<T>(fixturePath: string, label: string, fallback: T) {
+async function loadOptionalFixture<T>(fixturePath: string, fallback: T) {
   try {
     return await loadFixture<T>(fixturePath);
-  } catch (error) {
-    console.warn(
-      `Optional fixture "${label}" is unavailable. Falling back to demo-safe defaults.`,
-      error,
-    );
+  } catch (_error) {
     return fallback;
   }
 }
@@ -107,24 +118,59 @@ function applyForcedHesitation(commentator: CommentatorState, forceHesitation: b
   };
 }
 
+function toClock(minute: number, stoppageMinute: number | null) {
+  const baseMinute = Math.max(0, Math.floor(minute));
+  const mins = Math.floor(baseMinute / 60);
+  const secs = baseMinute % 60;
+  const clock = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+  if (stoppageMinute && stoppageMinute > 0) {
+    return `${clock}+${stoppageMinute}`;
+  }
+
+  return clock;
+}
+
+function buildDegradedState(reason: string, fixtureId: string) {
+  return {
+    ...createEmptyLiveMatchState(),
+    fixtureId,
+    isDegraded: true,
+    degradedReason: reason,
+    lastUpdatedAt: Date.now(),
+  };
+}
+
 async function run() {
   const fixturesDir = path.resolve(__dirname, '../../../data/demo_match');
-  const [events, roster, narratives, socialPosts, transcript, visionFrames] = await Promise.all([
-    loadRequiredFixture<GameEvent[]>(path.join(fixturesDir, 'events.json'), 'events'),
-    loadRequiredFixture<RosterFixture>(path.join(fixturesDir, 'roster.json'), 'roster'),
+  const [narratives, socialPosts, transcript, visionFrames] = await Promise.all([
     loadRequiredFixture<NarrativeFixture[]>(path.join(fixturesDir, 'narratives.json'), 'narratives'),
-    loadOptionalFixture<SocialPost[]>(path.join(fixturesDir, 'fake_social.json'), 'social', []),
-    loadRequiredFixture<TranscriptEntry[]>(path.join(fixturesDir, 'transcript_seed.json'), 'transcript'),
-    loadOptionalFixture<VisionFrame[]>(path.join(fixturesDir, 'vision_frames.json'), 'vision', []),
+    loadOptionalFixture<SocialPost[]>(path.join(fixturesDir, 'fake_social.json'), []),
+    loadOptionalFixture<TranscriptEntry[]>(path.join(fixturesDir, 'transcript_seed.json'), []),
+    loadOptionalFixture<VisionFrame[]>(path.join(fixturesDir, 'vision_frames.json'), []),
   ]);
   const visionCues: VisionCue[] = ingestVisionFrames(visionFrames);
-
-  const engine = new ReplayEngine({ events, tickRateMs: TICK_RATE_MS });
   const sessionMemory = createSessionMemoryTracker();
   let lastKnownControls = createDefaultReplayControlState();
   let lastHandledRestartToken = 0;
+  let lastWorldState: Partial<WorldState> = {
+    matchId: 'sportmonks-live',
+    clock: '00:00',
+    score: { home: 0, away: 0 },
+    possession: 'LIVE',
+    gameStateSummary: 'Waiting for the first live Sportmonks snapshot.',
+    highSalienceMoments: [],
+    recentEvents: [],
+    sessionMemory: sessionMemory.getState([], []),
+    commentator: createEmptyCommentatorState(),
+    narrative: createEmptyNarrativeState(),
+    retrieval: createEmptyRetrievalState(),
+    assist: createEmptyAssistCard(),
+    liveMatch: buildDegradedState('Waiting for Sportmonks data.', process.env.SPORTMONKS_FIXTURE_ID ?? ''),
+    liveSignals: { social: [], vision: [] },
+  };
 
-  console.log('Replay Worker started.');
+  console.log('Live Match Worker started.');
 
   setInterval(async () => {
     try {
@@ -132,79 +178,129 @@ async function run() {
       lastKnownControls = controls;
 
       if (controls.restartToken > lastHandledRestartToken) {
-        engine.restart();
         sessionMemory.reset();
         lastHandledRestartToken = controls.restartToken;
-
-        if (controls.playbackStatus === 'paused') {
-          engine.pause();
-        }
       }
 
-      if (controls.playbackStatus === 'playing') {
-        engine.play();
-      } else {
-        engine.pause();
+      if (controls.playbackStatus === 'paused' && lastWorldState.liveMatch) {
+        await syncState(lastWorldState);
+        return;
       }
 
-      const newEvents = engine.tick(TICK_RATE_MS);
-      const status = engine.getStatus();
-      const clockMs = engine.getMatchClockMs();
-      const rawCommentator = analyzeCommentary({
-        clockMs,
-        events,
-        transcript,
+      const fixtureId = controls.activeFixtureId ?? process.env.SPORTMONKS_FIXTURE_ID ?? '';
+      const apiToken = process.env.SPORTMONKS_API_TOKEN ?? '';
+
+      if (!fixtureId || !apiToken) {
+        const degradedLiveMatch = buildDegradedState(
+          'Sportmonks credentials or fixture ID are missing.',
+          fixtureId,
+        );
+
+        lastWorldState = {
+          ...lastWorldState,
+          matchId: fixtureId ? `sportmonks-${fixtureId}` : 'sportmonks-live',
+          liveMatch: degradedLiveMatch,
+          gameStateSummary: degradedLiveMatch.degradedReason ?? 'Live data unavailable.',
+        };
+
+        await syncState(lastWorldState);
+        return;
+      }
+
+      const payload = await fetchSportmonksFixture({
+        apiToken,
+        fixtureId,
       });
-      const commentator = applyForcedHesitation(rawCommentator, controls.forceHesitation);
+      const snapshot = normalizeSportmonksFixture(payload, fixtureId);
+      const clockMs = snapshot.liveMatch.minute * 60_000;
+      const commentator = applyForcedHesitation(
+        analyzeCommentary({
+          clockMs,
+          events: snapshot.events,
+          transcript,
+        }),
+        controls.forceHesitation,
+      );
       const narrative = buildNarrativeState({
         clockMs,
-        events,
+        events: snapshot.events,
         narratives,
+        liveMatch: snapshot.liveMatch,
       });
+      const roster = buildRosterFromLiveMatch(snapshot.liveMatch);
       const activeVisionCues = getActiveVisionCues(clockMs, visionCues);
       const retrieval = buildRetrievalState({
         clockMs,
-        events,
+        events: snapshot.events,
         transcript,
         roster,
         narratives,
         socialPosts,
         visionCues,
+        liveMatch: snapshot.liveMatch,
       });
       const assist = buildAssistCard({
         clockMs,
-        events,
+        events: snapshot.events,
         commentator,
         narrative,
         retrieval,
         preferredStyleMode: controls.preferredStyleMode,
         forceIntervention: controls.forceHesitation,
       });
-      sessionMemory.rememberAssist(assist);
-      const sessionMemoryState = sessionMemory.getState(engine, commentator.recentTranscript);
-      const ingestedSocialPosts = ingestLiveSocialPosts(clockMs, socialPosts);
 
-      await syncState({
-        ...status,
-        assist,
+      sessionMemory.rememberAssist(assist);
+      const ingestedSocialPosts = ingestLiveSocialPosts(clockMs, socialPosts);
+      const score = snapshot.score;
+      const recentEvents = snapshot.events.slice(-8);
+      const highSalienceMoments = snapshot.events.filter((event) => event.highSalience).slice(-4);
+      const possession = buildPossessionLabel(snapshot.liveMatch, snapshot.liveMatch.stats);
+      const sessionMemoryState = sessionMemory.getState(recentEvents, commentator.recentTranscript);
+
+      lastWorldState = {
+        matchId: `sportmonks-${fixtureId}`,
+        clock: toClock(snapshot.liveMatch.minute, snapshot.liveMatch.stoppageMinute),
+        score,
+        possession,
+        gameStateSummary: buildLiveGameStateSummary({
+          liveMatch: snapshot.liveMatch,
+          events: snapshot.events,
+          score,
+        }),
+        highSalienceMoments,
+        recentEvents,
+        sessionMemory: sessionMemoryState,
         commentator,
         narrative,
         retrieval,
-        recentEvents: status.recentEvents ?? [],
-        sessionMemory: sessionMemoryState,
+        assist,
+        liveMatch: snapshot.liveMatch,
         liveSignals: {
           social: ingestedSocialPosts,
           vision: activeVisionCues,
         },
-      });
+      };
 
-      if (newEvents) {
-        console.log(`[Replay] Clock: ${status.clock} - New events: ${newEvents.length}`);
-      }
+      await syncState(lastWorldState);
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const previousLiveMatch = lastWorldState.liveMatch ?? createEmptyLiveMatchState();
+
+      lastWorldState = {
+        ...lastWorldState,
+        liveMatch: {
+          ...previousLiveMatch,
+          isDegraded: true,
+          degradedReason: `Sportmonks sync failed: ${message}`,
+          lastUpdatedAt: Date.now(),
+        },
+        gameStateSummary: `Sportmonks sync failed: ${message}`,
+      };
+
+      await syncState(lastWorldState).catch(() => undefined);
       console.error('Worker loop error:', error);
     }
-  }, TICK_RATE_MS);
+  }, POLL_INTERVAL_MS);
 }
 
 run().catch(console.error);

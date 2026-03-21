@@ -1,4 +1,9 @@
-import { GameEvent, NarrativeState, createEmptyNarrativeState } from '@sports-copilot/shared-types';
+import {
+  GameEvent,
+  LiveMatchState,
+  NarrativeState,
+  createEmptyNarrativeState,
+} from '@sports-copilot/shared-types';
 import type { NarrativeFixture } from './retrieval';
 
 const RECENT_NARRATIVE_WINDOW_MS = 20_000;
@@ -131,8 +136,9 @@ export function buildNarrativeState(params: {
   clockMs: number;
   events: GameEvent[];
   narratives: NarrativeFixture[];
+  liveMatch?: LiveMatchState;
 }): NarrativeState {
-  const { clockMs, events, narratives } = params;
+  const { clockMs, events, narratives, liveMatch } = params;
   const baseState = createEmptyNarrativeState();
   const latestHighSalienceEvent = getLatestHighSalienceEvent(clockMs, events);
   const latestEvent = latestHighSalienceEvent ?? getLatestEvent(clockMs, events);
@@ -158,11 +164,22 @@ export function buildNarrativeState(params: {
         ? 'away'
         : 'neutral';
   const currentSentiment = latestHighSalienceEvent ? 'charged' : 'steady';
+  const liveStatNarratives =
+    liveMatch?.stats
+      .filter((stat) =>
+        ['Possession', 'Shots On Target', 'Shots on Target', 'Corner Kicks'].includes(stat.label),
+      )
+      .slice(0, 2)
+      .map((stat) => {
+        const teamName =
+          stat.teamSide === 'home' ? liveMatch.homeTeam.name : liveMatch.awayTeam.name;
+        return `${teamName} lead ${stat.label.toLowerCase()} at ${stat.value}.`;
+      }) ?? [];
 
   return {
     ...baseState,
     topNarrative,
-    activeNarratives,
+    activeNarratives: unique([...activeNarratives, ...liveStatNarratives]),
     currentSentiment,
     momentum,
   };

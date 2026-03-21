@@ -1,5 +1,6 @@
 import {
   GameEvent,
+  LiveMatchState,
   MemoryTier,
   RetrievedFact,
   RetrievalState,
@@ -83,6 +84,7 @@ export interface RetrievalInput {
   narratives: NarrativeFixture[];
   socialPosts: SocialPost[];
   visionCues?: VisionCue[];
+  liveMatch?: LiveMatchState;
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -118,6 +120,8 @@ function getTierWeight(tier: MemoryTier) {
     case 'session':
       return SESSION_TIER_WEIGHT;
     case 'static':
+      return STATIC_TIER_WEIGHT;
+    default:
       return STATIC_TIER_WEIGHT;
   }
 }
@@ -265,6 +269,27 @@ function buildLiveVisionFacts(clockMs: number, visionCues: VisionCue[]): Rankabl
   );
 }
 
+function buildLiveStatFacts(liveMatch?: LiveMatchState): RankableFact[] {
+  if (!liveMatch) {
+    return [];
+  }
+
+  return liveMatch.stats.map((stat, index) =>
+    createRankableFact({
+      id: `live-stat-${stat.teamSide}-${index}`,
+      tier: 'live',
+      text: `${stat.teamSide === 'home' ? liveMatch.homeTeam.name : liveMatch.awayTeam.name} ${stat.label}: ${stat.value}`,
+      source: `stats:${stat.label.toLowerCase().replace(/\s+/g, '-')}`,
+      timestamp: liveMatch.lastUpdatedAt,
+      tags: [
+        ...tokenize(stat.label),
+        ...tokenize(String(stat.value)),
+        ...tokenize(stat.teamSide === 'home' ? liveMatch.homeTeam.name : liveMatch.awayTeam.name),
+      ],
+    }),
+  );
+}
+
 function buildQuery(clockMs: number, events: GameEvent[], transcript: TranscriptEntry[]) {
   const latestEvent = [...events]
     .filter((event) => event.timestamp <= clockMs)
@@ -334,6 +359,7 @@ export function buildRetrievalState({
   narratives,
   socialPosts,
   visionCues = [],
+  liveMatch,
 }: RetrievalInput): RetrievalState {
   const query = buildQuery(clockMs, events, transcript);
   const focusTokens = buildFocusTokens(clockMs, events, transcript);
@@ -342,6 +368,7 @@ export function buildRetrievalState({
     .sort((a, b) => b.timestamp - a.timestamp)[0];
   const candidateFacts = [
     ...buildLiveVisionFacts(clockMs, visionCues),
+    ...buildLiveStatFacts(liveMatch),
     ...buildLiveMemory(clockMs, socialPosts),
     ...buildSessionMemory(clockMs, events, transcript),
     ...buildStaticMemory(roster, narratives),

@@ -12,6 +12,21 @@ export type AssistUrgency = z.infer<typeof AssistUrgencySchema>;
 export const ReplayPlaybackStatusSchema = z.enum(['playing', 'paused']);
 export type ReplayPlaybackStatus = z.infer<typeof ReplayPlaybackStatusSchema>;
 
+export const TeamSideSchema = z.enum(['home', 'away', 'neutral']);
+export type TeamSide = z.infer<typeof TeamSideSchema>;
+
+export const LiveMatchStatusSchema = z.enum([
+  'not_started',
+  'live',
+  'halftime',
+  'paused',
+  'full_time',
+  'postponed',
+  'cancelled',
+  'unknown',
+]);
+export type LiveMatchStatus = z.infer<typeof LiveMatchStatusSchema>;
+
 /**
  * Transcript speaker labels
  */
@@ -149,11 +164,118 @@ export const GameEventSchema = z.object({
   timestamp: z.number(), // Match time in ms or epoch
   matchTime: z.string(), // "12:05" format
   type: z.string(),
+  provider: z.string().optional(),
+  providerEventId: z.string().optional(),
+  teamSide: TeamSideSchema.optional(),
   description: z.string(),
   highSalience: z.boolean(),
   data: z.record(z.string(), z.any()).optional(),
 });
 export type GameEvent = z.infer<typeof GameEventSchema>;
+
+export const LiveTeamSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  shortCode: z.string(),
+  logoUrl: z.string().nullable(),
+});
+export type LiveTeam = z.infer<typeof LiveTeamSchema>;
+
+export const LiveLineupPlayerSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  number: z.number().nullable(),
+  position: z.string().nullable(),
+  formationPosition: z.string().nullable(),
+  starter: z.boolean(),
+});
+export type LiveLineupPlayer = z.infer<typeof LiveLineupPlayerSchema>;
+
+export const LiveLineupTeamSchema = z.object({
+  teamSide: TeamSideSchema,
+  teamId: z.string(),
+  teamName: z.string(),
+  formation: z.string().nullable(),
+  startingXI: z.array(LiveLineupPlayerSchema),
+  bench: z.array(LiveLineupPlayerSchema),
+});
+export type LiveLineupTeam = z.infer<typeof LiveLineupTeamSchema>;
+
+export const LiveCardSummarySchema = z.object({
+  teamSide: TeamSideSchema,
+  yellow: z.number().int().nonnegative(),
+  red: z.number().int().nonnegative(),
+});
+export type LiveCardSummary = z.infer<typeof LiveCardSummarySchema>;
+
+export const LiveSubstitutionSchema = z.object({
+  id: z.string(),
+  timestamp: z.number(),
+  matchTime: z.string(),
+  teamSide: TeamSideSchema,
+  playerOff: z.string(),
+  playerOn: z.string(),
+});
+export type LiveSubstitution = z.infer<typeof LiveSubstitutionSchema>;
+
+export const LiveTeamStatSchema = z.object({
+  teamSide: TeamSideSchema,
+  label: z.string(),
+  value: z.string(),
+});
+export type LiveTeamStat = z.infer<typeof LiveTeamStatSchema>;
+
+export const LiveMatchStateSchema = z.object({
+  provider: z.string(),
+  fixtureId: z.string(),
+  status: LiveMatchStatusSchema,
+  period: z.string().nullable(),
+  minute: z.number().int().nonnegative(),
+  stoppageMinute: z.number().int().nonnegative().nullable(),
+  lastUpdatedAt: z.number(),
+  isDegraded: z.boolean(),
+  degradedReason: z.string().nullable(),
+  homeTeam: LiveTeamSchema,
+  awayTeam: LiveTeamSchema,
+  lineups: z.array(LiveLineupTeamSchema),
+  cards: z.array(LiveCardSummarySchema),
+  substitutions: z.array(LiveSubstitutionSchema),
+  stats: z.array(LiveTeamStatSchema),
+});
+export type LiveMatchState = z.infer<typeof LiveMatchStateSchema>;
+
+export function createEmptyLiveMatchState(): LiveMatchState {
+  return {
+    provider: 'sportmonks',
+    fixtureId: '',
+    status: 'unknown',
+    period: null,
+    minute: 0,
+    stoppageMinute: null,
+    lastUpdatedAt: 0,
+    isDegraded: false,
+    degradedReason: null,
+    homeTeam: {
+      id: 'home',
+      name: 'Home',
+      shortCode: 'HOME',
+      logoUrl: null,
+    },
+    awayTeam: {
+      id: 'away',
+      name: 'Away',
+      shortCode: 'AWAY',
+      logoUrl: null,
+    },
+    lineups: [],
+    cards: [
+      { teamSide: 'home', yellow: 0, red: 0 },
+      { teamSide: 'away', yellow: 0, red: 0 },
+    ],
+    substitutions: [],
+    stats: [],
+  };
+}
 
 export const SessionMemorySchema = z.object({
   recentEvents: z.array(GameEventSchema),
@@ -240,15 +362,17 @@ export const ReplayControlStateSchema = z.object({
   preferredStyleMode: StyleModeSchema,
   forceHesitation: z.boolean(),
   restartToken: z.number().int().nonnegative(),
+  activeFixtureId: z.string().optional(),
 });
 export type ReplayControlState = z.infer<typeof ReplayControlStateSchema>;
 
 export function createDefaultReplayControlState(): ReplayControlState {
   return {
-    playbackStatus: 'paused',
+    playbackStatus: 'playing',
     preferredStyleMode: 'analyst',
     forceHesitation: false,
     restartToken: 0,
+    activeFixtureId: undefined,
   };
 }
 
@@ -271,6 +395,7 @@ export const WorldStateSchema = z.object({
   narrative: NarrativeStateSchema,
   retrieval: RetrievalStateSchema,
   assist: AssistCardSchema,
+  liveMatch: LiveMatchStateSchema,
   liveSignals: z.object({
     social: z.array(SocialPostSchema),
     vision: z.array(VisionCueSchema),
