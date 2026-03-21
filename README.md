@@ -15,7 +15,7 @@ npm run test
 npm run lint
 ```
 
-## One-Command Demo Startup
+## One-Command Startup
 ```bash
 npm run demo
 ```
@@ -25,19 +25,18 @@ That command starts:
 - `apps/workers` replay loop pointed at the local fixtures
 - `apps/web` on `http://localhost:5173`
 
-Open the web URL Vite prints, then use the booth controls to:
-- play, pause, and restart the replay
-- switch between `analyst` and `hype`
-- load a local replay clip so the footage is visible in the UI
-- start the browser mic to test live hesitation tracking
-- trigger the manual `force hesitation` backup if needed
+Open the web URL Vite prints, then use the practice booth to:
+- load a local replay clip
+- start the broadcast
+- speak over the clip to test hesitation tracking
+- leave pauses, use fillers, or restart phrases to trigger assists
 
 ## Demo Notes
 - The replay is deterministic and runs from local JSON fixtures in [data/demo_match](/Users/vallabkaranam/Desktop/sports-copilot/data/demo_match).
-- The dashboard is intentionally broadcast-oriented, not chat-oriented.
+- The current landing screen is a practice-first booth for testing hesitation on arbitrary local clips.
 - The browser booth mode is local-first: clip loading is done from your machine and mic transcription uses in-browser speech recognition.
 - Chrome or Edge currently give the best microphone support for the live booth flow.
-- Source chips, hesitation state, narrative stack, recent events, and vision cues all update from the shared world state.
+- Deterministic fixtures still exist in the repo for the original demo path, but the next work phase is replacing the primary path with real free-input integrations.
 
 ## Verification
 ```bash

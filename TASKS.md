@@ -268,6 +268,33 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 
 ---
 
+## P8 — Productionization
+
+### Practice Booth
+- [x] remove fixture-driven landing copy from the main screen
+- [x] make the default landing flow clip-first and mic-first
+- [x] mute loaded clip audio by default to avoid contaminating booth input
+- [x] keep hesitation testing usable without fake match/news overlays
+- [x] show only hesitation-triggered practice assists on the landing screen
+
+### Real Inputs
+- [ ] replace browser transcript-only hesitation detection with audio activity / VAD support
+- [ ] ingest a real free match/event API for live game context
+- [ ] ingest real external context from free/public sources
+- [ ] remove deterministic fixture dependency from the primary product path
+
+### Production Assist Pipeline
+- [ ] route assists from real live context instead of demo fixtures
+- [ ] preserve grounding with source attribution against real inputs
+- [ ] keep a fixture/demo mode only as an explicit fallback path
+
+### Deployment
+- [ ] create a self-serve hosted test environment
+- [ ] document required free API providers and keys
+- [ ] verify the production path end-to-end
+
+---
+
 ## Suggested Build Order
 1. shared types
 2. replay engine
