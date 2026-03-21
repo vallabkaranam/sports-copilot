@@ -1,5 +1,9 @@
 import fastify from 'fastify';
-import { WorldState, createEmptyCommentatorState } from '@sports-copilot/shared-types';
+import {
+  WorldState,
+  createEmptyCommentatorState,
+  createEmptyRetrievalState,
+} from '@sports-copilot/shared-types';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -18,6 +22,7 @@ let worldState: Partial<WorldState> = {
     currentSentiment: 'neutral',
     momentum: 'neutral',
   },
+  retrieval: createEmptyRetrievalState(),
   liveSignals: { social: [], vision: [] },
 };
 

@@ -3,7 +3,13 @@ import path from 'path';
 import http from 'http';
 import { ReplayEngine } from './engine';
 import { analyzeCommentary } from './commentator';
-import { GameEvent, TranscriptEntry, WorldState } from '@sports-copilot/shared-types';
+import { buildRetrievalState, ingestLiveSocialPosts, NarrativeFixture, RosterFixture } from './retrieval';
+import {
+  GameEvent,
+  SocialPost,
+  TranscriptEntry,
+  WorldState,
+} from '@sports-copilot/shared-types';
 
 async function syncState(state: Partial<WorldState>) {
   return new Promise((resolve, reject) => {
@@ -38,10 +44,19 @@ async function getControls(): Promise<{ status: string }> {
 
 async function run() {
   const eventsPath = path.resolve(__dirname, '../../../data/demo_match/events.json');
+  const rosterPath = path.resolve(__dirname, '../../../data/demo_match/roster.json');
+  const narrativesPath = path.resolve(__dirname, '../../../data/demo_match/narratives.json');
+  const socialPath = path.resolve(__dirname, '../../../data/demo_match/fake_social.json');
   const transcriptPath = path.resolve(__dirname, '../../../data/demo_match/transcript_seed.json');
   const eventsData = await fs.readFile(eventsPath, 'utf8');
+  const rosterData = await fs.readFile(rosterPath, 'utf8');
+  const narrativesData = await fs.readFile(narrativesPath, 'utf8');
+  const socialData = await fs.readFile(socialPath, 'utf8');
   const transcriptData = await fs.readFile(transcriptPath, 'utf8');
   const events: GameEvent[] = JSON.parse(eventsData);
+  const roster: RosterFixture = JSON.parse(rosterData);
+  const narratives: NarrativeFixture[] = JSON.parse(narrativesData);
+  const socialPosts: SocialPost[] = JSON.parse(socialData);
   const transcript: TranscriptEntry[] = JSON.parse(transcriptData);
 
   const engine = new ReplayEngine({ events, tickRateMs: 500 });
@@ -60,16 +75,31 @@ async function run() {
       // 2. Tick engine
       const newEvents = engine.tick(500);
       const status = engine.getStatus();
+      const clockMs = engine.getMatchClockMs();
       const commentator = analyzeCommentary({
-        clockMs: engine.getMatchClockMs(),
+        clockMs,
         events,
         transcript,
       });
+      const retrieval = buildRetrievalState({
+        clockMs,
+        events,
+        transcript,
+        roster,
+        narratives,
+        socialPosts,
+      });
+      const ingestedSocialPosts = ingestLiveSocialPosts(clockMs, socialPosts);
 
       // 3. Sync to API
       await syncState({
         ...status,
         commentator,
+        retrieval,
+        liveSignals: {
+          social: ingestedSocialPosts,
+          vision: [],
+        },
         recentEvents: newEvents || [],
       });
       

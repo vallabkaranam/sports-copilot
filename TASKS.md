@@ -118,15 +118,15 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 ## P3 — Retrieval + Evolving RAG
 
 ### Memory Tiers
-- [ ] implement static memory
-- [ ] implement session memory
-- [ ] implement live memory
+- [x] implement static memory
+- [x] implement session memory
+- [x] implement live memory
 
 ### Retrieval Agent
-- [ ] rank sources by relevance
-- [ ] prefer live > session > static
-- [ ] return supporting facts for assist generation
-- [ ] attach source metadata
+- [x] rank sources by relevance
+- [x] prefer live > session > static
+- [x] return supporting facts for assist generation
+- [x] attach source metadata
 
 ### Narrative Agent
 - [ ] maintain active narratives:
@@ -138,14 +138,14 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 - [ ] surface top narrative to world state
 
 ### Live Feed Agent
-- [ ] ingest fake_social.json
-- [ ] normalize “live” external updates
-- [ ] add relevant signals to live memory
+- [x] ingest fake_social.json
+- [x] normalize “live” external updates
+- [x] add relevant signals to live memory
 
 ### Tests
-- [ ] test retrieval priority
+- [x] test retrieval priority
 - [ ] test narrative updates
-- [ ] test source attribution presence
+- [x] test source attribution presence
 
 ---
 

@@ -37,6 +37,17 @@ export const CoHostTossUpCueSchema = z.object({
 });
 export type CoHostTossUpCue = z.infer<typeof CoHostTossUpCueSchema>;
 
+export const MemoryTierSchema = z.enum(['static', 'session', 'live']);
+export type MemoryTier = z.infer<typeof MemoryTierSchema>;
+
+export const SocialPostSchema = z.object({
+  timestamp: z.number(),
+  handle: z.string(),
+  text: z.string(),
+  sentiment: z.string(),
+});
+export type SocialPost = z.infer<typeof SocialPostSchema>;
+
 /**
  * Source attribution chips
  */
@@ -47,6 +58,23 @@ export const SourceChipSchema = z.object({
   relevance: z.number().min(0).max(1),
 });
 export type SourceChip = z.infer<typeof SourceChipSchema>;
+
+export const RetrievedFactSchema = z.object({
+  id: z.string(),
+  tier: MemoryTierSchema,
+  text: z.string(),
+  source: z.string(),
+  timestamp: z.number().nullable(),
+  relevance: z.number().min(0).max(1),
+  sourceChip: SourceChipSchema,
+});
+export type RetrievedFact = z.infer<typeof RetrievedFactSchema>;
+
+export const RetrievalStateSchema = z.object({
+  query: z.string(),
+  supportingFacts: z.array(RetrievedFactSchema),
+});
+export type RetrievalState = z.infer<typeof RetrievalStateSchema>;
 
 /**
  * Assist cards displayed to the commentator
@@ -120,6 +148,13 @@ export function createEmptyCommentatorState(): CommentatorState {
   };
 }
 
+export function createEmptyRetrievalState(): RetrievalState {
+  return {
+    query: '',
+    supportingFacts: [],
+  };
+}
+
 /**
  * Narrative state
  */
@@ -144,8 +179,9 @@ export const WorldStateSchema = z.object({
   recentEvents: z.array(GameEventSchema),
   commentator: CommentatorStateSchema,
   narrative: NarrativeStateSchema,
+  retrieval: RetrievalStateSchema,
   liveSignals: z.object({
-    social: z.array(z.any()),
+    social: z.array(SocialPostSchema),
     vision: z.array(z.any()),
   }),
 });
