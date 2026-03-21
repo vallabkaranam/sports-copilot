@@ -96,20 +96,20 @@ function countTranscriptWords(texts: string[]) {
     .length;
 }
 
-function findRepeatedPhrases(entries: TranscriptEntry[]) {
+function findRepeatedPhrases(texts: string[]) {
   const repeatedPhrases: string[] = [];
   const prefixCounts = new Map<string, number>();
 
-  for (const entry of entries) {
-    const words = normalizeTranscriptText(entry.text).split(' ').filter(Boolean);
+  for (const text of texts) {
+    const words = normalizeTranscriptText(text).split(' ').filter(Boolean);
 
-    if (words.length < 2) {
+    if (words.length < 1) {
       continue;
     }
 
     const prefix = words.slice(0, Math.min(3, words.length)).join(' ');
 
-    if (prefix.length < 6) {
+    if (prefix.length < 3) {
       continue;
     }
 
@@ -118,6 +118,25 @@ function findRepeatedPhrases(entries: TranscriptEntry[]) {
 
     if (nextCount === 2) {
       repeatedPhrases.push(prefix);
+    }
+
+    for (const size of [3, 2]) {
+      if (words.length < size * 2) {
+        continue;
+      }
+
+      const opening = words.slice(0, size).join(' ');
+      if (opening.length < 3) {
+        continue;
+      }
+
+      for (let index = size; index <= words.length - size; index += 1) {
+        const candidate = words.slice(index, index + size).join(' ');
+        if (candidate === opening && !repeatedPhrases.includes(opening)) {
+          repeatedPhrases.push(opening);
+          break;
+        }
+      }
     }
   }
 
@@ -176,15 +195,16 @@ export function buildBoothSignal({
   const recentTranscript = boothTranscript.slice(-LOCAL_TRANSCRIPT_LIMIT);
   const transcriptTexts = recentTranscript.map((entry) => entry.text);
   const interimText = interimTranscript.trim();
+  const analysisTexts = interimText ? [...transcriptTexts, interimText] : transcriptTexts;
   const fillerWords = collectFillerWords(
-    interimText ? [...transcriptTexts, interimText] : transcriptTexts,
+    analysisTexts,
   );
   const fillerCount = fillerWords.length;
-  const repeatedPhrases = findRepeatedPhrases(recentTranscript);
+  const repeatedPhrases = findRepeatedPhrases(analysisTexts);
   const repeatedOpeningCount = repeatedPhrases.length;
-  const lastLine = recentTranscript[recentTranscript.length - 1]?.text.trim() ?? '';
+  const lastLine = interimText || recentTranscript[recentTranscript.length - 1]?.text.trim() || '';
   const unfinishedPhrase = /(?:\.\.\.|-)\s*$/.test(lastLine);
-  const transcriptWordCount = Math.max(1, countTranscriptWords(interimText ? [...transcriptTexts, interimText] : transcriptTexts));
+  const transcriptWordCount = Math.max(1, countTranscriptWords(analysisTexts));
   const fillerDensity = clamp(fillerCount / transcriptWordCount);
   const activity = deriveBoothActivity({
     interimTranscript,

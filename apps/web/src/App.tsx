@@ -44,10 +44,12 @@ import {
 
 type MicrophoneAvailability = 'supported' | 'degraded' | 'unsupported';
 type CoachingTone = 'standby' | 'steady' | 'supporting' | 'step-in';
+type AssistVisibilityPhase = 'hidden' | 'live' | 'weaning';
 
 const AUDIO_ACTIVITY_SAMPLE_MS = 120;
 const MIN_AUDIO_ACTIVITY_THRESHOLD = 0.012;
 const MAX_AUDIO_ACTIVITY_THRESHOLD = 0.08;
+const ASSIST_WEAN_OFF_MS = 2600;
 
 function supportsAudioMonitoring() {
   return (
@@ -232,6 +234,8 @@ function App() {
   const [boothInterimTranscript, setBoothInterimTranscript] = useState('');
   const [boothError, setBoothError] = useState<string | null>(null);
   const [latchedAssist, setLatchedAssist] = useState(() => createEmptyAssistCard());
+  const [assistVisibilityPhase, setAssistVisibilityPhase] =
+    useState<AssistVisibilityPhase>('hidden');
   const [isMicListening, setIsMicListening] = useState(false);
   const [isMicPrepared, setIsMicPrepared] = useState(false);
   const [isMicPreparing, setIsMicPreparing] = useState(false);
@@ -923,7 +927,8 @@ function App() {
       ? assist
       : null;
   const activeAssist = latchedAssist;
-  const shouldSurfaceAssist = activeAssist.type !== 'none';
+  const shouldSurfaceAssist = activeAssist.type !== 'none' && assistVisibilityPhase !== 'hidden';
+  const isAssistWeaning = assistVisibilityPhase === 'weaning';
   const assistConfidencePercent = formatPercent(shouldSurfaceAssist ? activeAssist.confidence : 0);
   const boothHesitationPercent = formatPercent(
     boothInterpretation?.hesitationScore ?? boothSignal.hesitationScore,
@@ -942,7 +947,7 @@ function App() {
       hesitationScore: boothInterpretation?.hesitationScore ?? 0,
       confidenceScore: boothInterpretation?.recoveryScore ?? boothSignal.confidenceScore,
     },
-    shouldSurfaceAssist,
+    shouldSurfaceAssist: shouldSurfaceAssist && !isAssistWeaning,
   });
   const readinessChecks = [
     {
@@ -980,22 +985,37 @@ function App() {
   ].filter(Boolean) as string[];
   const primaryActionLabel = isBroadcastLive ? 'End session' : 'Start session';
   const primaryActionDisabled = !isBroadcastLive && (!isBroadcastReady || isUpdatingControls);
-  const guidanceSummary = shouldSurfaceAssist
-    ? activeAssist.whyNow
-    : boothInterpretation?.summary
-      ? boothInterpretation.summary
-    : coachingTone.tone === 'steady'
-      ? 'Hesitation is falling. And-One is backing off.'
-      : coachingTone.copy;
+  const guidanceSummary = isAssistWeaning
+    ? 'You are back in rhythm. The cue is fading out.'
+    : shouldSurfaceAssist
+      ? activeAssist.whyNow
+      : boothInterpretation?.summary
+        ? boothInterpretation.summary
+        : coachingTone.tone === 'steady'
+          ? 'Hesitation is falling. And-One is backing off.'
+          : coachingTone.copy;
+  const activeAssistSupportCopy = isAssistWeaning
+    ? 'You are back in rhythm. And-One is slipping the cue away.'
+    : activeAssist.whyNow;
   const micBars = Array.from({ length: 14 }, (_, index) => {
     const threshold = (index + 1) / 14;
     return boothSignal.audioLevel >= threshold * 0.18;
   });
+  const assistStateLabel = shouldSurfaceAssist
+    ? isAssistWeaning
+      ? 'Backing off'
+      : 'Visible'
+    : coachingTone.tone === 'steady'
+      ? 'Standby'
+      : 'Waiting';
 
   useEffect(() => {
     if (!hasStartedBroadcast) {
       if (latchedAssist.type !== 'none') {
         setLatchedAssist(createEmptyAssistCard());
+      }
+      if (assistVisibilityPhase !== 'hidden') {
+        setAssistVisibilityPhase('hidden');
       }
       return;
     }
@@ -1007,8 +1027,36 @@ function App() {
         latchedAssist.whyNow !== nextTriggeredAssist.whyNow)
     ) {
       setLatchedAssist(nextTriggeredAssist);
+      setAssistVisibilityPhase('live');
+      return;
     }
-  }, [hasStartedBroadcast, latchedAssist.text, latchedAssist.type, latchedAssist.whyNow, nextTriggeredAssist]);
+
+    if (!nextTriggeredAssist && latchedAssist.type !== 'none') {
+      setAssistVisibilityPhase((current) => (current === 'hidden' ? 'hidden' : 'weaning'));
+    }
+  }, [
+    assistVisibilityPhase,
+    hasStartedBroadcast,
+    latchedAssist.text,
+    latchedAssist.type,
+    latchedAssist.whyNow,
+    nextTriggeredAssist,
+  ]);
+
+  useEffect(() => {
+    if (assistVisibilityPhase !== 'weaning') {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setAssistVisibilityPhase('hidden');
+      setLatchedAssist(createEmptyAssistCard());
+    }, ASSIST_WEAN_OFF_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [assistVisibilityPhase]);
 
   useEffect(() => {
     if (!hasStartedBroadcast) {
@@ -1316,10 +1364,15 @@ function App() {
               </div>
 
               {shouldSurfaceAssist ? (
-                <article className="replay-toast replay-toast--live" key={replayToastSignature}>
+                <article
+                  className={`replay-toast ${
+                    isAssistWeaning ? 'replay-toast--weaning' : 'replay-toast--live'
+                  }`}
+                  key={replayToastSignature}
+                >
                   <p className="assist-type">Assist</p>
                   <h3>{activeAssist.text}</h3>
-                  <p>{activeAssist.whyNow}</p>
+                  <p>{activeAssistSupportCopy}</p>
                 </article>
               ) : boothHasLiveInput ? (
                 <div className="replay-toast replay-toast--hint">
@@ -1434,7 +1487,7 @@ function App() {
                 </div>
                 <div className="signal-meta__item">
                   <span>Assist state</span>
-                  <strong>{shouldSurfaceAssist ? 'Visible' : coachingTone.tone === 'steady' ? 'Standby' : 'Waiting'}</strong>
+                  <strong>{assistStateLabel}</strong>
                 </div>
               </div>
 

@@ -63,6 +63,24 @@ describe('booth signal audio activity', () => {
     expect(signal.transcriptStabilityScore).toBeLessThan(1);
   });
 
+  it('detects filler-driven repeated starts from the interim line before a final transcript lands', () => {
+    const signal = buildBoothSignal({
+      boothTranscript: [],
+      interimTranscript: 'uh vinicius is, uh vinicius is driving...',
+      isMicListening: true,
+      lastSpeechAtMs: 11_200,
+      lastVoiceActivityAtMs: 11_200,
+      speechStreakStartedAtMs: 10_300,
+      audioLevel: 0.11,
+      nowMs: 11_600,
+    });
+
+    expect(signal.fillerCount).toBeGreaterThanOrEqual(2);
+    expect(signal.repeatedOpeningCount).toBeGreaterThan(0);
+    expect(signal.unfinishedPhrase).toBe(true);
+    expect(signal.transcriptStabilityScore).toBeLessThan(0.8);
+  });
+
   it('weans hesitation off and restores confidence once speech resumes', () => {
     const pausedSignal = buildBoothSignal({
       boothTranscript: [],

@@ -493,6 +493,20 @@
   max-width: 460px;
 }
 
+.replay-toast--weaning {
+  max-width: 400px;
+  opacity: 0.74;
+  transform: scale(0.94) translateY(10px);
+  border-color: rgba(242, 228, 204, 0.72);
+  background: rgba(247, 244, 238, 0.82);
+  box-shadow: 0 10px 20px rgba(10, 17, 28, 0.08);
+  transition:
+    opacity 240ms ease,
+    transform 240ms ease,
+    box-shadow 240ms ease,
+    background-color 240ms ease;
+}
+
 .replay-toast h3 {
   font-size: 1.28rem;
   margin: 6px 0 8px;
