@@ -311,7 +311,7 @@ function derivePostSessionReview(session: BoothSessionRecord | null) {
       ? `Your most common filler was "${topFiller}". That is now part of the personal hesitation profile.`
       : 'Filler language stayed relatively clean in this run.',
     recoveryMoments > 0
-      ? `And-One detected ${recoveryMoments} recovery moment${recoveryMoments === 1 ? '' : 's'} where it could back off.`
+      ? `AndOne detected ${recoveryMoments} recovery moment${recoveryMoments === 1 ? '' : 's'} where it could back off.`
       : 'Recovery never stabilized long enough to trigger a confident back-off moment.',
   ];
 
@@ -394,7 +394,7 @@ function getCoachingTone({
       tone: 'standby' as CoachingTone,
       label: 'Listening',
       headline: 'Waiting for your first line.',
-      copy: 'Start calling the action and And-One will listen for a real pause.',
+      copy: 'Start calling the action and AndOne will listen for a real pause.',
     };
   }
 
@@ -410,7 +410,7 @@ function getCoachingTone({
   return {
     tone: 'supporting' as CoachingTone,
     label: 'Hovering',
-    headline: 'And-One is tracking the beat.',
+    headline: 'AndOne is tracking the beat.',
     copy: 'The booth is active, but the pause is not strong enough to step in yet.',
   };
 }
@@ -1127,7 +1127,7 @@ function App() {
     if (!supportsAudioMonitoring()) {
       setMicrophoneAvailability('unsupported');
       setBoothError(
-        'This browser cannot run the live And-One booth stack. Use a browser with getUserMedia, AudioContext, and RTCPeerConnection support.',
+        'This browser cannot run the live AndOne booth stack. Use a browser with getUserMedia, AudioContext, and RTCPeerConnection support.',
       );
       return;
     }
@@ -1402,7 +1402,7 @@ function App() {
         ? 'Microphone permission is ready for the live booth.'
         : isMicPreparing
           ? 'Requesting microphone access.'
-          : 'And-One will request access when you go live.',
+          : 'AndOne will request access when you go live.',
     },
     {
       label: 'System linked',
@@ -1436,10 +1436,10 @@ function App() {
       : boothInterpretation?.summary
         ? boothInterpretation.summary
         : coachingTone.tone === 'steady'
-          ? 'Hesitation is falling. And-One is backing off.'
+          ? 'Hesitation is falling. AndOne is backing off.'
           : coachingTone.copy;
   const activeAssistSupportCopy = isAssistWeaning
-    ? 'You are back in rhythm. And-One is slipping the cue away.'
+    ? 'You are back in rhythm. AndOne is slipping the cue away.'
     : activeAssist.whyNow;
   const micBars = Array.from({ length: 14 }, (_, index) => {
     const threshold = (index + 1) / 14;
@@ -1771,13 +1771,18 @@ function App() {
     <div className="app-shell">
       <header className="app-header">
         <div className="brand-lockup">
-          <p className="eyebrow">{BRAND.eyebrow}</p>
-          <h1>{BRAND.heroTitle}</h1>
-          <p className="hero-copy">{BRAND.heroCopy}</p>
+          <div className="brand-mark" aria-hidden="true">
+            AO
+          </div>
+          <div className="brand-copy">
+            <p className="eyebrow">{BRAND.eyebrow}</p>
+            <h1>{BRAND.heroTitle}</h1>
+            <p className="hero-copy">{BRAND.heroCopy}</p>
+          </div>
         </div>
 
         <div className="header-actions">
-          <div className="view-switcher" role="tablist" aria-label="And-One views">
+          <div className="view-switcher" role="tablist" aria-label="AndOne views">
             <button
               type="button"
               role="tab"
@@ -1799,7 +1804,7 @@ function App() {
           </div>
           <button
             type="button"
-            className="ghost-button"
+            className="ghost-button ghost-button--subtle"
             onClick={() => setShowDetails((current) => !current)}
           >
             {showDetails ? 'Hide Details' : 'Show Details'}
@@ -1810,12 +1815,13 @@ function App() {
       {error ? <div className="warning-banner">{error}</div> : null}
 
       {appView === 'live' ? (
-      <div className="main-grid">
+        <div className="main-grid">
         <section className="panel replay-panel stage-panel">
           <div className="panel-header panel-header--stage">
-              <div>
-              <p className="panel-kicker">Control room</p>
+            <div>
+              <p className="panel-kicker">Live desk</p>
               <h2>{feedHeading}</h2>
+              <p className="panel-copy">Keep the feed central. AndOne stays quiet until the call needs a hand.</p>
             </div>
             <div className="panel-chip-row">
               <span className="panel-tag">{loadedClipUrl ? `${clipClockLabel} / ${clipDurationLabel}` : 'No feed live'}</span>
@@ -1892,9 +1898,9 @@ function App() {
             </div>
             <div className="media-meta">
               <span className="meta-pill">
-                {selectedProgramSlot ? `${selectedProgramSlot.label} selected` : 'No program feed selected'}
+                {selectedProgramSlot ? `${selectedProgramSlot.label} selected` : 'Choose a feed'}
               </span>
-              <span className="meta-pill">{loadedClipName || 'Load a saved reel into Channel 1 or Channel 2'}</span>
+              <span className="meta-pill">{loadedClipName || 'Channel 1 preset or Channel 2 upload'}</span>
               {loadedClipUrl ? (
                 <span className="meta-pill">{isClipMuted ? 'Clip audio muted' : 'Clip audio on'}</span>
               ) : null}
@@ -1946,7 +1952,7 @@ function App() {
                       ? coachingTone.headline
                       : resolvedPostSessionReview
                         ? 'Session complete. Review it from Sessions.'
-                      : 'Go live and And-One will request microphone access if needed.'
+                      : 'Go live and AndOne will request microphone access if needed.'
                     : 'Load a reel into Channel 1 or Channel 2 to begin.'}
                 </h3>
               </div>
@@ -1972,7 +1978,7 @@ function App() {
                     </span>
                   ))
                 ) : (
-                  <span className="scene-chip scene-chip--muted">Waiting for hesitation cue</span>
+                  <span className="scene-chip scene-chip--muted">Watching for a real hesitation cue</span>
                 )}
               </div>
 
@@ -1993,8 +1999,9 @@ function App() {
           <section className={`panel control-panel control-panel--${coachingTone.tone}`}>
             <div className="panel-header panel-header--compact">
               <div>
-                <p className="panel-kicker">Session</p>
-                <h2>Control room</h2>
+                <p className="panel-kicker">Live session</p>
+                <h2>Booth rail</h2>
+                <p className="panel-copy">Everything the commentator needs, without pushing extra reading into the call.</p>
               </div>
             </div>
 
@@ -2239,7 +2246,7 @@ function App() {
                   <div className="reason-list">
                     <p>
                       {isLoadingReview
-                        ? 'And-One is generating the AI review from the saved booth trace.'
+                        ? 'AndOne is generating the AI review from the saved booth trace.'
                         : 'The saved booth trace is ready. Reload this session to retry the AI review.'}
                     </p>
                   </div>

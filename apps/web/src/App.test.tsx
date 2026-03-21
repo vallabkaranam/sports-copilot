@@ -724,14 +724,14 @@ describe('App dashboard', () => {
     });
   }
 
-  it('renders the live And-One booth surface', async () => {
+  it('renders the live AndOne booth surface', async () => {
     await renderApp();
 
-    expect(container.textContent).toContain('Live Commentary Copilot');
-    expect(container.textContent).toContain('And-One');
+    expect(container.textContent).toContain('Live commentary sidekick');
+    expect(container.textContent).toContain('AndOne');
     expect(container.textContent).toContain('Channel 1');
     expect(container.textContent).toContain('Channel 2');
-    expect(container.textContent).toContain('Control room');
+    expect(container.textContent).toContain('Booth rail');
     expect(container.textContent).toContain('Show Details');
     expect(container.textContent).toContain('Channel 1 selected');
     expect(container.textContent).toContain('Barca preset');
@@ -747,7 +747,7 @@ describe('App dashboard', () => {
     expect(playButton?.textContent).toBe('Go live');
     expect(playButton?.hasAttribute('disabled')).toBe(false);
     expect(container.textContent).toContain('Channel 1 · Barca preset');
-    expect(container.textContent).toContain('And-One will request access when you go live.');
+    expect(container.textContent).toContain('AndOne will request access when you go live.');
   });
 
   it('requests mic access when going live and still posts control updates', async () => {
