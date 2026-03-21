@@ -317,6 +317,39 @@ describe('App dashboard', () => {
     currentBoothSessions = createBoothSessionsResponse();
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+    const fakeStream = {
+      getTracks: () => [{ stop: vi.fn() }],
+    } as unknown as MediaStream;
+    Object.defineProperty(globalThis.navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn().mockResolvedValue(fakeStream),
+      },
+    });
+    vi.stubGlobal(
+      'AudioContext',
+      class FakeAudioContext {
+        createMediaStreamSource() {
+          return {
+            connect: vi.fn(),
+          };
+        }
+
+        createAnalyser() {
+          return {
+            fftSize: 1024,
+            smoothingTimeConstant: 0.78,
+            getByteTimeDomainData(samples: Uint8Array) {
+              samples.fill(128);
+            },
+          };
+        }
+
+        close() {
+          return Promise.resolve();
+        }
+      } as unknown as typeof AudioContext,
+    );
     fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
 
@@ -326,6 +359,18 @@ describe('App dashboard', () => {
 
       if (url.includes('/booth-sessions') && (!init?.method || init.method === 'GET')) {
         return jsonResponse(currentBoothSessions);
+      }
+
+      if (url.includes('/booth/interpret') && init?.method === 'POST') {
+        return jsonResponse({
+          state: 'monitoring',
+          hesitationScore: 0.18,
+          recoveryScore: 0.34,
+          shouldSurfaceAssist: false,
+          summary: 'Tracking the booth without stepping in.',
+          reasons: ['No strong hesitation cue is active in the current booth window.'],
+          source: 'heuristic',
+        });
       }
 
       if (url.includes('/controls') && (!init?.method || init.method === 'GET')) {
@@ -433,31 +478,32 @@ describe('App dashboard', () => {
     });
   }
 
-  it('renders the live booth dashboard with replay, booth, timeline, and assist panels', async () => {
+  it('renders the live And-One booth surface', async () => {
     await renderApp();
 
-    expect(container.textContent).toContain('Sports Copilot');
+    expect(container.textContent).toContain('Live Commentary Copilot');
     expect(container.textContent).toContain('Pre-match brief');
     expect(container.textContent).toContain('Barcelona arrive with strong recent form');
-    expect(container.textContent).toContain('Commentary Booth');
+    expect(container.textContent).toContain('And-One');
     expect(container.textContent).toContain('Load Clip');
-    expect(container.textContent).toContain('Live session');
+    expect(container.textContent).toContain('Go live');
     expect(container.textContent).toContain('Show Details');
-    expect(container.textContent).toContain('Bring in any local replay clip');
+    expect(container.textContent).toContain('Attach a video input');
   });
 
   it('keeps the booth in setup mode until a clip is loaded', async () => {
     await renderApp();
 
     const playButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Start Broadcast'),
+      button.textContent?.includes('Start session'),
     );
-    expect(playButton?.textContent).toBe('Start Broadcast');
+    expect(playButton?.textContent).toBe('Start session');
     expect(playButton?.hasAttribute('disabled')).toBe(true);
-    expect(container.textContent).toContain('Waiting for clip upload');
+    expect(container.textContent).toContain('Bring in a replay clip first.');
+    expect(container.textContent).toContain('Enable microphone');
   });
 
-  it('posts replay and backup control updates back to the API after a clip is loaded', async () => {
+  it('arms the mic before letting the booth go live and still posts control updates', async () => {
     await renderApp();
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null;
@@ -481,8 +527,20 @@ describe('App dashboard', () => {
     });
 
     const playButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Start Broadcast'),
+      button.textContent?.includes('Start session'),
     );
+
+    expect(playButton?.hasAttribute('disabled')).toBe(true);
+
+    const micButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Enable microphone'),
+    );
+
+    await act(async () => {
+      micButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
 
     expect(playButton?.hasAttribute('disabled')).toBe(false);
 
@@ -543,8 +601,18 @@ describe('App dashboard', () => {
     });
 
     const playButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Start Broadcast'),
+      button.textContent?.includes('Start session'),
     );
+
+    const micButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Enable microphone'),
+    );
+
+    await act(async () => {
+      micButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
 
     await act(async () => {
       playButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));

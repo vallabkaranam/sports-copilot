@@ -19,6 +19,7 @@ describe('booth signal audio activity', () => {
     expect(signal.pauseDurationMs).toBe(0);
     expect(signal.hasVoiceActivity).toBe(true);
     expect(signal.confidenceScore).toBeGreaterThan(0.3);
+    expect(signal.transcriptStabilityScore).toBe(1);
   });
 
   it('raises hesitation after voice activity stops even without transcript recognition', () => {
@@ -39,6 +40,27 @@ describe('booth signal audio activity', () => {
     expect(signal.hesitationReasons[0]).toContain('paused');
     expect(signal.shouldSurfaceAssist).toBe(true);
     expect(signal.confidenceScore).toBe(0);
+  });
+
+  it('raises transcript-instability metrics for fillers and repeated starts', () => {
+    const signal = buildBoothSignal({
+      boothTranscript: [
+        { timestamp: 0, speaker: 'lead', text: 'Vinicius is driving here' },
+        { timestamp: 800, speaker: 'lead', text: 'Vinicius is driving again' },
+      ],
+      interimTranscript: 'um vinicius is driving on',
+      isMicListening: true,
+      lastSpeechAtMs: 11_000,
+      lastVoiceActivityAtMs: 11_000,
+      speechStreakStartedAtMs: 10_000,
+      audioLevel: 0.09,
+      nowMs: 11_400,
+    });
+
+    expect(signal.fillerCount).toBeGreaterThan(0);
+    expect(signal.fillerDensity).toBeGreaterThan(0);
+    expect(signal.repeatedOpeningCount).toBeGreaterThan(0);
+    expect(signal.transcriptStabilityScore).toBeLessThan(1);
   });
 
   it('weans hesitation off and restores confidence once speech resumes', () => {

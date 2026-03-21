@@ -631,3 +631,52 @@ export const FinishBoothSessionInputSchema = z.object({
   endedAt: z.string().optional(),
 });
 export type FinishBoothSessionInput = z.infer<typeof FinishBoothSessionInputSchema>;
+
+export const BoothInterpretationStateSchema = z.enum([
+  'standby',
+  'monitoring',
+  'step-in',
+  'weaning-off',
+]);
+export type BoothInterpretationState = z.infer<typeof BoothInterpretationStateSchema>;
+
+export const BoothFeatureSnapshotSchema = z.object({
+  timestamp: z.number().int().nonnegative(),
+  hesitationScore: z.number().min(0).max(1),
+  confidenceScore: z.number().min(0).max(1),
+  pauseDurationMs: z.number().int().nonnegative(),
+  speechStreakMs: z.number().int().nonnegative(),
+  silenceStreakMs: z.number().int().nonnegative(),
+  audioLevel: z.number().min(0).max(1),
+  isSpeaking: z.boolean(),
+  hasVoiceActivity: z.boolean(),
+  fillerCount: z.number().int().nonnegative(),
+  fillerDensity: z.number().min(0).max(1),
+  fillerWords: z.array(z.string()),
+  repeatedOpeningCount: z.number().int().nonnegative(),
+  repeatedPhrases: z.array(z.string()),
+  unfinishedPhrase: z.boolean(),
+  transcriptWordCount: z.number().int().nonnegative(),
+  transcriptStabilityScore: z.number().min(0).max(1),
+  hesitationReasons: z.array(z.string()),
+  transcriptWindow: z.array(TranscriptEntrySchema),
+  interimTranscript: z.string(),
+  previousState: BoothInterpretationStateSchema.optional(),
+});
+export type BoothFeatureSnapshot = z.infer<typeof BoothFeatureSnapshotSchema>;
+
+export const BoothInterpretationSchema = z.object({
+  state: BoothInterpretationStateSchema,
+  hesitationScore: z.number().min(0).max(1),
+  recoveryScore: z.number().min(0).max(1),
+  shouldSurfaceAssist: z.boolean(),
+  summary: z.string(),
+  reasons: z.array(z.string()),
+  source: z.enum(['heuristic', 'openai']),
+});
+export type BoothInterpretation = z.infer<typeof BoothInterpretationSchema>;
+
+export const InterpretBoothInputSchema = z.object({
+  features: BoothFeatureSnapshotSchema,
+});
+export type InterpretBoothInput = z.infer<typeof InterpretBoothInputSchema>;

@@ -7,11 +7,12 @@
     "test": "vitest run --passWithNoTests",
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "tsx src/index.ts"
   },
   "dependencies": {
     "@sports-copilot/shared-types": "*",
     "better-sqlite3": "^12.8.0",
+    "dotenv": "^17.3.1",
     "fastify": "^4.26.0",
     "zod": "^3.22.0"
   },

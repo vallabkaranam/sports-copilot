@@ -261,12 +261,33 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 
 ---
 
+## P8 — Production Hesitation Engine
+
+### Live Signal Interpretation
+- [x] add server-side booth interpretation endpoint
+- [x] support OpenAI-backed hesitation/recovery interpretation with safe fallback
+- [x] send live booth feature snapshots from the web app
+- [x] strengthen transcript-instability features beyond pause dominance
+- [x] add explicit step-in / monitoring / weaning-off state transitions across the booth loop
+
+### Tests
+- [x] test heuristic booth interpretation fallback
+- [x] test OpenAI response parsing for booth interpretation
+- [ ] test live booth state transitions end to end
+
+---
+
 ## P8 — Free Deployment Path
 
 ### Hosted Runtime
 - [x] make API host/port configurable for cloud hosting
 - [x] make worker API target configurable by environment
 - [x] expose worker health endpoint for free web-service hosting
+
+### Productized Booth UX
+- [x] redesign the booth as a teleprompter-style sidekick surface
+- [x] add preflight checks for clip, mic, and backend readiness
+- [x] add green/yellow/red coaching states for steady, hover, and step-in behavior
 
 ### Deployment Config
 - [x] add Render blueprint config

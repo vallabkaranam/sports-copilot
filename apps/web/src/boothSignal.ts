@@ -13,9 +13,14 @@ export type BoothSignal = {
   pauseDurationMs: number;
   speechStreakMs: number;
   silenceStreakMs: number;
+  fillerCount: number;
+  fillerDensity: number;
   fillerWords: string[];
+  repeatedOpeningCount: number;
   repeatedPhrases: string[];
   unfinishedPhrase: boolean;
+  transcriptWordCount: number;
+  transcriptStabilityScore: number;
   isSpeaking: boolean;
   audioLevel: number;
   hasVoiceActivity: boolean;
@@ -83,6 +88,12 @@ function collectFillerWords(texts: string[]) {
   }
 
   return hits;
+}
+
+function countTranscriptWords(texts: string[]) {
+  return texts
+    .flatMap((text) => normalizeTranscriptText(text).split(' ').filter(Boolean))
+    .length;
 }
 
 function findRepeatedPhrases(entries: TranscriptEntry[]) {
@@ -168,9 +179,13 @@ export function buildBoothSignal({
   const fillerWords = collectFillerWords(
     interimText ? [...transcriptTexts, interimText] : transcriptTexts,
   );
+  const fillerCount = fillerWords.length;
   const repeatedPhrases = findRepeatedPhrases(recentTranscript);
+  const repeatedOpeningCount = repeatedPhrases.length;
   const lastLine = recentTranscript[recentTranscript.length - 1]?.text.trim() ?? '';
   const unfinishedPhrase = /(?:\.\.\.|-)\s*$/.test(lastLine);
+  const transcriptWordCount = Math.max(1, countTranscriptWords(interimText ? [...transcriptTexts, interimText] : transcriptTexts));
+  const fillerDensity = clamp(fillerCount / transcriptWordCount);
   const activity = deriveBoothActivity({
     interimTranscript,
     isMicListening,
@@ -211,9 +226,9 @@ export function buildBoothSignal({
     });
   }
 
-  if (fillerWords.length > 0) {
+  if (fillerCount > 0) {
     const uniqueFillers = [...new Set(fillerWords)];
-    fillerContribution = Math.min(0.24, 0.08 * fillerWords.length);
+    fillerContribution = Math.min(0.3, 0.08 * fillerCount + fillerDensity * 0.24);
     hesitationScore += fillerContribution;
     hesitationReasons.push(`Fillers detected: ${uniqueFillers.join(', ')}.`);
     hesitationContributors.push({
@@ -234,8 +249,8 @@ export function buildBoothSignal({
     });
   }
 
-  if (repeatedPhrases.length > 0) {
-    repeatedContribution = Math.min(0.16, repeatedPhrases.length * 0.08);
+  if (repeatedOpeningCount > 0) {
+    repeatedContribution = Math.min(0.2, repeatedOpeningCount * 0.1);
     hesitationScore += repeatedContribution;
     hesitationReasons.push(`Repeated opening: "${repeatedPhrases[0]}".`);
     hesitationContributors.push({
@@ -244,6 +259,14 @@ export function buildBoothSignal({
       score: repeatedContribution,
     });
   }
+
+  const transcriptInstabilityPenalty = clamp(
+    fillerDensity * 0.45 +
+      repeatedOpeningCount * 0.18 +
+      (unfinishedPhrase ? 0.2 : 0) +
+      (interimText.length > 0 && !isSpeaking ? 0.12 : 0),
+  );
+  const transcriptStabilityScore = clamp(1 - transcriptInstabilityPenalty);
 
   const clampedHesitationScore = clamp(hesitationScore);
   let confidenceScore = 0;
@@ -298,8 +321,13 @@ export function buildBoothSignal({
     speechStreakMs,
     silenceStreakMs,
     fillerWords,
+    fillerCount,
+    fillerDensity,
+    repeatedOpeningCount,
     repeatedPhrases,
     unfinishedPhrase,
+    transcriptWordCount,
+    transcriptStabilityScore,
     isSpeaking,
     audioLevel,
     hasVoiceActivity,

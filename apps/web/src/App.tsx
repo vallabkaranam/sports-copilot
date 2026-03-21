@@ -1,5 +1,7 @@
 import { startTransition, useEffect, useRef, useState } from 'react';
 import {
+  BoothFeatureSnapshot,
+  BoothInterpretation,
   BoothSessionAnalytics,
   BoothSessionSummary,
   ReplayControlState,
@@ -7,12 +9,14 @@ import {
   createEmptyAssistCard,
 } from '@sports-copilot/shared-types';
 import './App.css';
+import { BRAND } from './brand';
 import {
   appendBoothSessionSample,
   fetchBoothSessions,
   fetchControlState,
   fetchWorldState,
   finishBoothSession,
+  interpretBooth,
   startBoothSession,
   updateControlState,
 } from './api';
@@ -21,6 +25,7 @@ import {
   LOCAL_TRANSCRIPT_LIMIT,
   LIVE_HESITATION_GATE,
   LONG_PAUSE_START_MS,
+  BoothSignal,
   buildBoothSignal,
   calculateAudioLevel,
   deriveBoothActivity,
@@ -28,7 +33,6 @@ import {
 import {
   TEAM_META,
   createInitialWorldState,
-  formatAssistType,
   formatDurationMs,
   formatEventType,
   formatMomentum,
@@ -37,6 +41,7 @@ import {
 } from './dashboard';
 
 type MicrophoneAvailability = 'supported' | 'degraded' | 'unsupported';
+type CoachingTone = 'standby' | 'steady' | 'supporting' | 'step-in';
 
 type SpeechRecognitionAlternativeLike = {
   transcript: string;
@@ -121,6 +126,61 @@ function formatFormRecord(
   return `${form.record.wins}-${form.record.draws}-${form.record.losses} (${form.lastFive.length})`;
 }
 
+function getCoachingTone({
+  hasStartedBroadcast,
+  boothHasLiveInput,
+  boothSignal,
+  shouldSurfaceAssist,
+}: {
+  hasStartedBroadcast: boolean;
+  boothHasLiveInput: boolean;
+  boothSignal: BoothSignal;
+  shouldSurfaceAssist: boolean;
+}) {
+  if (!hasStartedBroadcast) {
+    return {
+      tone: 'standby' as CoachingTone,
+      label: 'Standby',
+      headline: 'System standing by.',
+      copy: 'Nothing appears on the feed until the session is live.',
+    };
+  }
+
+  if (shouldSurfaceAssist) {
+    return {
+      tone: 'step-in' as CoachingTone,
+      label: 'Stepping in',
+      headline: 'Assist live on this beat.',
+      copy: 'The pause has gone long enough to justify a prompt.',
+    };
+  }
+
+  if (!boothHasLiveInput) {
+    return {
+      tone: 'standby' as CoachingTone,
+      label: 'Listening',
+      headline: 'Waiting for your first line.',
+      copy: 'Start calling the action and And-One will listen for a real pause.',
+    };
+  }
+
+  if (boothSignal.isSpeaking && boothSignal.confidenceScore >= 0.68 && boothSignal.hesitationScore < 0.18) {
+    return {
+      tone: 'steady' as CoachingTone,
+      label: 'Backing off',
+      headline: 'You are back in rhythm.',
+      copy: 'The cue fades while your delivery is stable again.',
+    };
+  }
+
+  return {
+    tone: 'supporting' as CoachingTone,
+    label: 'Hovering',
+    headline: 'And-One is tracking the beat.',
+    copy: 'The booth is active, but the pause is not strong enough to step in yet.',
+  };
+}
+
 function App() {
   const [worldState, setWorldState] = useState(createInitialWorldState);
   const [controls, setControls] = useState<ReplayControlState>({
@@ -140,7 +200,7 @@ function App() {
     averageLongestPauseMs: 0,
     totalAssistCount: 0,
   });
-  const [recentBoothSessions, setRecentBoothSessions] = useState<BoothSessionSummary[]>([]);
+  const [, setRecentBoothSessions] = useState<BoothSessionSummary[]>([]);
   const [activeBoothSessionId, setActiveBoothSessionId] = useState<string | null>(null);
   const [loadedClipName, setLoadedClipName] = useState('');
   const [loadedClipUrl, setLoadedClipUrl] = useState<string | null>(null);
@@ -153,12 +213,15 @@ function App() {
   const [boothError, setBoothError] = useState<string | null>(null);
   const [latchedAssist, setLatchedAssist] = useState(() => createEmptyAssistCard());
   const [isMicListening, setIsMicListening] = useState(false);
+  const [isMicPrepared, setIsMicPrepared] = useState(false);
+  const [isMicPreparing, setIsMicPreparing] = useState(false);
   const [lastSpeechAtMs, setLastSpeechAtMs] = useState(-1);
   const [lastVoiceActivityAtMs, setLastVoiceActivityAtMs] = useState(-1);
   const [speechStreakStartedAtMs, setSpeechStreakStartedAtMs] = useState(-1);
   const [silenceStreakStartedAtMs, setSilenceStreakStartedAtMs] = useState(-1);
   const [audioLevel, setAudioLevel] = useState(0);
   const [boothClockMs, setBoothClockMs] = useState(() => Date.now());
+  const [boothInterpretation, setBoothInterpretation] = useState<BoothInterpretation | null>(null);
   const [microphoneAvailability, setMicrophoneAvailability] =
     useState<MicrophoneAvailability>('supported');
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -336,6 +399,7 @@ function App() {
     setIsClipMuted(true);
     setHasStartedBroadcast(false);
     setActiveBoothSessionId(null);
+    setIsMicPrepared(false);
     setSpeechStreakStartedAtMs(-1);
     setSilenceStreakStartedAtMs(-1);
   }
@@ -408,6 +472,38 @@ function App() {
         setLastVoiceActivityAtMs(Date.now());
       }
     }, AUDIO_ACTIVITY_SAMPLE_MS);
+  }
+
+  async function prepareMicrophone() {
+    if (!supportsAudioMonitoring()) {
+      setMicrophoneAvailability('unsupported');
+      setBoothError('This browser cannot arm the booth microphone. Chrome or Edge work best.');
+      setIsMicPrepared(false);
+      return;
+    }
+
+    setIsMicPreparing(true);
+    setBoothError(null);
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+
+      stream.getTracks().forEach((track) => track.stop());
+      setMicrophoneAvailability('supported');
+      setIsMicPrepared(true);
+    } catch (_error) {
+      setMicrophoneAvailability('degraded');
+      setBoothError('Microphone access was blocked. Allow mic access to arm the booth.');
+      setIsMicPrepared(false);
+    } finally {
+      setIsMicPreparing(false);
+    }
   }
 
   function stopAudioMonitoring() {
@@ -500,6 +596,7 @@ function App() {
       switch (event.error) {
         case 'not-allowed':
           setMicrophoneAvailability('degraded');
+          setIsMicPrepared(false);
           setBoothError('Microphone access was blocked. Allow mic access to test live hesitation.');
           break;
         case 'no-speech':
@@ -507,12 +604,14 @@ function App() {
           break;
         case 'network':
           setMicrophoneAvailability('degraded');
+          setIsMicPrepared(true);
           setBoothError(
             'This browser speech service is unavailable right now. Chrome or Edge usually work best.',
           );
           break;
         default:
           setMicrophoneAvailability('degraded');
+          setIsMicPrepared(false);
           setBoothError(`Microphone error: ${event.error}.`);
       }
     };
@@ -554,11 +653,13 @@ function App() {
     void startAudioMonitoring()
       .then(() => {
         setMicrophoneAvailability('supported');
+        setIsMicPrepared(true);
       })
       .catch(() => {
         shouldKeepMicLiveRef.current = false;
         recognitionRef.current?.stop();
         setMicrophoneAvailability('degraded');
+        setIsMicPrepared(false);
         setBoothError(
           'Microphone access was blocked. Allow mic access to test live hesitation from your voice.',
         );
@@ -588,6 +689,7 @@ function App() {
 
       recognition.start();
       setMicrophoneAvailability('supported');
+      setIsMicPrepared(true);
     } catch (_error) {
       setMicrophoneAvailability('degraded');
       setBoothError(
@@ -620,6 +722,11 @@ function App() {
   async function startBroadcast() {
     if (!loadedClipUrl) {
       setBoothError('Load a clip before starting the booth.');
+      return;
+    }
+
+    if (!isMicPrepared) {
+      setBoothError('Arm the microphone before starting the booth.');
       return;
     }
 
@@ -686,13 +793,11 @@ function App() {
     worldState.liveSignals.social[worldState.liveSignals.social.length - 1];
   const recentEvents = [...worldState.recentEvents].reverse();
   const surfacedAssists = [...worldState.sessionMemory.surfacedAssists].reverse();
-  const systemHesitationReasons =
-    worldState.commentator.hesitationReasons.length > 0
-      ? worldState.commentator.hesitationReasons
-      : ['No replay-side hesitation trigger is active right now.'];
   const isMicSupported =
     microphoneAvailability !== 'unsupported' &&
     (Boolean(getSpeechRecognitionConstructor()) || supportsAudioMonitoring());
+  const isSystemReady = isHydrated && !error;
+  const isBroadcastReady = Boolean(loadedClipUrl) && isMicPrepared && isSystemReady;
   const boothActivity = deriveBoothActivity({
     interimTranscript: boothInterimTranscript,
     isMicListening,
@@ -714,7 +819,6 @@ function App() {
   const boothHasLiveInput =
     hasStartedBroadcast &&
     (isMicListening || boothTranscript.length > 0 || boothInterimTranscript.length > 0);
-  const isPracticeMode = true;
   const boothAssist = buildBoothAssist({
     boothSignal,
     boothTranscript,
@@ -730,6 +834,7 @@ function App() {
     (controls.forceHesitation ||
       !boothHasLiveInput ||
       boothSignal.shouldSurfaceAssist ||
+      boothInterpretation?.shouldSurfaceAssist ||
       worldState.commentator.hesitationScore >= LIVE_HESITATION_GATE);
   const boothAssistShouldSurface = boothHasLiveInput && boothAssist.type !== 'none';
   const nextTriggeredAssist = boothAssistShouldSurface
@@ -740,60 +845,78 @@ function App() {
   const activeAssist = latchedAssist;
   const shouldSurfaceAssist = activeAssist.type !== 'none';
   const assistConfidencePercent = formatPercent(shouldSurfaceAssist ? activeAssist.confidence : 0);
-  const hesitationPercent = formatPercent(
-    boothHasLiveInput ? boothSignal.hesitationScore : worldState.commentator.hesitationScore,
+  const boothHesitationPercent = formatPercent(
+    boothInterpretation?.hesitationScore ?? boothSignal.hesitationScore,
   );
-  const boothConfidencePercent = formatPercent(boothSignal.confidenceScore);
-  const boothHesitationPercent = formatPercent(boothSignal.hesitationScore);
-  const systemHesitationPercent = formatPercent(worldState.commentator.hesitationScore);
+  const boothConfidencePercent = formatPercent(
+    boothInterpretation?.recoveryScore ?? boothSignal.confidenceScore,
+  );
   const visibleReasons =
-    boothHasLiveInput && boothSignal.hesitationReasons.length > 0
-      ? boothSignal.hesitationReasons
-      : boothHasLiveInput
-        ? ['Talk through the play. The copilot will watch for pauses, fillers, and repeated starts.']
-        : systemHesitationReasons;
-  const visibleConfidenceReasons =
-    boothSignal.confidenceReasons.length > 0
-      ? boothSignal.confidenceReasons
-      : ['Confidence builds only when your delivery restarts and holds.'];
+    boothInterpretation?.reasons && boothInterpretation.reasons.length > 0
+      ? boothInterpretation.reasons
+      : boothSignal.hesitationReasons.length > 0
+        ? boothSignal.hesitationReasons
+      : ['Hesitation is currently driven by live silence after active speech.'];
+  const visibleConfidenceReasons = [
+    boothInterpretation?.summary
+      ? `Recovery signal: ${boothInterpretation.summary}`
+      : 'Confidence builds only when your delivery restarts and holds.',
+  ];
+  const coachingTone = getCoachingTone({
+    hasStartedBroadcast,
+    boothHasLiveInput,
+    boothSignal: {
+      ...boothSignal,
+      hesitationScore: boothInterpretation?.hesitationScore ?? boothSignal.hesitationScore,
+      confidenceScore: boothInterpretation?.recoveryScore ?? boothSignal.confidenceScore,
+    },
+    shouldSurfaceAssist,
+  });
+  const readinessChecks = [
+    {
+      label: 'Clip loaded',
+      done: Boolean(loadedClipUrl),
+      detail: loadedClipUrl ? loadedClipName || 'Local replay is ready.' : 'Bring in a replay clip first.',
+    },
+    {
+      label: 'Mic armed',
+      done: isMicPrepared,
+      detail: isMicPrepared
+        ? 'Microphone permission is ready for the live booth.'
+        : isMicPreparing
+          ? 'Requesting microphone access.'
+          : 'Enable mic access before going live.',
+    },
+    {
+      label: 'System linked',
+      done: isSystemReady,
+      detail: isSystemReady ? 'The hosted backend is reachable.' : 'Waiting for the backend connection.',
+    },
+  ];
   const clipClockLabel = formatDurationMs(clipPositionMs);
   const clipDurationLabel = clipDurationMs > 0 ? formatDurationMs(clipDurationMs) : '--:--';
   const clipProgress = clipDurationMs > 0 ? Math.min(100, Math.round((clipPositionMs / clipDurationMs) * 100)) : 0;
-  const boothStatusLabel = !loadedClipUrl
-    ? 'Load clip first'
-    : !hasStartedBroadcast
-      ? 'Ready to start'
-      : isMicListening
-        ? boothSignal.isSpeaking
-          ? 'Mic live'
-          : 'Listening for the next beat'
-        : isMicSupported
-          ? microphoneAvailability === 'degraded'
-            ? 'Mic degraded'
-            : 'Mic ready'
-          : 'Mic unavailable';
   const isBroadcastLive =
     hasStartedBroadcast && (controls.playbackStatus === 'playing' || isMicListening);
-  const setupStatusLabel = !loadedClipUrl
-    ? 'Waiting for clip upload'
-    : !hasStartedBroadcast
-      ? 'Clip loaded. Booth standing by'
-      : boothStatusLabel;
-  const systemStatusLabel = error ? 'Reconnecting' : isHydrated ? 'Ready' : 'Booting';
-  const feedHeading = loadedClipName || 'Load a clip to begin';
-  const feedSubheading = loadedClipUrl
-    ? hasStartedBroadcast
-      ? 'Call the play naturally. The booth watches for hesitation and backs off when confidence returns.'
-      : 'Your clip is loaded and muted. Start when you want the booth to listen.'
-    : 'Bring in any local replay clip to practice hesitation recovery without the old demo scaffolding.';
+  const feedHeading = loadedClipName || 'Attach a video input';
   const replayToastSignature = `${activeAssist.type}:${activeAssist.text}:${shouldSurfaceAssist}:${controls.restartToken}`;
   const activeTriggerBadges = [
     boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS ? 'pause' : null,
-    boothSignal.fillerWords.length > 0 ? 'filler' : null,
-    boothSignal.repeatedPhrases.length > 0 ? 'repeat-start' : null,
-    boothSignal.unfinishedPhrase ? 'unfinished' : null,
   ].filter(Boolean) as string[];
   const preMatchSummary = worldState.preMatch.aiOpener ?? worldState.preMatch.deterministicOpener;
+  const primaryActionLabel = isBroadcastLive ? 'End session' : 'Start session';
+  const primaryActionDisabled = !isBroadcastLive && (!isBroadcastReady || isUpdatingControls);
+  const guidanceSummary = shouldSurfaceAssist
+    ? activeAssist.whyNow
+    : boothInterpretation?.summary
+      ? boothInterpretation.summary
+    : coachingTone.tone === 'steady'
+      ? 'Hesitation is falling. And-One is backing off.'
+      : coachingTone.copy;
+  const micBars = Array.from({ length: 14 }, (_, index) => {
+    const threshold = (index + 1) / 14;
+    return boothSignal.audioLevel >= threshold * 0.18;
+  });
 
   useEffect(() => {
     if (!hasStartedBroadcast) {
@@ -873,8 +996,8 @@ function App() {
 
     void appendBoothSessionSample(activeBoothSessionId, {
       timestamp: sampleTimestamp,
-      hesitationScore: boothSignal.hesitationScore,
-      confidenceScore: boothSignal.confidenceScore,
+      hesitationScore: boothInterpretation?.hesitationScore ?? boothSignal.hesitationScore,
+      confidenceScore: boothInterpretation?.recoveryScore ?? boothSignal.confidenceScore,
       pauseDurationMs: boothSignal.pauseDurationMs,
       audioLevel: boothSignal.audioLevel,
       isSpeaking: boothSignal.isSpeaking,
@@ -892,27 +1015,100 @@ function App() {
     boothSignal.hesitationScore,
     boothSignal.isSpeaking,
     boothSignal.pauseDurationMs,
+    boothInterpretation?.hesitationScore,
+    boothInterpretation?.recoveryScore,
     hasStartedBroadcast,
     shouldSurfaceAssist,
+  ]);
+
+  useEffect(() => {
+    if (!hasStartedBroadcast || !isMicListening) {
+      setBoothInterpretation(null);
+      return;
+    }
+
+    const hasTranscriptContext =
+      boothTranscript.length > 0 ||
+      boothInterimTranscript.trim().length > 0 ||
+      boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS;
+
+    if (!hasTranscriptContext) {
+      return;
+    }
+
+    const features: BoothFeatureSnapshot = {
+      timestamp: boothClockMs,
+      hesitationScore: boothSignal.hesitationScore,
+      confidenceScore: boothSignal.confidenceScore,
+      pauseDurationMs: Math.round(boothSignal.pauseDurationMs),
+      speechStreakMs: Math.round(boothSignal.speechStreakMs),
+      silenceStreakMs: Math.round(boothSignal.silenceStreakMs),
+      audioLevel: boothSignal.audioLevel,
+      isSpeaking: boothSignal.isSpeaking,
+      hasVoiceActivity: boothSignal.hasVoiceActivity,
+      fillerCount: boothSignal.fillerCount,
+      fillerDensity: boothSignal.fillerDensity,
+      fillerWords: boothSignal.fillerWords,
+      repeatedOpeningCount: boothSignal.repeatedOpeningCount,
+      repeatedPhrases: boothSignal.repeatedPhrases,
+      unfinishedPhrase: boothSignal.unfinishedPhrase,
+      transcriptWordCount: boothSignal.transcriptWordCount,
+      transcriptStabilityScore: boothSignal.transcriptStabilityScore,
+      hesitationReasons: boothSignal.hesitationReasons,
+      transcriptWindow: boothTranscript.slice(-LOCAL_TRANSCRIPT_LIMIT),
+      interimTranscript: boothInterimTranscript,
+      previousState: boothInterpretation?.state,
+    };
+
+    const timeoutId = window.setTimeout(() => {
+      void interpretBooth(features)
+        .then((nextInterpretation) => {
+          setBoothInterpretation(nextInterpretation);
+          setBoothError(null);
+        })
+        .catch(() => {
+          // Keep the local booth flow running even if interpretation is unavailable.
+        });
+    }, 900);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    boothClockMs,
+    boothInterimTranscript,
+    boothSignal.audioLevel,
+    boothSignal.confidenceScore,
+    boothSignal.fillerCount,
+    boothSignal.fillerDensity,
+    boothSignal.fillerWords,
+    boothSignal.hasVoiceActivity,
+    boothSignal.hesitationReasons,
+    boothSignal.hesitationScore,
+    boothSignal.isSpeaking,
+    boothSignal.pauseDurationMs,
+    boothSignal.repeatedOpeningCount,
+    boothSignal.repeatedPhrases,
+    boothSignal.silenceStreakMs,
+    boothSignal.speechStreakMs,
+    boothSignal.transcriptStabilityScore,
+    boothSignal.transcriptWordCount,
+    boothSignal.unfinishedPhrase,
+    boothTranscript,
+    hasStartedBroadcast,
+    isMicListening,
+    boothInterpretation?.state,
   ]);
 
   return (
     <div className="app-shell">
       <header className="app-header">
         <div className="brand-lockup">
-          <p className="eyebrow">{isPracticeMode ? 'Sports Copilot' : 'Sports Copilot'}</p>
-          <h1>Commentary Booth</h1>
-          <p className="hero-copy">
-            A focused practice surface for live hesitation detection, confidence recovery, and just-in-time commentary support.
-          </p>
+          <p className="eyebrow">{BRAND.eyebrow}</p>
+          <h1>{BRAND.heroTitle}</h1>
         </div>
 
         <div className="header-actions">
-          <div className="header-status-card">
-            <p className="control-label">System</p>
-            <strong>{systemStatusLabel}</strong>
-            <span>{setupStatusLabel}</span>
-          </div>
           <button
             type="button"
             className="ghost-button"
@@ -993,16 +1189,14 @@ function App() {
       </section>
 
       <div className="main-grid">
-        <section className="panel replay-panel">
-          <div className="panel-header">
+        <section className="panel replay-panel stage-panel">
+          <div className="panel-header panel-header--stage">
             <div>
-              <p className="panel-kicker">Feed</p>
+              <p className="panel-kicker">Program</p>
               <h2>{feedHeading}</h2>
-              <p className="panel-copy">{feedSubheading}</p>
             </div>
             <div className="panel-chip-row">
               <span className="panel-tag">{loadedClipUrl ? `${clipClockLabel} / ${clipDurationLabel}` : 'Awaiting upload'}</span>
-              <span className="panel-tag">{isBroadcastLive ? 'Broadcast live' : 'Broadcast idle'}</span>
             </div>
           </div>
 
@@ -1061,52 +1255,46 @@ function App() {
                 <h3>
                   {loadedClipUrl
                     ? hasStartedBroadcast
-                      ? 'Stay on the call. The booth only steps in when you fade.'
-                      : 'Set the feed, then go live when you are ready.'
-                    : 'Upload a clip, then take the booth live.'}
+                      ? coachingTone.headline
+                      : 'Arm the mic, then start the session.'
+                    : 'Attach a video input to begin.'}
                 </h3>
-                <p>
-                  Speak as if you are on air. Pauses, filler-heavy resets, and broken openings should all show up as hesitation.
-                </p>
               </div>
 
               {shouldSurfaceAssist ? (
-                <article className="replay-toast" key={replayToastSignature}>
-                  <p className="assist-type">{formatAssistType(activeAssist.type)}</p>
+                <article className="replay-toast replay-toast--live" key={replayToastSignature}>
+                  <p className="assist-type">Assist</p>
                   <h3>{activeAssist.text}</h3>
                   <p>{activeAssist.whyNow}</p>
                 </article>
               ) : boothHasLiveInput ? (
                 <div className="replay-toast replay-toast--hint">
                   <p className="assist-type">Monitoring</p>
-                  <h3>Booth tracking is live.</h3>
-                  <p>The feed stays clear until hesitation becomes strong enough to justify one assist.</p>
+                  <h3>Mic is live.</h3>
                 </div>
               ) : loadedClipUrl && !hasStartedBroadcast ? (
                 <div className="replay-toast replay-toast--hint">
-                  <p className="assist-type">Standing by</p>
-                  <h3>Go live when you want booth tracking to begin.</h3>
-                  <p>The feed is set and muted. Nothing is scored until you start the session.</p>
+                  <p className="assist-type">Preflight</p>
+                  <h3>Finish setup, then start.</h3>
                 </div>
               ) : null}
 
               <div className="replay-tags">
-                {isPracticeMode ? (
-                  activeTriggerBadges.length > 0 ? (
-                    activeTriggerBadges.map((badge) => (
-                      <span className="scene-chip" key={badge}>
-                        {badge}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="scene-chip scene-chip--muted">Waiting for hesitation cue</span>
-                  )
+                {activeTriggerBadges.length > 0 ? (
+                  activeTriggerBadges.map((badge) => (
+                    <span className="scene-chip" key={badge}>
+                      {badge}
+                    </span>
+                  ))
                 ) : (
                   <span className="scene-chip scene-chip--muted">Waiting for hesitation cue</span>
                 )}
               </div>
 
               <div className="replay-footer">
+                <div className={`coach-lane coach-lane--${coachingTone.tone}`}>
+                  <strong>{coachingTone.headline}</strong>
+                </div>
                 <div className="progress-track" aria-label="Replay progress">
                   <span style={{ width: `${clipProgress}%` }} />
                 </div>
@@ -1123,67 +1311,84 @@ function App() {
         </section>
 
         <div className="side-column">
-          <section className="panel control-panel">
-            <div className="panel-header">
+          <section className={`panel control-panel control-panel--${coachingTone.tone}`}>
+            <div className="panel-header panel-header--compact">
               <div>
-                <p className="panel-kicker">Booth</p>
-                <h2>Live session</h2>
-                <p className="panel-copy">One place to run the booth, watch the live signal, and keep the surface calm.</p>
+                <p className="panel-kicker">Session</p>
+                <h2>Go live</h2>
               </div>
             </div>
 
-            <article className="booth-summary">
-              <div>
-                <p className="control-label">System</p>
-                <strong>{error ? 'Reconnecting' : isHydrated ? 'Ready' : 'Booting'}</strong>
-              </div>
-              <div>
-                <p className="control-label">Broadcast</p>
-                <strong>{isBroadcastLive ? 'Live' : 'Idle'}</strong>
-              </div>
-              <div>
-                <p className="control-label">Booth</p>
-                <strong>{isUpdatingControls ? 'Applying changes' : setupStatusLabel}</strong>
-              </div>
-            </article>
-
-            <div className="control-group">
-              <p className="control-label">Controls</p>
-              <div className="primary-controls">
-                <button
-                  type="button"
-                  className={isBroadcastLive ? 'is-active' : ''}
-                  disabled={!loadedClipUrl}
-                  onClick={() => void (isBroadcastLive ? stopBroadcast() : startBroadcast())}
-                >
-                  {isBroadcastLive ? 'End Session' : 'Start Broadcast'}
-                </button>
-              </div>
-              <div className="inline-actions">
-                <button type="button" className="text-button" onClick={() => void resetBroadcast()}>
-                  Reset session
-                </button>
-                <button type="button" className="text-button" onClick={clearBoothTranscript}>
-                  Clear transcript
-                </button>
-              </div>
+            <div className="readiness-list">
+              {readinessChecks.map((check) => (
+                <div key={check.label} className={`readiness-row ${check.done ? 'readiness-row--done' : ''}`}>
+                  <span className={`readiness-dot ${check.done ? 'readiness-dot--done' : ''}`} />
+                  <div className="readiness-copy">
+                    <strong>{check.label}</strong>
+                    <span>{check.detail}</span>
+                  </div>
+                </div>
+              ))}
             </div>
 
-            <article className="booth-card">
+            <div className="setup-actions">
+              <button
+                type="button"
+                className={isMicPrepared ? 'is-active' : ''}
+                disabled={isMicPreparing}
+                onClick={() => void prepareMicrophone()}
+              >
+                {isMicPrepared ? 'Microphone ready' : isMicPreparing ? 'Checking microphone…' : 'Enable microphone'}
+              </button>
+              <button
+                type="button"
+                className={isBroadcastLive ? 'is-active' : ''}
+                disabled={primaryActionDisabled}
+                onClick={() => void (isBroadcastLive ? stopBroadcast() : startBroadcast())}
+              >
+                {primaryActionLabel}
+              </button>
+            </div>
+
+            {boothError ? <p className="inline-warning">{boothError}</p> : null}
+
+            <article className={`booth-card booth-card--${coachingTone.tone}`}>
               <div className="booth-card__header">
                 <div>
-                  <p className="control-label">Hesitation</p>
+                  <p className="control-label">Status</p>
+                  <strong>{coachingTone.headline}</strong>
+                </div>
+              </div>
+
+              <p className="field-copy field-copy--tight">{guidanceSummary}</p>
+
+              <div className="metric-card">
+                <div className="meter-label-row">
+                  <span>Hesitation</span>
                   <strong>{boothHesitationPercent}</strong>
                 </div>
-                <div className="metric-badge">
-                  <span>{boothSignal.activeSpeaker === 'lead' ? 'Speaking' : 'Quiet'}</span>
+                <div className={`meter-track meter-track--${coachingTone.tone}`}>
+                  <span style={{ width: boothHesitationPercent }} />
                 </div>
               </div>
 
-              <div className="meter-track">
-                <span style={{ width: boothHesitationPercent }} />
+              <div className="signal-meta">
+                <div className="signal-meta__item">
+                  <span>Mic activity</span>
+                  <div className="audio-meter" aria-label="Mic activity">
+                    {micBars.map((isActive, index) => (
+                      <span
+                        key={index}
+                        className={isActive ? 'audio-meter__bar audio-meter__bar--active' : 'audio-meter__bar'}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <div className="signal-meta__item">
+                  <span>Assist state</span>
+                  <strong>{shouldSurfaceAssist ? 'Visible' : coachingTone.tone === 'steady' ? 'Standby' : 'Waiting'}</strong>
+                </div>
               </div>
-
               <div className="meter-label-row">
                 <span>Mic activity</span>
                 <strong>{Math.round(boothSignal.audioLevel * 100)}%</strong>
@@ -1227,6 +1432,15 @@ function App() {
                 ) : null}
               </div>
             </article>
+
+            <div className="inline-actions inline-actions--compact">
+              <button type="button" className="text-button" onClick={() => void resetBroadcast()}>
+                Reset session
+              </button>
+              <button type="button" className="text-button" onClick={clearBoothTranscript}>
+                Clear transcript
+              </button>
+            </div>
           </section>
 
         </div>
@@ -1235,62 +1449,12 @@ function App() {
       {showDetails ? (
         <div className="bottom-grid">
           <section className="panel">
-            <div className="panel-header">
-              <div>
-                <p className="panel-kicker">Booth Sessions</p>
-                <h2>Saved analytics</h2>
-              </div>
-              <span className="panel-tag">{boothAnalytics.totalSessions} runs</span>
-            </div>
-
-            <div className="commentary-metadata">
-              <div>
-                <p className="control-label">Completed</p>
-                <strong>{boothAnalytics.completedSessions}</strong>
-              </div>
-              <div>
-                <p className="control-label">Avg max hesitation</p>
-                <strong>{formatPercent(boothAnalytics.averageMaxHesitationScore)}</strong>
-              </div>
-              <div>
-                <p className="control-label">Avg longest pause</p>
-                <strong>{formatDurationMs(boothAnalytics.averageLongestPauseMs)}</strong>
-              </div>
-              <div>
-                <p className="control-label">Assists surfaced</p>
-                <strong>{boothAnalytics.totalAssistCount}</strong>
-              </div>
-            </div>
-
-            <div className="timeline-list">
-              {recentBoothSessions.length > 0 ? (
-                recentBoothSessions.slice(0, 5).map((session) => (
-                  <article className="timeline-item" key={session.id}>
-                    <div className="timeline-time">
-                      <span>{session.clipName}</span>
-                      <small>{session.status}</small>
-                    </div>
-                    <p>
-                      Max hesitation {formatPercent(session.maxHesitationScore)}, longest pause{' '}
-                      {formatDurationMs(session.longestPauseMs)}, assists {session.assistCount}.
-                    </p>
-                  </article>
-                ))
-              ) : (
-                <p className="empty-copy">
-                  Saved booth analytics will appear here after you run a broadcast session.
-                </p>
-              )}
-            </div>
-          </section>
-
-          <section className="panel">
           <div className="panel-header">
             <div>
-              <p className="panel-kicker">Match Flow</p>
-              <h2>Event Timeline</h2>
+              <p className="panel-kicker">Details</p>
+              <h2>Live trace</h2>
             </div>
-            <span className="panel-tag">{recentEvents.length} recent events</span>
+            <span className="panel-tag">{boothHesitationPercent}</span>
           </div>
 
           <div className="timeline-list">
@@ -1406,40 +1570,39 @@ function App() {
         <section className="panel">
           <div className="panel-header">
             <div>
-              <p className="panel-kicker">Signal Matrix</p>
-              <h2>Booth hesitation tracker</h2>
+              <p className="panel-kicker">Booth Metrics</p>
+              <h2>Session analytics</h2>
             </div>
-            <span className="panel-tag">{hesitationPercent}</span>
+            <span className="panel-tag">{assistConfidencePercent}</span>
+          </div>
+
+          <div className="commentary-metadata">
+            <div>
+              <p className="control-label">Runs</p>
+              <strong>{boothAnalytics.totalSessions}</strong>
+            </div>
+            <div>
+              <p className="control-label">Avg hesitation</p>
+              <strong>{formatPercent(boothAnalytics.averageMaxHesitationScore)}</strong>
+            </div>
+            <div>
+              <p className="control-label">Longest pause</p>
+              <strong>{formatDurationMs(boothAnalytics.averageLongestPauseMs)}</strong>
+            </div>
+            <div>
+              <p className="control-label">Assists</p>
+              <strong>{boothAnalytics.totalAssistCount}</strong>
+            </div>
           </div>
 
           <div className="meter-cluster">
             <div>
               <div className="meter-label-row">
-                <span>Booth hesitation</span>
+                <span>Hesitation</span>
                 <strong>{boothHesitationPercent}</strong>
               </div>
               <div className="meter-track">
                 <span style={{ width: boothHesitationPercent }} />
-              </div>
-            </div>
-
-            <div>
-              <div className="meter-label-row">
-                <span>Replay-side hesitation</span>
-                <strong>{systemHesitationPercent}</strong>
-              </div>
-              <div className="meter-track meter-track--cool">
-                <span style={{ width: systemHesitationPercent }} />
-              </div>
-            </div>
-
-            <div>
-              <div className="meter-label-row">
-                <span>Assist confidence</span>
-                <strong>{assistConfidencePercent}</strong>
-              </div>
-              <div className="meter-track meter-track--gold">
-                <span style={{ width: assistConfidencePercent }} />
               </div>
             </div>
           </div>
@@ -1453,7 +1616,7 @@ function App() {
           <div className="commentary-metadata">
             <div>
               <p className="control-label">Speaker state</p>
-              <strong>{boothHasLiveInput ? boothSignal.activeSpeaker : worldState.commentator.activeSpeaker}</strong>
+              <strong>{boothSignal.activeSpeaker}</strong>
             </div>
             <div>
               <p className="control-label">Pause</p>
@@ -1468,10 +1631,7 @@ function App() {
             </div>
             <div>
               <p className="control-label">Filler cues</p>
-              <strong>
-                {(boothHasLiveInput ? boothSignal.fillerWords : worldState.commentator.fillerWords).join(', ') ||
-                  'Clean'}
-              </strong>
+              <strong>{boothSignal.fillerWords.join(', ') || 'Clean'}</strong>
             </div>
             <div>
               <p className="control-label">Repeated opens</p>
@@ -1480,7 +1640,7 @@ function App() {
           </div>
 
           <div className="memory-strip">
-            <p className="memory-title">Booth transcript</p>
+            <p className="memory-title">Transcript</p>
             <div className="transcript-list">
               {boothTranscript.length > 0 ? (
                 boothTranscript.slice(-5).map((entry) => (
@@ -1491,11 +1651,11 @@ function App() {
               ) : (
                 <p className="transcript-line transcript-line--muted">
                   {!loadedClipUrl
-                    ? 'Load a clip first, then start the booth.'
+                    ? 'Attach a video first, then start the session.'
                     : !hasStartedBroadcast
-                      ? 'Start the booth to begin live mic tracking.'
+                      ? 'Start the session to begin live mic tracking.'
                       : isMicSupported
-                        ? 'Live booth transcript will appear here once you start speaking.'
+                        ? 'Live transcript will appear here once you start speaking.'
                         : 'This browser does not expose usable mic APIs, so live hesitation is unavailable here.'}
                 </p>
               )}

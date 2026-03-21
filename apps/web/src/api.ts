@@ -1,4 +1,6 @@
 import {
+  BoothFeatureSnapshot,
+  BoothInterpretation,
   BoothSessionSample,
   BoothSessionsResponse,
   BoothSessionSummary,
@@ -66,5 +68,12 @@ export function finishBoothSession(sessionId: string) {
   return requestJson<{ session: BoothSessionSummary }>(`/booth-sessions/${sessionId}/finish`, {
     method: 'POST',
     body: JSON.stringify({}),
+  });
+}
+
+export function interpretBooth(features: BoothFeatureSnapshot) {
+  return requestJson<BoothInterpretation>('/booth/interpret', {
+    method: 'POST',
+    body: JSON.stringify({ features }),
   });
 }
