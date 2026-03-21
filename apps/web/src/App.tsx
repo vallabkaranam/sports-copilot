@@ -1828,16 +1828,6 @@ function App() {
                   <h3>{activeAssist.text}</h3>
                   <p>{activeAssistSupportCopy}</p>
                 </article>
-              ) : boothHasLiveInput ? (
-                <div className="replay-toast replay-toast--hint">
-                  <p className="assist-type">Monitoring</p>
-                  <h3>Mic is live.</h3>
-                </div>
-              ) : loadedClipUrl && !hasStartedBroadcast ? (
-                <div className="replay-toast replay-toast--hint">
-                  <p className="assist-type">Preflight</p>
-                  <h3>Go live when the desk is ready.</h3>
-                </div>
               ) : null}
 
               <div className="replay-tags">
