@@ -1,6 +1,6 @@
 const OPENAI_REALTIME_CALLS_API_URL = 'https://api.openai.com/v1/realtime/calls';
 const DEFAULT_REALTIME_TRANSCRIBE_PROMPT =
-  'Live sports commentary. Preserve filler words like um, uh, you know, and i mean.';
+  'Live sports commentary. Preserve filler words, repetitions, false starts, self-corrections, trailing thoughts, and unfinished phrases exactly as spoken. Do not clean up ums, uhs, repeated openings, or broken phrasing.';
 
 function createRealtimeSessionConfig() {
   return {

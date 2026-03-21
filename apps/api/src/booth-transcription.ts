@@ -3,7 +3,7 @@ import { TranscribeBoothAudioResponse } from '@sports-copilot/shared-types';
 const OPENAI_AUDIO_API_URL = 'https://api.openai.com/v1/audio/transcriptions';
 const OPENAI_TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL ?? 'gpt-4o-transcribe';
 const DEFAULT_TRANSCRIBE_PROMPT =
-  'Live sports commentary. Preserve filler words like um, uh, you know, and i mean.';
+  'Live sports commentary. Preserve filler words, repetitions, false starts, self-corrections, trailing thoughts, and unfinished phrases exactly as spoken. Do not clean up ums, uhs, repeated openings, or broken phrasing.';
 
 function inferAudioExtension(mimeType: string) {
   if (mimeType.includes('ogg')) {

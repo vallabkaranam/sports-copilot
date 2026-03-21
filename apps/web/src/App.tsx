@@ -139,6 +139,48 @@ function createTranscriptEntry(timestamp: number, text: string): TranscriptEntry
   };
 }
 
+function normalizeTranscriptComparison(text: string) {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function mergeTranscriptEntry(
+  current: TranscriptEntry[],
+  nextEntry: TranscriptEntry,
+) {
+  const nextNormalized = normalizeTranscriptComparison(nextEntry.text);
+  if (!nextNormalized) {
+    return current;
+  }
+
+  const lastEntry = current[current.length - 1];
+  if (!lastEntry) {
+    return [nextEntry].slice(-LOCAL_TRANSCRIPT_LIMIT);
+  }
+
+  const lastNormalized = normalizeTranscriptComparison(lastEntry.text);
+  const timestampsAreClose = Math.abs(nextEntry.timestamp - lastEntry.timestamp) <= 3_000;
+  const sameMoment =
+    timestampsAreClose &&
+    (nextNormalized === lastNormalized ||
+      nextNormalized.includes(lastNormalized) ||
+      lastNormalized.includes(nextNormalized));
+
+  if (sameMoment) {
+    const preferredText =
+      nextEntry.text.length >= lastEntry.text.length ? nextEntry.text : lastEntry.text;
+    return [
+      ...current.slice(0, -1),
+      createTranscriptEntry(Math.max(lastEntry.timestamp, nextEntry.timestamp), preferredText),
+    ].slice(-LOCAL_TRANSCRIPT_LIMIT);
+  }
+
+  return [...current, nextEntry].slice(-LOCAL_TRANSCRIPT_LIMIT);
+}
+
 async function canLoadPresetFeed(url: string) {
   try {
     const response = await fetch(url, {
@@ -756,9 +798,7 @@ function App() {
 
           const baseTimestamp = getCurrentTranscriptTimestamp();
           setBoothTranscript((current) =>
-            [...current, createTranscriptEntry(baseTimestamp, transcriptText)].slice(
-              -LOCAL_TRANSCRIPT_LIMIT,
-            ),
+            mergeTranscriptEntry(current, createTranscriptEntry(baseTimestamp, transcriptText)),
           );
           setBoothInterimTranscript('');
           setLastSpeechAtMs(now);
@@ -812,9 +852,7 @@ function App() {
           const baseTimestamp = getCurrentTranscriptTimestamp();
 
           setBoothTranscript((current) =>
-            [...current, createTranscriptEntry(baseTimestamp, transcriptText)].slice(
-              -LOCAL_TRANSCRIPT_LIMIT,
-            ),
+            mergeTranscriptEntry(current, createTranscriptEntry(baseTimestamp, transcriptText)),
           );
           setBoothInterimTranscript('');
           setLastSpeechAtMs(now);
@@ -830,7 +868,7 @@ function App() {
       bufferedRecorderRef.current = null;
     };
 
-    recorder.start(1_500);
+    recorder.start(1_000);
     return true;
   }
 
@@ -1055,10 +1093,10 @@ function App() {
         setIsMicPrepared(true);
 
         if (stream) {
-          void startRealtimeTranscription(stream).catch(() => {
-            const startedBufferedFallback = startBufferedTranscription(stream);
+          const startedBufferedShadow = startBufferedTranscription(stream);
 
-            if (startedBufferedFallback) {
+          void startRealtimeTranscription(stream).catch(() => {
+            if (startedBufferedShadow) {
               setBoothError(null);
               return;
             }
