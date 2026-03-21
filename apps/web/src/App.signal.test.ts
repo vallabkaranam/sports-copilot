@@ -33,7 +33,7 @@ describe('booth signal audio activity', () => {
 
     expect(signal.isSpeaking).toBe(false);
     expect(signal.pauseDurationMs).toBe(2_400);
-    expect(signal.hesitationScore).toBeGreaterThanOrEqual(0.55);
+    expect(signal.hesitationScore).toBeGreaterThan(0.3);
     expect(signal.hesitationReasons[0]).toContain('paused');
     expect(signal.shouldSurfaceAssist).toBe(true);
     expect(signal.confidenceScore).toBeLessThan(0.45);
@@ -87,6 +87,22 @@ describe('booth signal audio activity', () => {
     expect(longerPause.hesitationScore).toBeGreaterThanOrEqual(shorterPause.hesitationScore);
     expect(longerPause.shouldSurfaceAssist).toBe(true);
     expect(longerPause.confidenceScore).toBeLessThanOrEqual(shorterPause.confidenceScore);
+  });
+
+  it('allows a long silence to reach full hesitation instead of stopping at an arbitrary cap', () => {
+    const signal = buildBoothSignal({
+      boothTranscript: [],
+      interimTranscript: '',
+      isMicListening: true,
+      lastSpeechAtMs: -1,
+      lastVoiceActivityAtMs: 10_000,
+      audioLevel: 0.01,
+      nowMs: 15_500,
+    });
+
+    expect(signal.pauseDurationMs).toBe(5_500);
+    expect(signal.hesitationScore).toBe(1);
+    expect(signal.shouldSurfaceAssist).toBe(true);
   });
 
   it('returns a higher level for a louder waveform', () => {

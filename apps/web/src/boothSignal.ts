@@ -20,7 +20,7 @@ export type BoothSignal = {
 export const ACTIVE_SPEECH_WINDOW_MS = 1_400;
 export const LIVE_HESITATION_GATE = 0.36;
 export const LONG_PAUSE_START_MS = 1_200;
-export const PAUSE_RANGE_MS = 1_800;
+export const FULL_HESITATION_PAUSE_MS = 4_200;
 export const AUDIO_ACTIVITY_WINDOW_MS = 850;
 export const LOCAL_TRANSCRIPT_LIMIT = 8;
 export const RECOVERY_CONFIDENCE_FLOOR = 0.18;
@@ -134,9 +134,11 @@ export function buildBoothSignal({
 
   if (pauseDurationMs >= LONG_PAUSE_START_MS) {
     const pauseSeconds = Math.round((pauseDurationMs / 1_000) * 10) / 10;
-    const pauseBuild =
-      0.38 + clamp((pauseDurationMs - LONG_PAUSE_START_MS) / PAUSE_RANGE_MS) * 0.38;
-    hesitationScore += pauseBuild;
+    const pauseBuild = clamp(
+      (pauseDurationMs - LONG_PAUSE_START_MS) /
+        Math.max(1, FULL_HESITATION_PAUSE_MS - LONG_PAUSE_START_MS),
+    );
+    hesitationScore = Math.max(hesitationScore, pauseBuild);
     hesitationReasons.push(`You paused for ${pauseSeconds}s after the last thought.`);
   }
 
