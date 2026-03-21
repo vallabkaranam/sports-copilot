@@ -518,6 +518,15 @@ describe('App dashboard', () => {
     fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
 
+      if (url.includes('/preset-feeds/barca')) {
+        return Promise.resolve({
+          ok: true,
+          status: 206,
+          json: async () => ({}),
+          text: async () => '',
+        } as Response);
+      }
+
       if (url.includes('/world-state')) {
         return jsonResponse(currentWorldState);
       }
@@ -809,6 +818,101 @@ describe('App dashboard', () => {
     expect(container.textContent).toContain('Peak hesitation');
     expect(container.textContent).toContain('The saved booth trace shows a long pause, a quick assist, and a solid recovery.');
     expect(container.textContent).not.toContain('Assist live on this beat.');
+  });
+
+  it('keeps the session saved if the follow-up review fetch fails', async () => {
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url.includes('/preset-feeds/barca')) {
+        return Promise.resolve({
+          ok: true,
+          status: 206,
+          json: async () => ({}),
+          text: async () => '',
+        } as Response);
+      }
+
+      if (url.includes('/world-state')) {
+        return jsonResponse(currentWorldState);
+      }
+
+      if (url.includes('/controls') && (!init?.method || init.method === 'GET')) {
+        return jsonResponse(currentControls);
+      }
+
+      if (url.includes('/booth-sessions') && (!init?.method || init.method === 'GET')) {
+        if (url.includes('/booth-sessions/session-1/review')) {
+          return Promise.resolve({
+            ok: false,
+            json: async () => ({}),
+          } as Response);
+        }
+        if (url.includes('/booth-sessions/session-1')) {
+          return jsonResponse({ session: currentBoothSessionRecord });
+        }
+        return jsonResponse(currentBoothSessions);
+      }
+
+      if (url.includes('/booth/interpret') && init?.method === 'POST') {
+        return jsonResponse({
+          state: 'monitoring',
+          hesitationScore: 0.18,
+          recoveryScore: 0.34,
+          shouldSurfaceAssist: false,
+          summary: 'Tracking the booth without stepping in.',
+          reasons: ['No strong hesitation cue is active in the current booth window.'],
+          signals: [],
+          source: 'openai',
+        });
+      }
+
+      if (url.includes('/booth/realtime-connect') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          text: async () => 'fake-answer-sdp',
+        } as Response);
+      }
+
+      if (url.includes('/booth-sessions/start') && init?.method === 'POST') {
+        return jsonResponse({ session: currentBoothSessions.sessions[0] ?? createBoothSessionRecord({ status: 'active' }) });
+      }
+
+      if (url.includes('/booth-sessions/session-1/finish') && init?.method === 'POST') {
+        return jsonResponse({ session: createBoothSessionRecord() });
+      }
+
+      if (url.includes('/controls') && init?.method === 'POST') {
+        return jsonResponse(currentControls);
+      }
+
+      throw new Error(`Unhandled fetch for ${url}`);
+    });
+
+    await renderApp();
+
+    const goLiveButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Go live'),
+    );
+
+    await act(async () => {
+      goLiveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const endButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('End live session'),
+    );
+
+    await act(async () => {
+      endButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('The live session was saved, but the AI session review is still loading.');
+    expect(container.textContent).not.toContain('could not be finalized in the saved session store');
   });
 
   it('keeps worker context off the live overlay until booth interpretation asks for help', async () => {

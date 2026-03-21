@@ -139,6 +139,19 @@ function createTranscriptEntry(timestamp: number, text: string): TranscriptEntry
   };
 }
 
+async function canLoadPresetFeed(url: string) {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Range: 'bytes=0-0',
+      },
+    });
+    return response.ok;
+  } catch (_error) {
+    return false;
+  }
+}
+
 function safelyPlayVideo(videoElement: HTMLVideoElement, onBlocked: () => void) {
   const playResult = videoElement.play();
 
@@ -387,7 +400,7 @@ function App() {
   useEffect(() => {
     let isActive = true;
 
-    void listStoredProgramFeeds().then((feeds) => {
+    void listStoredProgramFeeds().then(async (feeds) => {
       if (!isActive) {
         return;
       }
@@ -404,7 +417,10 @@ function App() {
       setStoredProgramFeeds(nextFeeds);
 
       const presetSlot = PROGRAM_FEED_SLOTS.find((slot) => slot.source === 'preset');
-      if (presetSlot?.presetUrl) {
+      if (presetSlot?.presetUrl && (await canLoadPresetFeed(presetSlot.presetUrl))) {
+        if (!isActive) {
+          return;
+        }
         setSelectedProgramFeedId(presetSlot.id);
         setLoadedClipUrl(presetSlot.presetUrl);
         setLoadedClipName(presetSlot.presetFileName ?? presetSlot.label);
@@ -601,14 +617,7 @@ function App() {
     setIsMicPrepared(false);
     setSpeechStreakStartedAtMs(-1);
     setSilenceStreakStartedAtMs(-1);
-    const presetSlot = PROGRAM_FEED_SLOTS.find((slot) => slot.source === 'preset');
-    if (presetSlot?.presetUrl) {
-      setSelectedProgramFeedId(presetSlot.id);
-      setLoadedClipUrl(presetSlot.presetUrl);
-      setLoadedClipName(presetSlot.presetFileName ?? presetSlot.label);
-    } else {
-      setSelectedProgramFeedId(null);
-    }
+    setSelectedProgramFeedId(null);
   }
 
   async function refreshBoothSessions() {
@@ -628,13 +637,30 @@ function App() {
 
     try {
       const response = await finishBoothSession(activeBoothSessionId);
-      const completedSession = await fetchBoothSession(response.session.id);
-      setLatestCompletedSession(completedSession.session);
-      const review = await fetchBoothSessionReview(response.session.id);
-      setLatestCompletedSessionReview(review.review);
-      await refreshBoothSessions();
+      setLatestCompletedSession((previous) => previous);
+      setLatestCompletedSessionReview(null);
+
+      try {
+        const completedSession = await fetchBoothSession(response.session.id);
+        setLatestCompletedSession(completedSession.session);
+      } catch (_error) {
+        setBoothError('The live session was saved, but the stored review could not be loaded yet.');
+      }
+
+      try {
+        const review = await fetchBoothSessionReview(response.session.id);
+        setLatestCompletedSessionReview(review.review);
+      } catch (_error) {
+        setBoothError('The live session was saved, but the AI session review is still loading.');
+      }
+
+      try {
+        await refreshBoothSessions();
+      } catch (_error) {
+        setBoothError('The live session was saved, but the session list could not refresh yet.');
+      }
     } catch (_error) {
-      setBoothError('The booth session could not be finalized in the local store.');
+      setBoothError('The live session could not be finalized in the saved session store.');
     } finally {
       setActiveBoothSessionId(null);
       lastPersistedSampleAtRef.current = -1;
@@ -898,6 +924,11 @@ function App() {
   async function loadProgramFeed(slotId: ProgramFeedSlotId, feed: StoredProgramFeed) {
     const slot = PROGRAM_FEED_SLOTS.find((candidate) => candidate.id === slotId);
     if (slot?.source === 'preset' && slot.presetUrl) {
+      const presetAvailable = await canLoadPresetFeed(slot.presetUrl);
+      if (!presetAvailable) {
+        setBoothError('This preset feed is not reachable right now. Switch to the upload channel instead.');
+        return;
+      }
       if (clipObjectUrlRef.current) {
         URL.revokeObjectURL(clipObjectUrlRef.current);
         clipObjectUrlRef.current = null;
@@ -1163,7 +1194,12 @@ function App() {
     socialPosts: worldState.liveSignals.social,
     recentEvents: worldState.recentEvents,
   });
-  const liveBoothShouldSurfaceAssist = boothInterpretation?.shouldSurfaceAssist ?? boothSignal.shouldSurfaceAssist;
+  const interpretedHesitationScore = boothInterpretation?.hesitationScore ?? 0;
+  const interpretedRecoveryScore = boothInterpretation?.recoveryScore ?? 0;
+  const effectiveHesitationScore = Math.max(boothSignal.hesitationScore, interpretedHesitationScore);
+  const effectiveRecoveryScore = Math.max(boothSignal.confidenceScore, interpretedRecoveryScore);
+  const liveBoothShouldSurfaceAssist =
+    boothSignal.shouldSurfaceAssist || Boolean(boothInterpretation?.shouldSurfaceAssist);
   const workerAssistShouldSurface =
     assist.type !== 'none' &&
     (controls.forceHesitation ||
@@ -1181,22 +1217,17 @@ function App() {
   const shouldSurfaceAssist = activeAssist.type !== 'none' && assistVisibilityPhase !== 'hidden';
   const isAssistWeaning = assistVisibilityPhase === 'weaning';
   const assistConfidencePercent = formatPercent(shouldSurfaceAssist ? activeAssist.confidence : 0);
-  const boothHesitationPercent = formatPercent(
-    boothInterpretation?.hesitationScore ?? boothSignal.hesitationScore,
+  const boothHesitationPercent = formatPercent(effectiveHesitationScore);
+  const visibleReasons = [...(boothInterpretation?.reasons ?? []), ...boothSignal.hesitationReasons].filter(
+    (reason, index, collection) => collection.indexOf(reason) === index,
   );
-  const visibleReasons =
-    boothInterpretation?.reasons && boothInterpretation.reasons.length > 0
-      ? boothInterpretation.reasons
-      : boothSignal.hesitationReasons.length > 0
-        ? boothSignal.hesitationReasons
-        : ['Waiting for the live booth model to classify the current moment.'];
   const coachingTone = getCoachingTone({
     hasStartedBroadcast,
     boothHasLiveInput,
     boothSignal: {
       ...boothSignal,
-      hesitationScore: boothInterpretation?.hesitationScore ?? 0,
-      confidenceScore: boothInterpretation?.recoveryScore ?? boothSignal.confidenceScore,
+      hesitationScore: effectiveHesitationScore,
+      confidenceScore: effectiveRecoveryScore,
     },
     shouldSurfaceAssist: shouldSurfaceAssist && !isAssistWeaning,
   });
@@ -1384,8 +1415,8 @@ function App() {
 
     void appendBoothSessionSample(activeBoothSessionId, {
       timestamp: sampleTimestamp,
-      hesitationScore: boothInterpretation?.hesitationScore ?? boothSignal.hesitationScore,
-      confidenceScore: boothInterpretation?.recoveryScore ?? boothSignal.confidenceScore,
+      hesitationScore: effectiveHesitationScore,
+      confidenceScore: effectiveRecoveryScore,
       pauseDurationMs: boothSignal.pauseDurationMs,
       audioLevel: boothSignal.audioLevel,
       isSpeaking: boothSignal.isSpeaking,
@@ -1393,8 +1424,8 @@ function App() {
       activeAssistText: shouldSurfaceAssist ? activeAssist.text : null,
       featureSnapshot: {
         timestamp: boothClockMs,
-        hesitationScore: boothInterpretation?.hesitationScore ?? 0,
-        confidenceScore: boothInterpretation?.recoveryScore ?? 0,
+        hesitationScore: effectiveHesitationScore,
+        confidenceScore: effectiveRecoveryScore,
         pauseDurationMs: Math.round(boothSignal.pauseDurationMs),
         speechStreakMs: Math.round(boothSignal.speechStreakMs),
         silenceStreakMs: Math.round(boothSignal.silenceStreakMs),
@@ -1444,6 +1475,8 @@ function App() {
     boothSignal.transcriptWordCount,
     boothSignal.unfinishedPhrase,
     boothTranscript,
+    effectiveHesitationScore,
+    effectiveRecoveryScore,
     boothInterpretation?.hesitationScore,
     boothInterpretation?.recoveryScore,
     boothInterpretation?.state,
@@ -1672,6 +1705,9 @@ function App() {
                 }}
                 onTimeUpdate={(event) => {
                   setClipPositionMs(Math.round(event.currentTarget.currentTime * 1_000));
+                }}
+                onError={() => {
+                  setBoothError('The selected video feed could not be loaded. Try the other channel or reload the reel.');
                 }}
               />
             ) : (
