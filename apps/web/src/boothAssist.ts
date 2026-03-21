@@ -62,6 +62,25 @@ function cleanFactText(text: string) {
   return text.replace(/^@[^:]+:\s*/i, '').replace(/\s+/g, ' ').trim();
 }
 
+type HintIntent = 'social' | 'setup' | 'rivalry' | 'scene' | 'stats' | 'live' | 'reset';
+
+function stableIndex(seed: string, size: number) {
+  if (size <= 1) {
+    return 0;
+  }
+
+  let total = 0;
+  for (const char of seed) {
+    total += char.charCodeAt(0);
+  }
+
+  return total % size;
+}
+
+function pickTemplate(seed: string, templates: string[]) {
+  return templates[stableIndex(seed, templates.length)];
+}
+
 function createSyntheticFact(
   partial: Omit<RetrievedFact, 'sourceChip'>,
 ): RetrievedFact {
@@ -331,6 +350,89 @@ function buildFallbackFacts(params: {
   return facts;
 }
 
+function factCategory(fact: RetrievedFact) {
+  if (fact.metadata?.chunkCategory) {
+    return fact.metadata.chunkCategory;
+  }
+  if (fact.source.includes('social:')) {
+    return 'social';
+  }
+  if (fact.source.includes('stats:')) {
+    return 'stats';
+  }
+  if (fact.source.includes('event-feed:')) {
+    return 'event';
+  }
+
+  return 'context';
+}
+
+function detectIntent(fullQuery: string, rankedFacts: RetrievedFact[]): HintIntent {
+  if (/\b(fans?|reaction|social|online|buzz|posts?)\b/i.test(fullQuery)) {
+    return 'social';
+  }
+  if (/\b(form|coming in|setup|start|opening|tonight|arrive)\b/i.test(fullQuery)) {
+    return 'setup';
+  }
+  if (/\b(history|head to head|head-to-head|rivalry|meeting|clasico)\b/i.test(fullQuery)) {
+    return 'rivalry';
+  }
+  if (/\b(weather|venue|crowd|scene|setting|stadium)\b/i.test(fullQuery)) {
+    return 'scene';
+  }
+  if (/\b(stat|number|numbers|possession|shots|corners|xg)\b/i.test(fullQuery)) {
+    return 'stats';
+  }
+  if (/\b(save|chance|goal|counter|moment|play|attack|press)\b/i.test(fullQuery)) {
+    return 'live';
+  }
+
+  const topCategory = rankedFacts[0] ? factCategory(rankedFacts[0]) : 'context';
+  if (topCategory === 'social') {
+    return 'social';
+  }
+  if (topCategory === 'stats') {
+    return 'stats';
+  }
+  if (topCategory === 'event') {
+    return 'live';
+  }
+  if (topCategory === 'head-to-head') {
+    return 'rivalry';
+  }
+  if (topCategory === 'venue' || topCategory === 'weather') {
+    return 'scene';
+  }
+  if (topCategory === 'recent-form' || topCategory === 'trend' || topCategory === 'opener') {
+    return 'setup';
+  }
+
+  return 'reset';
+}
+
+function pickSecondaryFact(primaryFact: RetrievedFact, rankedFacts: RetrievedFact[], intent: HintIntent) {
+  return rankedFacts.find((fact) => {
+    if (fact.id === primaryFact.id) {
+      return false;
+    }
+
+    if (intent === 'social') {
+      return factCategory(fact) === 'stats' || factCategory(fact) === 'event';
+    }
+    if (intent === 'stats') {
+      return factCategory(fact) === 'event' || factCategory(fact) === 'recent-form';
+    }
+    if (intent === 'setup' || intent === 'rivalry' || intent === 'scene') {
+      return factCategory(fact) === 'event' || factCategory(fact) === 'stats';
+    }
+    if (intent === 'live') {
+      return factCategory(fact) === 'stats' || factCategory(fact) === 'social';
+    }
+
+    return factCategory(fact) !== factCategory(primaryFact);
+  });
+}
+
 function scoreFact(fact: RetrievedFact, queryTokens: string[], fullQuery: string) {
   let score = fact.relevance;
   const factTokens = new Set(tokenize(fact.text));
@@ -361,61 +463,98 @@ function scoreFact(fact: RetrievedFact, queryTokens: string[], fullQuery: string
   return score;
 }
 
-function buildHintFromFact(fact: RetrievedFact) {
-  const cleanText = cleanFactText(fact.text);
+function buildDynamicHint(params: {
+  intent: HintIntent;
+  primaryFact: RetrievedFact;
+  secondaryFact?: RetrievedFact;
+}) {
+  const { intent, primaryFact, secondaryFact } = params;
+  const primary = cleanFactText(primaryFact.text);
+  const secondary = secondaryFact ? cleanFactText(secondaryFact.text) : null;
+  const seed = `${intent}:${primaryFact.id}:${secondaryFact?.id ?? 'none'}`;
 
-  if (fact.source.includes('social:')) {
+  if (intent === 'social') {
+    const leadIn = pickTemplate(seed, [
+      'Use the reaction angle',
+      'Restart with the fan pulse',
+      'Bring the crowd back in',
+    ]);
     return {
       type: 'context' as const,
-      text: `Bring in the fan reaction: ${cleanText}`,
-      whyNow: 'You paused on a crowd-reaction angle, so use the live social pulse.',
+      text: `${leadIn}: ${primary}${secondary ? ` Then ground it with ${secondary.toLowerCase()}` : ''}.`,
+      whyNow: 'You were leaning into reaction, so the cleanest restart is social pulse plus one grounded detail.',
     };
   }
 
-  if (fact.metadata?.chunkCategory === 'recent-form' || fact.metadata?.chunkCategory === 'trend') {
+  if (intent === 'setup') {
+    const leadIn = pickTemplate(seed, [
+      'Rebuild the setup',
+      'Go back to the match frame',
+      'Reset the opening thought',
+    ]);
     return {
       type: 'context' as const,
-      text: `Go back to the setup: ${cleanText}`,
-      whyNow: 'You were leaning into the match setup and left a pause.',
+      text: `${leadIn}: ${primary}${secondary ? ` Then pivot to ${secondary.toLowerCase()}` : ''}.`,
+      whyNow: 'You paused in the setup, so use one pre-match fact to restart and one live hook to move it forward.',
     };
   }
 
-  if (fact.metadata?.chunkCategory === 'head-to-head') {
+  if (intent === 'rivalry') {
+    const leadIn = pickTemplate(seed, [
+      'Bridge it with the rivalry',
+      'Use the head-to-head thread',
+      'Lean on the history',
+    ]);
     return {
       type: 'context' as const,
-      text: `Use the rivalry context: ${cleanText}`,
-      whyNow: 'A short history note can bridge this hesitation cleanly.',
+      text: `${leadIn}: ${primary}${secondary ? ` Then connect it to ${secondary.toLowerCase()}` : ''}.`,
+      whyNow: 'A short history note is a clean way to recover without sounding like a reset.',
     };
   }
 
-  if (fact.metadata?.chunkCategory === 'venue' || fact.metadata?.chunkCategory === 'weather') {
+  if (intent === 'scene') {
+    const leadIn = pickTemplate(seed, [
+      'Set the scene again',
+      'Paint the setting',
+      'Anchor the environment',
+    ]);
     return {
       type: 'transition' as const,
-      text: `Set the scene: ${cleanText}`,
-      whyNow: 'You paused while scene-setting, so anchor the environment.',
+      text: `${leadIn}: ${primary}${secondary ? ` Then add ${secondary.toLowerCase()}` : ''}.`,
+      whyNow: 'You were scene-setting, so environmental detail is the cleanest restart.',
     };
   }
 
-  if (fact.source.includes('stats:')) {
+  if (intent === 'stats') {
+    const leadIn = pickTemplate(seed, [
+      'Go straight to the number',
+      'Use the stat to reset',
+      'Anchor it with the metric',
+    ]);
     return {
       type: 'stat' as const,
-      text: `Use the number: ${cleanText}`,
-      whyNow: 'A single stat can rescue the pause without forcing a big reset.',
+      text: `${leadIn}: ${primary}${secondary ? ` Then explain it with ${secondary.toLowerCase()}` : ''}.`,
+      whyNow: 'A compact number-and-meaning combo can rescue the pause without overtalking it.',
     };
   }
 
-  if (fact.source.includes('event-feed:')) {
+  if (intent === 'live') {
+    const leadIn = pickTemplate(seed, [
+      'Return to the live moment',
+      'Pick up the action',
+      'Go back to the play',
+    ]);
     return {
       type: 'transition' as const,
-      text: `Pick up the live moment: ${cleanText}`,
-      whyNow: 'Tie the call back to the last live action you were describing.',
+      text: `${leadIn}: ${primary}${secondary ? ` Then layer in ${secondary.toLowerCase()}` : ''}.`,
+      whyNow: 'You were in the action, so the fastest recovery is to reconnect the call to the play.',
     };
   }
 
   return {
     type: 'context' as const,
-    text: cleanText,
-    whyNow: 'Use the strongest grounded detail to restart the call.',
+    text: `Use this restart line: ${primary}${secondary ? ` Then follow with ${secondary.toLowerCase()}` : ''}.`,
+    whyNow: 'Use the strongest grounded detail to restart the call cleanly.',
   };
 }
 
@@ -473,7 +612,14 @@ export function buildBoothAssist(params: {
     };
   }
 
-  const grounded = buildHintFromFact(topFact);
+  const rankedFactList = rankedFacts.map(({ fact }) => fact);
+  const intent = detectIntent(currentLine, rankedFactList);
+  const secondaryFact = pickSecondaryFact(topFact, rankedFactList.slice(1, 5), intent);
+  const grounded = buildDynamicHint({
+    intent,
+    primaryFact: topFact,
+    secondaryFact,
+  });
 
   return {
     ...createEmptyAssistCard(),
@@ -483,6 +629,9 @@ export function buildBoothAssist(params: {
     whyNow: currentLine
       ? `${grounded.whyNow} You paused after ${quoteExcerpt(currentLine)}.`
       : grounded.whyNow,
-    sourceChips: rankedFacts.slice(0, 2).map(({ fact }) => fact.sourceChip),
+    sourceChips: rankedFacts
+      .filter(({ fact }) => fact.id === topFact.id || fact.id === secondaryFact?.id)
+      .slice(0, 2)
+      .map(({ fact }) => fact.sourceChip),
   };
 }

@@ -797,7 +797,7 @@ function App() {
     microphoneAvailability !== 'unsupported' &&
     (Boolean(getSpeechRecognitionConstructor()) || supportsAudioMonitoring());
   const isSystemReady = isHydrated && !error;
-  const isBroadcastReady = Boolean(loadedClipUrl) && isMicPrepared && isSystemReady;
+  const isBroadcastReady = Boolean(loadedClipUrl) && isMicPrepared;
   const boothActivity = deriveBoothActivity({
     interimTranscript: boothInterimTranscript,
     isMicListening,
@@ -890,7 +890,9 @@ function App() {
     {
       label: 'System linked',
       done: isSystemReady,
-      detail: isSystemReady ? 'The hosted backend is reachable.' : 'Waiting for the backend connection.',
+      detail: isSystemReady
+        ? 'The hosted backend is reachable.'
+        : 'Backend is unavailable, but local booth mode can still run.',
     },
   ];
   const clipClockLabel = formatDurationMs(clipPositionMs);
@@ -1259,6 +1261,30 @@ function App() {
                       : 'Arm the mic, then start the session.'
                     : 'Attach a video input to begin.'}
                 </h3>
+                {loadedClipUrl ? (
+                  <div className="quick-setup-actions">
+                    <button
+                      type="button"
+                      className={isMicPrepared ? 'is-active' : ''}
+                      disabled={isMicPreparing}
+                      onClick={() => void prepareMicrophone()}
+                    >
+                      {isMicPrepared
+                        ? 'Microphone ready'
+                        : isMicPreparing
+                          ? 'Checking microphone…'
+                          : 'Enable microphone'}
+                    </button>
+                    <button
+                      type="button"
+                      className={isBroadcastLive ? 'is-active' : ''}
+                      disabled={primaryActionDisabled}
+                      onClick={() => void (isBroadcastLive ? stopBroadcast() : startBroadcast())}
+                    >
+                      {primaryActionLabel}
+                    </button>
+                  </div>
+                ) : null}
               </div>
 
               {shouldSurfaceAssist ? (

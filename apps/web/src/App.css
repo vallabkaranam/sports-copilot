@@ -404,7 +404,8 @@
 .replay-stage {
   position: relative;
   overflow: hidden;
-  min-height: 540px;
+  aspect-ratio: 16 / 9;
+  min-height: 320px;
   border-radius: 24px;
   border: 1px solid rgba(32, 66, 93, 0.14);
   background:
@@ -453,7 +454,7 @@
   display: grid;
   gap: 18px;
   align-content: space-between;
-  min-height: 540px;
+  min-height: 100%;
   padding: 24px;
 }
 
@@ -467,6 +468,34 @@
   line-height: 1.02;
   color: #f7f4ee;
   max-width: 12ch;
+}
+
+.quick-setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.quick-setup-actions button {
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(7, 14, 24, 0.46);
+  color: #f7f4ee;
+  padding: 10px 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.quick-setup-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.quick-setup-actions button.is-active {
+  background: rgba(129, 171, 68, 0.88);
+  color: #12220f;
+  border-color: rgba(129, 171, 68, 0.92);
 }
 
 .replay-copy p {
@@ -1250,6 +1279,10 @@
   .app-header {
     flex-direction: column;
   }
+
+  .side-column {
+    order: -1;
+  }
 }
 
 @media (max-width: 820px) {
@@ -1290,6 +1323,6 @@
 
   .replay-stage,
   .replay-stage__content {
-    min-height: 460px;
+    min-height: 280px;
   }
 }

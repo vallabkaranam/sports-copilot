@@ -74,7 +74,7 @@ describe('buildBoothAssist', () => {
       },
     });
 
-    expect(assist.text).toContain('fan reaction');
+    expect(assist.text.toLowerCase()).toMatch(/reaction|fan pulse|crowd/);
     expect(assist.sourceChips[0]?.source).toContain('social');
   });
 
@@ -114,8 +114,38 @@ describe('buildBoothAssist', () => {
       },
     });
 
-    expect(assist.text).toContain('setup');
+    expect(assist.text.toLowerCase()).toMatch(/setup|match frame|opening thought/);
     expect(assist.sourceChips[0]?.metadata?.chunkCategory).toBe('recent-form');
+  });
+
+  it('uses stat-led wording when the speaker is reaching for numbers', () => {
+    const assist = buildBoothAssist({
+      boothSignal: makeSignal(),
+      boothTranscript: makeTranscript('The numbers really tell the story here'),
+      interimTranscript: '',
+      retrieval: {
+        ...createEmptyRetrievalState(),
+        supportingFacts: [
+          {
+            id: 'live-stat-1',
+            tier: 'live',
+            text: 'Barcelona possession: 58%.',
+            source: 'stats:possession',
+            timestamp: 1000,
+            relevance: 0.82,
+            sourceChip: {
+              id: 'live-stat-1',
+              label: 'Barcelona possession: 58%.',
+              source: 'live:stats:possession',
+              relevance: 0.82,
+            },
+          },
+        ],
+      },
+    });
+
+    expect(assist.type).toBe('stat');
+    expect(assist.text.toLowerCase()).toMatch(/number|stat|metric/);
   });
 
   it('still produces a grounded pre-match hint when retrieval is empty', () => {
@@ -189,7 +219,7 @@ describe('buildBoothAssist', () => {
     });
 
     expect(assist.type).not.toBe('none');
-    expect(assist.text.toLowerCase()).toMatch(/fan reaction|social pulse/);
+    expect(assist.text.toLowerCase()).toMatch(/reaction|fan pulse|crowd/);
     expect(assist.sourceChips.length).toBeGreaterThan(0);
   });
 
