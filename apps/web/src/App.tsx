@@ -57,6 +57,7 @@ import {
 type MicrophoneAvailability = 'supported' | 'degraded' | 'unsupported';
 type CoachingTone = 'standby' | 'steady' | 'supporting' | 'step-in';
 type AssistVisibilityPhase = 'hidden' | 'live' | 'weaning';
+type AppView = 'live' | 'reviews';
 
 const AUDIO_ACTIVITY_SAMPLE_MS = 120;
 const MIN_AUDIO_ACTIVITY_THRESHOLD = 0.012;
@@ -343,10 +344,13 @@ function App() {
     averageLongestPauseMs: 0,
     totalAssistCount: 0,
   });
-  const [, setRecentBoothSessions] = useState<BoothSessionSummary[]>([]);
+  const [recentBoothSessions, setRecentBoothSessions] = useState<BoothSessionSummary[]>([]);
   const [latestCompletedSession, setLatestCompletedSession] = useState<BoothSessionRecord | null>(null);
   const [latestCompletedSessionReview, setLatestCompletedSessionReview] =
     useState<BoothSessionReview | null>(null);
+  const [selectedReviewSessionId, setSelectedReviewSessionId] = useState<string | null>(null);
+  const [isLoadingReview, setIsLoadingReview] = useState(false);
+  const [appView, setAppView] = useState<AppView>('live');
   const [activeBoothSessionId, setActiveBoothSessionId] = useState<string | null>(null);
   const [loadedClipName, setLoadedClipName] = useState('');
   const [loadedClipUrl, setLoadedClipUrl] = useState<string | null>(null);
@@ -629,6 +633,29 @@ function App() {
     }
   }
 
+  async function loadSessionReview(sessionId: string) {
+    setSelectedReviewSessionId(sessionId);
+    setIsLoadingReview(true);
+    setBoothError(null);
+
+    try {
+      const completedSession = await fetchBoothSession(sessionId);
+      setLatestCompletedSession(completedSession.session);
+    } catch (_error) {
+      setBoothError('The saved session could not be loaded right now.');
+    }
+
+    try {
+      const review = await fetchBoothSessionReview(sessionId);
+      setLatestCompletedSessionReview(review.review);
+    } catch (_error) {
+      setLatestCompletedSessionReview(null);
+      setBoothError('The AI session review is still processing. Try this saved session again in a moment.');
+    } finally {
+      setIsLoadingReview(false);
+    }
+  }
+
   async function finalizeBoothSession() {
     if (!activeBoothSessionId) {
       return;
@@ -638,6 +665,8 @@ function App() {
       const response = await finishBoothSession(activeBoothSessionId);
       setLatestCompletedSession((previous) => previous);
       setLatestCompletedSessionReview(null);
+      setSelectedReviewSessionId(response.session.id);
+      setAppView('reviews');
 
       try {
         const completedSession = await fetchBoothSession(response.session.id);
@@ -1576,6 +1605,26 @@ function App() {
         </div>
 
         <div className="header-actions">
+          <div className="view-switcher" role="tablist" aria-label="And-One views">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={appView === 'live'}
+              className={appView === 'live' ? 'ghost-button ghost-button--active' : 'ghost-button'}
+              onClick={() => setAppView('live')}
+            >
+              Live
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={appView === 'reviews'}
+              className={appView === 'reviews' ? 'ghost-button ghost-button--active' : 'ghost-button'}
+              onClick={() => setAppView('reviews')}
+            >
+              Sessions
+            </button>
+          </div>
           <button
             type="button"
             className="ghost-button"
@@ -1588,6 +1637,7 @@ function App() {
 
       {error ? <div className="warning-banner">{error}</div> : null}
 
+      {appView === 'live' ? (
       <div className="main-grid">
         <section className="panel replay-panel stage-panel">
           <div className="panel-header panel-header--stage">
@@ -1914,6 +1964,141 @@ function App() {
 
         </div>
       </div>
+      ) : (
+        <div className="main-grid main-grid--reviews">
+          <section className="panel">
+            <div className="panel-header">
+              <div>
+                <p className="panel-kicker">Saved sessions</p>
+                <h2>Booth reviews</h2>
+              </div>
+              <span className="panel-tag">{recentBoothSessions.length} runs</span>
+            </div>
+
+            <div className="commentary-metadata commentary-metadata--review">
+              <div>
+                <p className="control-label">Runs</p>
+                <strong>{boothAnalytics.totalSessions}</strong>
+              </div>
+              <div>
+                <p className="control-label">Completed</p>
+                <strong>{boothAnalytics.completedSessions}</strong>
+              </div>
+              <div>
+                <p className="control-label">Avg hesitation</p>
+                <strong>{formatPercent(boothAnalytics.averageMaxHesitationScore)}</strong>
+              </div>
+              <div>
+                <p className="control-label">Assists</p>
+                <strong>{boothAnalytics.totalAssistCount}</strong>
+              </div>
+            </div>
+
+            <div className="timeline-list">
+              {recentBoothSessions.length > 0 ? (
+                recentBoothSessions.map((session) => (
+                  <article
+                    className={`timeline-item ${selectedReviewSessionId === session.id ? 'timeline-item--hot' : ''}`}
+                    key={session.id}
+                  >
+                    <div className="timeline-time">
+                      <span>{session.clipName}</span>
+                      <small>{session.status}</small>
+                    </div>
+                    <p>
+                      Peak {formatPercent(session.maxHesitationScore)} · longest pause{' '}
+                      {formatDurationMs(session.longestPauseMs)} · {session.assistCount} assist
+                      {session.assistCount === 1 ? '' : 's'}
+                    </p>
+                    <button
+                      type="button"
+                      className="text-button"
+                      onClick={() => void loadSessionReview(session.id)}
+                    >
+                      {selectedReviewSessionId === session.id ? 'Reload review' : 'Open review'}
+                    </button>
+                  </article>
+                ))
+              ) : (
+                <p className="transcript-line transcript-line--muted">
+                  End a live session to save the booth trace and open its review here.
+                </p>
+              )}
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panel-header">
+              <div>
+                <p className="panel-kicker">Selected session</p>
+                <h2>{latestCompletedSession?.clipName ?? 'No session selected'}</h2>
+              </div>
+              <span className="panel-tag">
+                {isLoadingReview ? 'Loading' : latestCompletedSession ? 'Ready' : 'Standby'}
+              </span>
+            </div>
+
+            {latestCompletedSession ? (
+              <>
+                <div className="commentary-metadata commentary-metadata--review">
+                  <div>
+                    <p className="control-label">Peak hesitation</p>
+                    <strong>{formatPercent(latestCompletedSession.maxHesitationScore)}</strong>
+                  </div>
+                  <div>
+                    <p className="control-label">Longest pause</p>
+                    <strong>{formatDurationMs(latestCompletedSession.longestPauseMs)}</strong>
+                  </div>
+                  <div>
+                    <p className="control-label">Samples</p>
+                    <strong>{latestCompletedSession.sampleCount}</strong>
+                  </div>
+                  <div>
+                    <p className="control-label">Assists</p>
+                    <strong>{latestCompletedSession.assistCount}</strong>
+                  </div>
+                </div>
+
+                {resolvedPostSessionReview ? (
+                  <>
+                    <p className="field-copy field-copy--tight">{resolvedPostSessionReview.summary}</p>
+
+                    <div className="reason-list">
+                      {resolvedPostSessionReview.strengths.map((note) => (
+                        <p key={`strength-${note}`}>{note}</p>
+                      ))}
+                    </div>
+
+                    <div className="reason-list">
+                      {resolvedPostSessionReview.watchouts.map((note) => (
+                        <p key={`watchout-${note}`}>{note}</p>
+                      ))}
+                    </div>
+
+                    <div className="reason-list">
+                      {resolvedPostSessionReview.coachingNotes.map((note) => (
+                        <p key={`coach-${note}`}>{note}</p>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="reason-list">
+                    <p>
+                      {isLoadingReview
+                        ? 'And-One is generating the AI review from the saved booth trace.'
+                        : 'The saved booth trace is ready. Reload this session to retry the AI review.'}
+                    </p>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="transcript-line transcript-line--muted">
+                Pick a saved session to inspect its hesitation trace and AI review.
+              </p>
+            )}
+          </section>
+        </div>
+      )}
 
       {showDetails ? (
         <div className="bottom-grid">

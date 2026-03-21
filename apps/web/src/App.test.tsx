@@ -812,9 +812,8 @@ describe('App dashboard', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('You recovered cleanly after the pressure beat.');
-    expect(container.textContent).toContain('Post-session analytics');
-    expect(container.textContent).toContain('Stored in DB');
+    expect(container.textContent).toContain('Booth reviews');
+    expect(container.textContent).toContain('Selected session');
     expect(container.textContent).toContain('Peak hesitation');
     expect(container.textContent).toContain('The saved booth trace shows a long pause, a quick assist, and a solid recovery.');
     expect(container.textContent).not.toContain('Assist live on this beat.');
@@ -911,7 +910,8 @@ describe('App dashboard', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('The live session was saved, but the AI session review is still loading.');
+    expect(container.textContent).toContain('Saved 3 live samples and 2 assist moments for this run.');
+    expect(container.textContent).toContain('Your most common filler was "um".');
     expect(container.textContent).not.toContain('could not be finalized in the saved session store');
   });
 
