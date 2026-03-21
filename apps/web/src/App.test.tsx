@@ -345,7 +345,7 @@ describe('App dashboard', () => {
   it('renders the live booth dashboard with replay, booth, timeline, and assist panels', async () => {
     await renderApp();
 
-    expect(container.textContent).toContain('LineAssist');
+    expect(container.textContent).toContain('And-One');
     expect(container.textContent).toContain('Booth Buddy');
     expect(container.textContent).toContain('Load Clip');
     expect(container.textContent).toContain('Sidekick panel');
