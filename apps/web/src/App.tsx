@@ -6,6 +6,7 @@ import {
   TranscriptEntry,
 } from '@sports-copilot/shared-types';
 import './App.css';
+import { BRAND } from './brand';
 import {
   appendBoothSessionSample,
   fetchBoothSessions,
@@ -1032,11 +1033,9 @@ function App() {
     <div className="app-shell">
       <header className="app-header">
         <div className="brand-lockup">
-          <p className="eyebrow">{isPracticeMode ? 'Sports Copilot' : 'Sports Copilot'}</p>
-          <h1>Booth Buddy</h1>
-          <p className="hero-copy">
-            A live training-wheels teleprompter for commentators. It watches your delivery, nudges you through hesitation, and then quietly backs off when your confidence returns.
-          </p>
+          <p className="eyebrow">{BRAND.eyebrow}</p>
+          <h1>{BRAND.heroTitle}</h1>
+          <p className="hero-copy">{BRAND.heroCopy}</p>
         </div>
 
         <div className="header-actions">
