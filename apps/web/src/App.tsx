@@ -312,6 +312,34 @@ function derivePostSessionReview(session: BoothSessionRecord | null) {
   };
 }
 
+function deriveSessionWorkspaceInsights(sessions: BoothSessionSummary[]) {
+  if (sessions.length === 0) {
+    return {
+      averagePeakHesitation: 0,
+      averageAssistRate: 0,
+      averageLongestPauseMs: 0,
+      hottestSession: null as BoothSessionSummary | null,
+    };
+  }
+
+  const averagePeakHesitation =
+    sessions.reduce((total, session) => total + session.maxHesitationScore, 0) / sessions.length;
+  const averageAssistRate =
+    sessions.reduce((total, session) => total + session.assistCount, 0) / sessions.length;
+  const averageLongestPauseMs =
+    sessions.reduce((total, session) => total + session.longestPauseMs, 0) / sessions.length;
+  const hottestSession = [...sessions].sort(
+    (left, right) => right.maxHesitationScore - left.maxHesitationScore,
+  )[0] ?? null;
+
+  return {
+    averagePeakHesitation,
+    averageAssistRate,
+    averageLongestPauseMs,
+    hottestSession,
+  };
+}
+
 function getCoachingTone({
   hasStartedBroadcast,
   boothHasLiveInput,
@@ -1371,6 +1399,14 @@ function App() {
           coachingNotes: [postSessionReview.learningNotes[2] ?? 'Review the saved session before the next run.'],
         }
       : null);
+  const sessionWorkspaceInsights = deriveSessionWorkspaceInsights(recentBoothSessions);
+  const reviewStatusLabel = isLoadingReview
+    ? 'Analyzing'
+    : latestCompletedSessionReview
+      ? 'AI review ready'
+      : latestCompletedSession
+        ? 'Saved trace ready'
+        : 'Standby';
 
   useEffect(() => {
     if (!hasStartedBroadcast) {
@@ -2022,6 +2058,25 @@ function App() {
               </div>
             </div>
 
+            <div className="commentary-metadata commentary-metadata--review">
+              <div>
+                <p className="control-label">Avg peak</p>
+                <strong>{formatPercent(sessionWorkspaceInsights.averagePeakHesitation)}</strong>
+              </div>
+              <div>
+                <p className="control-label">Avg pause</p>
+                <strong>{formatDurationMs(Math.round(sessionWorkspaceInsights.averageLongestPauseMs))}</strong>
+              </div>
+              <div>
+                <p className="control-label">Avg assists/run</p>
+                <strong>{sessionWorkspaceInsights.averageAssistRate.toFixed(1)}</strong>
+              </div>
+              <div>
+                <p className="control-label">Highest-pressure clip</p>
+                <strong>{sessionWorkspaceInsights.hottestSession?.clipName ?? 'None yet'}</strong>
+              </div>
+            </div>
+
             <div className="timeline-list">
               {recentBoothSessions.length > 0 ? (
                 recentBoothSessions.map((session) => (
@@ -2061,9 +2116,7 @@ function App() {
                 <p className="panel-kicker">Selected session</p>
                 <h2>{latestCompletedSession?.clipName ?? 'No session selected'}</h2>
               </div>
-              <span className="panel-tag">
-                {isLoadingReview ? 'Loading' : latestCompletedSession ? 'Ready' : 'Standby'}
-              </span>
+              <span className="panel-tag">{reviewStatusLabel}</span>
             </div>
 
             {latestCompletedSession ? (
@@ -2085,6 +2138,23 @@ function App() {
                     <p className="control-label">Assists</p>
                     <strong>{latestCompletedSession.assistCount}</strong>
                   </div>
+                </div>
+
+                <div className="inline-actions inline-actions--compact">
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => void loadSessionReview(latestCompletedSession.id)}
+                  >
+                    Reload AI review
+                  </button>
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => setAppView('live')}
+                  >
+                    Return to live
+                  </button>
                 </div>
 
                 {resolvedPostSessionReview ? (
