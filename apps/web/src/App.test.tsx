@@ -667,7 +667,7 @@ describe('App dashboard', () => {
     expect(container.textContent).toContain('Live Commentary Copilot');
     expect(container.textContent).toContain('And-One');
     expect(container.textContent).toContain('Load Clip');
-    expect(container.textContent).toContain('Go live');
+    expect(container.textContent).toContain('Live control');
     expect(container.textContent).toContain('Show Details');
     expect(container.textContent).toContain('Attach a video input');
     expect(container.textContent).not.toContain('Pre-match brief');
@@ -677,15 +677,15 @@ describe('App dashboard', () => {
     await renderApp();
 
     const playButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Start session'),
+      button.textContent?.includes('Go live'),
     );
-    expect(playButton?.textContent).toBe('Start session');
+    expect(playButton?.textContent).toBe('Go live');
     expect(playButton?.hasAttribute('disabled')).toBe(true);
     expect(container.textContent).toContain('Bring in a replay clip first.');
-    expect(container.textContent).toContain('Enable microphone');
+    expect(container.textContent).toContain('And-One will request access when you go live.');
   });
 
-  it('arms the mic before letting the booth go live and still posts control updates', async () => {
+  it('requests mic access when going live and still posts control updates', async () => {
     await renderApp();
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null;
@@ -709,30 +709,19 @@ describe('App dashboard', () => {
     });
 
     const playButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Start session'),
+      button.textContent?.includes('Go live'),
     );
-
-    expect(playButton?.hasAttribute('disabled')).toBe(true);
-
-    const micButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Enable microphone'),
-    );
-
-    await act(async () => {
-      micButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
 
     expect(playButton?.hasAttribute('disabled')).toBe(false);
 
     await act(async () => {
       playButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
+      await Promise.resolve();
     });
 
     const resetButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Reset session'),
+      button.textContent?.includes('Reset live session'),
     );
 
     await act(async () => {
@@ -780,18 +769,9 @@ describe('App dashboard', () => {
       await Promise.resolve();
     });
 
-    const micButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Enable microphone'),
-    );
     const startButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Start session'),
+      button.textContent?.includes('Go live'),
     );
-
-    await act(async () => {
-      micButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
 
     await act(async () => {
       startButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -800,7 +780,7 @@ describe('App dashboard', () => {
     });
 
     const endButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('End session'),
+      button.textContent?.includes('End live session'),
     );
 
     await act(async () => {
@@ -861,18 +841,8 @@ describe('App dashboard', () => {
     });
 
     const playButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Start session'),
+      button.textContent?.includes('Go live'),
     );
-
-    const micButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Enable microphone'),
-    );
-
-    await act(async () => {
-      micButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
 
     await act(async () => {
       playButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));

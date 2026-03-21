@@ -99,6 +99,11 @@ async function encodeBlobAsBase64(blob: Blob) {
   return window.btoa(binary);
 }
 
+async function flushMicrotasks() {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
 function createTranscriptEntry(timestamp: number, text: string): TranscriptEntry {
   return {
     timestamp,
@@ -744,9 +749,9 @@ function App() {
   async function prepareMicrophone() {
     if (!supportsAudioMonitoring()) {
       setMicrophoneAvailability('unsupported');
-      setBoothError('This browser cannot arm the booth microphone. Chrome or Edge work best.');
+      setBoothError('This browser cannot enable the booth microphone. Chrome or Edge work best.');
       setIsMicPrepared(false);
-      return;
+      return false;
     }
 
     setIsMicPreparing(true);
@@ -764,10 +769,12 @@ function App() {
       stream.getTracks().forEach((track) => track.stop());
       setMicrophoneAvailability('supported');
       setIsMicPrepared(true);
+      return true;
     } catch (_error) {
       setMicrophoneAvailability('degraded');
-      setBoothError('Microphone access was blocked. Allow mic access to arm the booth.');
+      setBoothError('Microphone access was blocked. Allow mic access to go live.');
       setIsMicPrepared(false);
+      return false;
     } finally {
       setIsMicPreparing(false);
     }
@@ -899,8 +906,12 @@ function App() {
     }
 
     if (!isMicPrepared) {
-      setBoothError('Arm the microphone before starting the booth.');
-      return;
+      const prepared = await prepareMicrophone();
+      await flushMicrotasks();
+      if (!prepared) {
+        setBoothError('Enable microphone access before going live.');
+        return;
+      }
     }
 
     if (!activeBoothSessionId) {
@@ -909,7 +920,7 @@ function App() {
         setActiveBoothSessionId(response.session.id);
         await refreshBoothSessions();
       } catch (_error) {
-        setBoothError('The booth session could not be saved locally, but the broadcast can still run.');
+        setBoothError('The booth session could not be saved, but the live session can still run.');
       }
     }
 
@@ -969,7 +980,7 @@ function App() {
   const isMicSupported =
     microphoneAvailability !== 'unsupported' && supportsAudioMonitoring();
   const isSystemReady = isHydrated && !error;
-  const isBroadcastReady = Boolean(loadedClipUrl) && isMicPrepared && isSystemReady;
+  const isBroadcastReady = Boolean(loadedClipUrl) && isSystemReady;
   const boothActivity = deriveBoothActivity({
     interimTranscript: boothInterimTranscript,
     isMicListening,
@@ -1045,13 +1056,13 @@ function App() {
       detail: loadedClipUrl ? loadedClipName || 'Local replay is ready.' : 'Bring in a replay clip first.',
     },
     {
-      label: 'Mic armed',
+      label: 'Mic access',
       done: isMicPrepared,
       detail: isMicPrepared
         ? 'Microphone permission is ready for the live booth.'
         : isMicPreparing
           ? 'Requesting microphone access.'
-          : 'Enable mic access before going live.',
+          : 'And-One will request access when you go live.',
     },
     {
       label: 'System linked',
@@ -1072,7 +1083,7 @@ function App() {
     boothSignal.repeatedOpeningCount > 0 ? 'repeat-start' : null,
     boothSignal.unfinishedPhrase ? 'unfinished' : null,
   ].filter(Boolean) as string[];
-  const primaryActionLabel = isBroadcastLive ? 'End session' : 'Start session';
+  const primaryActionLabel = isBroadcastLive ? 'End live session' : 'Go live';
   const primaryActionDisabled = !isBroadcastLive && (!isBroadcastReady || isUpdatingControls);
   const guidanceSummary = isAssistWeaning
     ? 'You are back in rhythm. The cue is fading out.'
@@ -1450,7 +1461,7 @@ function App() {
                       ? coachingTone.headline
                       : postSessionReview
                         ? postSessionReview.headline
-                      : 'Arm the mic, then start the session.'
+                      : 'Go live and And-One will request microphone access if needed.'
                     : 'Attach a video input to begin.'}
                 </h3>
               </div>
@@ -1508,7 +1519,7 @@ function App() {
             <div className="panel-header panel-header--compact">
               <div>
                 <p className="panel-kicker">Session</p>
-                <h2>Go live</h2>
+                <h2>Live control</h2>
               </div>
             </div>
 
@@ -1525,14 +1536,6 @@ function App() {
             </div>
 
             <div className="setup-actions">
-              <button
-                type="button"
-                className={isMicPrepared ? 'is-active' : ''}
-                disabled={isMicPreparing}
-                onClick={() => void prepareMicrophone()}
-              >
-                {isMicPrepared ? 'Microphone ready' : isMicPreparing ? 'Checking microphone…' : 'Enable microphone'}
-              </button>
               <button
                 type="button"
                 className={isBroadcastLive ? 'is-active' : ''}
@@ -1626,7 +1629,7 @@ function App() {
 
             <div className="inline-actions inline-actions--compact">
               <button type="button" className="text-button" onClick={() => void resetBroadcast()}>
-                Reset session
+                Reset live session
               </button>
               <button type="button" className="text-button" onClick={clearBoothTranscript}>
                 Clear transcript
