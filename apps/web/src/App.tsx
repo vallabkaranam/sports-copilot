@@ -19,7 +19,6 @@ import {
 import type { BoothSignal } from './boothSignal';
 import {
   LOCAL_TRANSCRIPT_LIMIT,
-  LIVE_HESITATION_GATE,
   LONG_PAUSE_START_MS,
   buildBoothSignal,
   calculateAudioLevel,
@@ -27,10 +26,7 @@ import {
 } from './boothSignal';
 import {
   createInitialWorldState,
-  formatAssistType,
   formatDurationMs,
-  formatEventType,
-  formatMomentum,
   formatPercent,
   parseClock,
 } from './dashboard';
@@ -113,45 +109,13 @@ function safelyPlayVideo(videoElement: HTMLVideoElement, onBlocked: () => void) 
 }
 
 function createPracticeAssist(boothSignal: BoothSignal) {
-  const confidence = boothSignal.hesitationScore;
-
   if (boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS) {
     return {
-      type: 'context' as const,
-      text: 'Reset with a simple scene call and one short takeaway.',
-      whyNow: 'You left a clear pause after the last thought.',
-      urgency: 'medium' as const,
-      confidence,
-    };
-  }
-
-  if (boothSignal.fillerWords.length >= 2) {
-    return {
       type: 'transition' as const,
-      text: 'Drop the filler and go straight to what the viewer is seeing.',
-      whyNow: 'The booth cadence is getting clogged with filler words.',
+      text: 'Call the picture in one clean line.',
+      whyNow: 'The booth went quiet after your last line.',
       urgency: 'medium' as const,
-      confidence,
-    };
-  }
-
-  if (boothSignal.repeatedPhrases.length > 0) {
-    return {
-      type: 'transition' as const,
-      text: 'Pick one clean re-entry line and commit to it.',
-      whyNow: 'You restarted the same opening more than once.',
-      urgency: 'medium' as const,
-      confidence,
-    };
-  }
-
-  if (boothSignal.unfinishedPhrase) {
-    return {
-      type: 'context' as const,
-      text: 'Finish the thought with one short sentence, then breathe.',
-      whyNow: 'The last line trailed off before it landed.',
-      urgency: 'low' as const,
-      confidence,
+      confidence: boothSignal.hesitationScore,
     };
   }
 
@@ -179,8 +143,8 @@ function getCoachingTone({
     return {
       tone: 'standby' as CoachingTone,
       label: 'Standby',
-      headline: 'Set the booth, then go live.',
-      copy: 'Think of this as training wheels for the call. We stay quiet until you actually need a nudge.',
+      headline: 'System standing by.',
+      copy: 'Nothing appears on the feed until the session is live.',
     };
   }
 
@@ -188,8 +152,8 @@ function getCoachingTone({
     return {
       tone: 'step-in' as CoachingTone,
       label: 'Stepping in',
-      headline: 'The sidekick is helping on this beat.',
-      copy: 'A real wobble is active, so the cue stays present until your delivery settles again.',
+      headline: 'Assist live on this beat.',
+      copy: 'The pause has gone long enough to justify a prompt.',
     };
   }
 
@@ -197,8 +161,8 @@ function getCoachingTone({
     return {
       tone: 'standby' as CoachingTone,
       label: 'Listening',
-      headline: 'The booth is waiting for your first line.',
-      copy: 'Start calling the action and the sidekick will watch for pauses, fillers, and restarts.',
+      headline: 'Waiting for your first line.',
+      copy: 'Start calling the action and And-One will listen for a real pause.',
     };
   }
 
@@ -206,16 +170,16 @@ function getCoachingTone({
     return {
       tone: 'steady' as CoachingTone,
       label: 'Backing off',
-      headline: 'You are driving the call cleanly.',
-      copy: 'Confidence is back, so the training wheels are easing off and staying out of your way.',
+      headline: 'You are back in rhythm.',
+      copy: 'The cue fades while your delivery is stable again.',
     };
   }
 
   return {
     tone: 'supporting' as CoachingTone,
     label: 'Hovering',
-    headline: 'The sidekick is nearby, but not interrupting.',
-    copy: 'There is a little wobble, so we stay close and only step in if the hesitation grows.',
+    headline: 'And-One is tracking the beat.',
+    copy: 'The booth is active, but the pause is not strong enough to step in yet.',
   };
 }
 
@@ -808,13 +772,7 @@ function App() {
     await sendControlPatch({ restart: true });
   }
 
-  const assist = worldState.assist;
-  const recentEvents = [...worldState.recentEvents].reverse();
   const surfacedAssists = [...worldState.sessionMemory.surfacedAssists].reverse();
-  const systemHesitationReasons =
-    worldState.commentator.hesitationReasons.length > 0
-      ? worldState.commentator.hesitationReasons
-      : ['No replay-side hesitation trigger is active right now.'];
   const isMicSupported =
     microphoneAvailability !== 'unsupported' &&
     (Boolean(getSpeechRecognitionConstructor()) || supportsAudioMonitoring());
@@ -841,41 +799,23 @@ function App() {
   const boothHasLiveInput =
     hasStartedBroadcast &&
     (isMicListening || boothTranscript.length > 0 || boothInterimTranscript.length > 0);
-  const isPracticeMode = true;
   const practiceAssist = createPracticeAssist(boothSignal);
-  const shouldSurfaceAssist =
-    isPracticeMode
-      ? boothHasLiveInput && boothSignal.shouldSurfaceAssist
-      : assist.type !== 'none' &&
-        (controls.forceHesitation ||
-          !boothHasLiveInput ||
-          boothSignal.shouldSurfaceAssist ||
-          worldState.commentator.hesitationScore >= LIVE_HESITATION_GATE);
-  const activeAssist = isPracticeMode
-    ? {
-        ...assist,
-        type: practiceAssist.type,
-        text: practiceAssist.text,
-        whyNow: practiceAssist.whyNow,
-        urgency: practiceAssist.urgency,
-        confidence: practiceAssist.confidence,
-        sourceChips: [],
-        styleMode: 'analyst' as const,
-      }
-    : assist;
-  const assistConfidencePercent = formatPercent(shouldSurfaceAssist ? activeAssist.confidence : 0);
-  const hesitationPercent = formatPercent(
-    boothHasLiveInput ? boothSignal.hesitationScore : worldState.commentator.hesitationScore,
-  );
-  const boothConfidencePercent = formatPercent(boothSignal.confidenceScore);
+  const shouldSurfaceAssist = boothHasLiveInput && boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS;
+  const activeAssist = {
+    ...worldState.assist,
+    type: practiceAssist.type,
+    text: practiceAssist.text,
+    whyNow: practiceAssist.whyNow,
+    urgency: practiceAssist.urgency,
+    confidence: practiceAssist.confidence,
+    sourceChips: [],
+    styleMode: 'analyst' as const,
+  };
   const boothHesitationPercent = formatPercent(boothSignal.hesitationScore);
-  const systemHesitationPercent = formatPercent(worldState.commentator.hesitationScore);
   const visibleReasons =
-    boothHasLiveInput && boothSignal.hesitationReasons.length > 0
+    boothSignal.hesitationReasons.length > 0
       ? boothSignal.hesitationReasons
-      : boothHasLiveInput
-        ? ['Talk through the play. The copilot will watch for pauses, fillers, and repeated starts.']
-        : systemHesitationReasons;
+      : ['Hesitation is currently driven by live silence after active speech.'];
   const coachingTone = getCoachingTone({
     hasStartedBroadcast,
     boothHasLiveInput,
@@ -908,9 +848,9 @@ function App() {
   const clipDurationLabel = clipDurationMs > 0 ? formatDurationMs(clipDurationMs) : '--:--';
   const clipProgress = clipDurationMs > 0 ? Math.min(100, Math.round((clipPositionMs / clipDurationMs) * 100)) : 0;
   const boothStatusLabel = !loadedClipUrl
-    ? 'Load clip first'
+    ? 'Attach video first'
     : !hasStartedBroadcast
-      ? 'Ready to start'
+      ? 'Ready'
       : isMicListening
         ? boothSignal.isSpeaking
           ? 'Mic live'
@@ -928,18 +868,15 @@ function App() {
       ? 'Clip loaded. Booth standing by'
       : boothStatusLabel;
   const systemStatusLabel = error ? 'Reconnecting' : isHydrated ? 'Ready' : 'Booting';
-  const feedHeading = loadedClipName || 'Load a clip to begin';
+  const feedHeading = loadedClipName || 'Attach a video input';
   const feedSubheading = loadedClipUrl
     ? hasStartedBroadcast
-      ? 'Call the play naturally. Your sidekick only leans in when the delivery genuinely wobbles.'
-      : 'Your clip is loaded and muted. Arm the booth, then go live when you are ready.'
-    : 'Bring in any local replay clip to rehearse live commentary with a sidekick that knows when to help and when to disappear.';
+      ? 'Call the action naturally. And-One stays out of the way until a real pause opens up.'
+      : 'Video is ready and muted. Arm the mic, then start the session.'
+    : 'Use a local video for now as a stand-in for the live program feed.';
   const replayToastSignature = `${activeAssist.type}:${activeAssist.text}:${shouldSurfaceAssist}:${controls.restartToken}`;
   const activeTriggerBadges = [
     boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS ? 'pause' : null,
-    boothSignal.fillerWords.length > 0 ? 'filler' : null,
-    boothSignal.repeatedPhrases.length > 0 ? 'repeat-start' : null,
-    boothSignal.unfinishedPhrase ? 'unfinished' : null,
   ].filter(Boolean) as string[];
   const primaryActionLabel = isBroadcastLive ? 'End session' : 'Start session';
   const primaryActionDisabled = !isBroadcastLive && (!isBroadcastReady || isUpdatingControls);
@@ -951,8 +888,12 @@ function App() {
   const guidanceSummary = shouldSurfaceAssist
     ? activeAssist.whyNow
     : coachingTone.tone === 'steady'
-      ? 'You are stable. The sidekick stays quiet unless the delivery wobbles again.'
+      ? 'Hesitation is falling. And-One is backing off.'
       : coachingTone.copy;
+  const micBars = Array.from({ length: 14 }, (_, index) => {
+    const threshold = (index + 1) / 14;
+    return boothSignal.audioLevel >= threshold * 0.18;
+  });
 
   useEffect(() => {
     if (!hasStartedBroadcast) {
@@ -1048,7 +989,7 @@ function App() {
 
         <div className="header-actions">
           <div className="header-status-card">
-            <p className="control-label">Session status</p>
+            <p className="control-label">System status</p>
             <strong>{readinessSummary}</strong>
             <span>{readyCount}/3 checks ready. {systemStatusLabel === 'Ready' ? 'Hosted services are connected.' : setupStatusLabel}</span>
           </div>
@@ -1134,45 +1075,39 @@ function App() {
                   {loadedClipUrl
                     ? hasStartedBroadcast
                       ? coachingTone.headline
-                      : 'Arm the booth, then take the feed live.'
-                    : 'Upload a clip, then arm your sidekick.'}
+                      : 'Arm the mic, then start the session.'
+                    : 'Attach a video input to begin.'}
                 </h3>
-                <p>
-                  {coachingTone.copy}
-                </p>
+                <p>{coachingTone.copy}</p>
               </div>
 
               {shouldSurfaceAssist ? (
                 <article className="replay-toast replay-toast--live" key={replayToastSignature}>
-                  <p className="assist-type">{formatAssistType(activeAssist.type)}</p>
+                  <p className="assist-type">Assist</p>
                   <h3>{activeAssist.text}</h3>
                   <p>{activeAssist.whyNow}</p>
                 </article>
               ) : boothHasLiveInput ? (
                 <div className="replay-toast replay-toast--hint">
                   <p className="assist-type">Monitoring</p>
-                  <h3>Booth tracking is live.</h3>
-                  <p>The feed stays clear until hesitation becomes strong enough to justify one assist.</p>
+                  <h3>Mic is live.</h3>
+                  <p>No prompt is on screen while the call is still flowing.</p>
                 </div>
               ) : loadedClipUrl && !hasStartedBroadcast ? (
                 <div className="replay-toast replay-toast--hint">
                   <p className="assist-type">Preflight</p>
-                  <h3>Finish the mic check, then go live.</h3>
-                  <p>The feed is set and muted. Nothing is scored until the booth is armed and the session starts.</p>
+                  <h3>Finish setup, then start.</h3>
+                  <p>The video stays idle until the mic is armed and the session begins.</p>
                 </div>
               ) : null}
 
               <div className="replay-tags">
-                {isPracticeMode ? (
-                  activeTriggerBadges.length > 0 ? (
-                    activeTriggerBadges.map((badge) => (
-                      <span className="scene-chip" key={badge}>
-                        {badge}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="scene-chip scene-chip--muted">Waiting for hesitation cue</span>
-                  )
+                {activeTriggerBadges.length > 0 ? (
+                  activeTriggerBadges.map((badge) => (
+                    <span className="scene-chip" key={badge}>
+                      {badge}
+                    </span>
+                  ))
                 ) : (
                   <span className="scene-chip scene-chip--muted">Waiting for hesitation cue</span>
                 )}
@@ -1198,9 +1133,9 @@ function App() {
           <section className="panel control-panel">
             <div className="panel-header panel-header--compact">
               <div>
-                <p className="panel-kicker">Session Setup</p>
-                <h2>Go live in one flow</h2>
-                <p className="panel-copy">Everything you need before the call starts, without the rest of the debug surface fighting for attention.</p>
+                <p className="panel-kicker">Control</p>
+                <h2>Go live</h2>
+                <p className="panel-copy">Attach video, arm the mic, then start the session.</p>
               </div>
             </div>
 
@@ -1243,15 +1178,13 @@ function App() {
                   {primaryActionLabel}
                 </button>
               </div>
-              <p className="field-copy field-copy--tight">
-                The primary action stays locked until clip, microphone, and backend are all ready. This avoids false starts and surprise errors.
-              </p>
+              {boothError ? <p className="inline-warning">{boothError}</p> : null}
             </article>
 
             <article className={`booth-card booth-card--${coachingTone.tone}`}>
               <div className="booth-card__header">
                 <div>
-                  <p className="control-label">Live support</p>
+                  <p className="control-label">Live signal</p>
                   <strong>{coachingTone.headline}</strong>
                 </div>
                 <div className={`metric-badge metric-badge--${coachingTone.tone}`}>
@@ -1261,36 +1194,31 @@ function App() {
 
               <p className="field-copy">{guidanceSummary}</p>
 
-              <div className="signal-duo">
-                <div className="metric-card">
-                  <div className="meter-label-row">
-                    <span>Hesitation</span>
-                    <strong>{boothHesitationPercent}</strong>
-                  </div>
-                  <div className={`meter-track meter-track--${coachingTone.tone}`}>
-                    <span style={{ width: boothHesitationPercent }} />
-                  </div>
+              <div className="metric-card">
+                <div className="meter-label-row">
+                  <span>Hesitation</span>
+                  <strong>{boothHesitationPercent}</strong>
                 </div>
-
-                <div className="metric-card">
-                  <div className="meter-label-row">
-                    <span>Confidence</span>
-                    <strong>{boothConfidencePercent}</strong>
-                  </div>
-                  <div className="meter-track meter-track--steady">
-                    <span style={{ width: boothConfidencePercent }} />
-                  </div>
+                <div className={`meter-track meter-track--${coachingTone.tone}`}>
+                  <span style={{ width: boothHesitationPercent }} />
                 </div>
               </div>
 
               <div className="signal-meta">
                 <div className="signal-meta__item">
                   <span>Mic activity</span>
-                  <strong>{Math.round(boothSignal.audioLevel * 100)}%</strong>
+                  <div className="audio-meter" aria-label="Mic activity">
+                    {micBars.map((isActive, index) => (
+                      <span
+                        key={index}
+                        className={isActive ? 'audio-meter__bar audio-meter__bar--active' : 'audio-meter__bar'}
+                      />
+                    ))}
+                  </div>
                 </div>
                 <div className="signal-meta__item">
-                  <span>Assist mode</span>
-                  <strong>{shouldSurfaceAssist ? 'Visible' : coachingTone.tone === 'steady' ? 'Weaning off' : 'Standing by'}</strong>
+                  <span>Assist state</span>
+                  <strong>{shouldSurfaceAssist ? 'Visible' : coachingTone.tone === 'steady' ? 'Standby' : 'Waiting'}</strong>
                 </div>
               </div>
 
@@ -1302,30 +1230,6 @@ function App() {
                   Clear transcript
                 </button>
               </div>
-            </article>
-
-            <article className="panel explanation-panel">
-              <div className="panel-header panel-header--compact">
-                <div>
-                  <p className="panel-kicker">Why it works</p>
-                  <h2>Calm, not clingy</h2>
-                </div>
-              </div>
-              <div className="principles-list">
-                <div className="principle-item">
-                  <strong>Only one primary action</strong>
-                  <p>The right rail is designed around a single clear next step so the user never has to scan a wall of controls.</p>
-                </div>
-                <div className="principle-item">
-                  <strong>Green, yellow, red coaching</strong>
-                  <p>Color is reserved for support level so the user can read trust, caution, and step-in urgency instantly.</p>
-                </div>
-                <div className="principle-item">
-                  <strong>Progressive disclosure</strong>
-                  <p>Analytics, transcript history, and system details stay tucked away until you ask for them, keeping the live surface focused.</p>
-                </div>
-              </div>
-              {boothError ? <p className="inline-warning">{boothError}</p> : null}
             </article>
           </section>
 
@@ -1378,69 +1282,22 @@ function App() {
                 ))
               ) : (
                 <p className="empty-copy">
-                  Saved booth analytics will appear here after you run a broadcast session.
+                  Saved session analytics will appear here after you run And-One live.
                 </p>
               )}
             </div>
           </section>
 
           <section className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker">Match Flow</p>
-              <h2>Event Timeline</h2>
+            <div className="panel-header">
+              <div>
+                <p className="panel-kicker">Assist History</p>
+                <h2>Recent prompts</h2>
+              </div>
+              <span className="panel-tag">{surfacedAssists.length} saved</span>
             </div>
-            <span className="panel-tag">{recentEvents.length} recent events</span>
-          </div>
 
-          <div className="timeline-list">
-            {recentEvents.length > 0 ? (
-              recentEvents.map((event) => (
-                <article
-                  className={`timeline-item ${event.highSalience ? 'timeline-item--hot' : ''}`}
-                  key={event.id}
-                >
-                  <div className="timeline-time">
-                    <span>{event.matchTime}</span>
-                    <small>{formatEventType(event.type)}</small>
-                  </div>
-                  <p>{event.description}</p>
-                </article>
-              ))
-            ) : (
-              <p className="empty-copy">Recent match events will roll in here as the replay advances.</p>
-            )}
-          </div>
-        </section>
-
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker">Narrative Stack</p>
-              <h2>Storylines</h2>
-            </div>
-            <span className="panel-tag">{formatMomentum(worldState.narrative.momentum)}</span>
-          </div>
-
-          <div className="narrative-focus">
-            <p className="narrative-label">Top narrative</p>
-            <h3>{worldState.narrative.topNarrative ?? 'No dominant thread yet.'}</h3>
-            <p>{worldState.narrative.currentSentiment}</p>
-          </div>
-
-          <div className="narrative-stack">
-            {worldState.narrative.activeNarratives.length > 0 ? (
-              worldState.narrative.activeNarratives.map((narrative) => (
-                <span className="stack-chip" key={narrative}>
-                  {narrative}
-                </span>
-              ))
-            ) : (
-              <span className="stack-chip stack-chip--muted">Narratives will stack here.</span>
-            )}
-          </div>
-
-          <div className="memory-strip">
+            <div className="memory-strip">
             <p className="memory-title">Recent assist memory</p>
             {surfacedAssists.length > 0 ? (
               surfacedAssists.slice(0, 3).map((savedAssist) => (
@@ -1451,46 +1308,26 @@ function App() {
             ) : (
               <p className="memory-line">No assists have been surfaced yet.</p>
             )}
-          </div>
-        </section>
+            </div>
+          </section>
 
-        <section className="panel">
+          <section className="panel">
           <div className="panel-header">
             <div>
-              <p className="panel-kicker">Signal Matrix</p>
-              <h2>Booth hesitation tracker</h2>
+              <p className="panel-kicker">Signal Debug</p>
+              <h2>Live hesitation trace</h2>
             </div>
-            <span className="panel-tag">{hesitationPercent}</span>
+            <span className="panel-tag">{boothHesitationPercent}</span>
           </div>
 
           <div className="meter-cluster">
             <div>
               <div className="meter-label-row">
-                <span>Booth hesitation</span>
+                <span>Hesitation</span>
                 <strong>{boothHesitationPercent}</strong>
               </div>
               <div className="meter-track">
                 <span style={{ width: boothHesitationPercent }} />
-              </div>
-            </div>
-
-            <div>
-              <div className="meter-label-row">
-                <span>Replay-side hesitation</span>
-                <strong>{systemHesitationPercent}</strong>
-              </div>
-              <div className="meter-track meter-track--cool">
-                <span style={{ width: systemHesitationPercent }} />
-              </div>
-            </div>
-
-            <div>
-              <div className="meter-label-row">
-                <span>Assist confidence</span>
-                <strong>{assistConfidencePercent}</strong>
-              </div>
-              <div className="meter-track meter-track--gold">
-                <span style={{ width: assistConfidencePercent }} />
               </div>
             </div>
           </div>
@@ -1504,7 +1341,7 @@ function App() {
           <div className="commentary-metadata">
             <div>
               <p className="control-label">Speaker state</p>
-              <strong>{boothHasLiveInput ? boothSignal.activeSpeaker : worldState.commentator.activeSpeaker}</strong>
+              <strong>{boothSignal.activeSpeaker}</strong>
             </div>
             <div>
               <p className="control-label">Pause</p>
@@ -1519,10 +1356,7 @@ function App() {
             </div>
             <div>
               <p className="control-label">Filler cues</p>
-              <strong>
-                {(boothHasLiveInput ? boothSignal.fillerWords : worldState.commentator.fillerWords).join(', ') ||
-                  'Clean'}
-              </strong>
+              <strong>{boothSignal.fillerWords.join(', ') || 'Clean'}</strong>
             </div>
             <div>
               <p className="control-label">Repeated opens</p>
@@ -1542,11 +1376,11 @@ function App() {
               ) : (
                 <p className="transcript-line transcript-line--muted">
                   {!loadedClipUrl
-                    ? 'Load a clip first, then start the booth.'
+                    ? 'Attach a video first, then start the session.'
                     : !hasStartedBroadcast
-                      ? 'Start the booth to begin live mic tracking.'
+                      ? 'Start the session to begin live mic tracking.'
                       : isMicSupported
-                        ? 'Live booth transcript will appear here once you start speaking.'
+                        ? 'Live transcript will appear here once you start speaking.'
                         : 'This browser does not expose usable mic APIs, so live hesitation is unavailable here.'}
                 </p>
               )}

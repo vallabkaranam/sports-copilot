@@ -1,8 +1,7 @@
 export const BRAND = {
   productName: 'And-One',
-  surfaceName: 'Booth Buddy',
-  eyebrow: 'And-One by Sports Copilot',
-  heroTitle: 'Booth Buddy',
-  heroCopy:
-    'A live training-wheels teleprompter for commentators. It watches your delivery, nudges you through hesitation, and then quietly backs off when your confidence returns.',
+  surfaceName: 'And-One',
+  eyebrow: 'Live Commentary Copilot',
+  heroTitle: 'And-One',
+  heroCopy: 'A live broadcast copilot that listens for hesitation and steps in only when the call needs help.',
 } as const;
