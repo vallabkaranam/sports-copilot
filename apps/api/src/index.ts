@@ -20,6 +20,8 @@ import { createBoothSessionStore } from './booth-session-store';
 
 const server = fastify({ logger: true });
 const boothSessionStore = createBoothSessionStore();
+const API_PORT = Number(process.env.PORT ?? 3001);
+const API_HOST = process.env.HOST ?? '0.0.0.0';
 
 server.addHook('onRequest', async (request, reply) => {
   reply.header('Access-Control-Allow-Origin', '*');
@@ -151,8 +153,8 @@ const start = async () => {
     
     console.log('Loaded Roster:', roster.home.name, 'vs', roster.away.name);
 
-    await server.listen({ port: 3001, host: '0.0.0.0' });
-    console.log('API running on http://localhost:3001');
+    await server.listen({ port: API_PORT, host: API_HOST });
+    console.log(`API running on http://${API_HOST}:${API_PORT}`);
   } catch (err) {
     server.log.error(err);
     process.exit(1);

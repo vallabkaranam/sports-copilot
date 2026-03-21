@@ -31,6 +31,27 @@ Open the web URL Vite prints, then use the practice booth to:
 - speak over the clip to test hesitation tracking
 - leave pauses, use fillers, or restart phrases to trigger assists
 
+## Quick Free Deployment
+- `Vercel` for [apps/web](/Users/vallabkaranam/Desktop/sports-copilot/apps/web)
+- `Render` free web service for [apps/api](/Users/vallabkaranam/Desktop/sports-copilot/apps/api)
+- `Render` free web service for [apps/workers](/Users/vallabkaranam/Desktop/sports-copilot/apps/workers)
+
+Deployment files already in the repo:
+- [vercel.json](/Users/vallabkaranam/Desktop/sports-copilot/vercel.json)
+- [render.yaml](/Users/vallabkaranam/Desktop/sports-copilot/render.yaml)
+- [.env.deployment.example](/Users/vallabkaranam/Desktop/sports-copilot/.env.deployment.example)
+
+Recommended hosted setup:
+1. Create the `sports-copilot-api` service from [render.yaml](/Users/vallabkaranam/Desktop/sports-copilot/render.yaml)
+2. Create the `sports-copilot-worker` service from [render.yaml](/Users/vallabkaranam/Desktop/sports-copilot/render.yaml)
+3. Set `API_BASE_URL` on the worker to your Render API URL, for example `https://sports-copilot-api.onrender.com`
+4. Deploy the repo to Vercel with `VITE_API_BASE_URL` set to that same Render API URL
+
+Notes:
+- the worker now exposes a `/health` endpoint so Render can keep it as a web service
+- the API now respects the host platform `PORT`
+- booth session persistence is still local SQLite, so on free hosted platforms it should be treated as ephemeral until we move it to Postgres
+
 ## Demo Notes
 - The replay is deterministic and runs from local JSON fixtures in [data/demo_match](/Users/vallabkaranam/Desktop/sports-copilot/data/demo_match).
 - The current landing screen is a practice-first booth for testing hesitation on arbitrary local clips.

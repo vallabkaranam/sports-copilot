@@ -258,6 +258,23 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 - [x] write DEMO_SCRIPT.md
 - [x] write JUDGE_PITCH.md
 - [x] write KNOWN_LIMITATIONS.md
+
+---
+
+## P8 — Free Deployment Path
+
+### Hosted Runtime
+- [x] make API host/port configurable for cloud hosting
+- [x] make worker API target configurable by environment
+- [x] expose worker health endpoint for free web-service hosting
+
+### Deployment Config
+- [x] add Render blueprint config
+- [x] add Vercel build config
+- [x] add deployment env example
+
+### Docs
+- [x] document the quickest free hosted stack
 - [x] write local setup instructions in README.md
 
 ### Final QA
