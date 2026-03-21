@@ -7,6 +7,8 @@ import {
   BoothSessionReview,
   BoothSessionsResponse,
   FinishBoothSessionInputSchema,
+  GenerateBoothCueInputSchema,
+  GenerateBoothCueResponse,
   InterpretBoothInputSchema,
   StartBoothSessionInputSchema,
   StartBoothSessionResponse,
@@ -25,6 +27,7 @@ import {
 } from '@sports-copilot/shared-types';
 import fs from 'fs/promises';
 import path from 'path';
+import { generateBoothCueWithOpenAI } from './booth-assist';
 import { interpretBoothWithOpenAI } from './booth-interpretation';
 import { createRealtimeBoothSdpAnswer } from './booth-realtime';
 import { reviewBoothSessionWithOpenAI } from './booth-review';
@@ -205,6 +208,30 @@ server.post('/booth/interpret', async (request, reply): Promise<BoothInterpretat
   const profile = parsed.data.profile ?? (await sessionStore.getSpeakerProfile());
 
   return interpretBoothWithOpenAI(parsed.data.features, profile);
+});
+
+server.post('/booth/generate-cue', async (request, reply): Promise<GenerateBoothCueResponse | void> => {
+  const parsed = GenerateBoothCueInputSchema.safeParse(request.body);
+  if (!parsed.success) {
+    reply.status(400).send({ error: 'Invalid booth cue payload' });
+    return;
+  }
+
+  return generateBoothCueWithOpenAI({
+    features: parsed.data.features,
+    interpretation: parsed.data.interpretation,
+    retrievalFacts: parsed.data.retrieval.supportingFacts,
+    recentEvents: parsed.data.recentEvents?.map((event) => ({
+      matchTime: event.matchTime,
+      description: event.description,
+      highSalience: event.highSalience,
+    })),
+    clipName: parsed.data.clipName,
+    contextSummary: parsed.data.contextSummary,
+    preMatchSummary: parsed.data.preMatchSummary,
+    expectedTopics: parsed.data.expectedTopics,
+    recentCueTexts: parsed.data.recentCueTexts,
+  });
 });
 
 server.post('/booth/transcribe', async (request, reply): Promise<TranscribeBoothAudioResponse | void> => {

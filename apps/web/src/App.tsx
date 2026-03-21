@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useRef, useState } from 'react';
+import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BoothFeatureSnapshot,
   BoothInterpretation,
@@ -6,6 +6,7 @@ import {
   BoothSessionRecord,
   BoothSessionReview,
   BoothSessionSummary,
+  GenerateBoothCueResponse,
   ReplayControlState,
   TranscriptEntry,
   createEmptyAssistCard,
@@ -21,12 +22,12 @@ import {
   fetchControlState,
   fetchWorldState,
   finishBoothSession,
+  generateBoothCue,
   interpretBooth,
   startBoothSession,
   transcribeBoothAudio,
   updateControlState,
 } from './api';
-import { buildBoothAssist } from './boothAssist';
 import {
   LOCAL_TRANSCRIPT_LIMIT,
   LIVE_HESITATION_GATE,
@@ -235,6 +236,25 @@ function buildExpectedTopics(worldState: ReturnType<typeof createInitialWorldSta
     .filter((value): value is string => Boolean(value));
 
   return [...new Set(topics)].slice(0, 8);
+}
+
+function buildPreMatchCueSummary(worldState: ReturnType<typeof createInitialWorldState>) {
+  const parts = [
+    worldState.preMatch.aiOpener,
+    worldState.preMatch.deterministicOpener,
+    worldState.preMatch.headToHead.summary,
+    worldState.preMatch.weather
+      ? `Weather: ${worldState.preMatch.weather.summary}${
+          worldState.preMatch.weather.temperatureC !== null
+            ? ` at ${Math.round(worldState.preMatch.weather.temperatureC)}C`
+            : ''
+        }`
+      : null,
+  ]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+
+  return [...new Set(parts)].join(' | ');
 }
 
 function average(values: number[]) {
@@ -449,6 +469,8 @@ function App() {
   const [audioLevel, setAudioLevel] = useState(0);
   const [boothClockMs, setBoothClockMs] = useState(() => Date.now());
   const [boothInterpretation, setBoothInterpretation] = useState<BoothInterpretation | null>(null);
+  const [generatedCue, setGeneratedCue] = useState<GenerateBoothCueResponse | null>(null);
+  const [generatedCueRequestedAt, setGeneratedCueRequestedAt] = useState(0);
   const [microphoneAvailability, setMicrophoneAvailability] =
     useState<MicrophoneAvailability>('supported');
   const shouldKeepMicLiveRef = useRef(false);
@@ -1170,6 +1192,8 @@ function App() {
   function clearLiveBoothState() {
     clearBoothTranscript();
     setBoothInterpretation(null);
+    setGeneratedCue(null);
+    setGeneratedCueRequestedAt(0);
     setLatchedAssist(createEmptyAssistCard());
     setAssistVisibilityPhase('hidden');
   }
@@ -1278,16 +1302,56 @@ function App() {
   const boothHasLiveInput =
     hasStartedBroadcast &&
     (isMicListening || boothTranscript.length > 0 || boothInterimTranscript.length > 0);
-  const boothAssist = buildBoothAssist({
-    boothSignal,
-    boothTranscript,
-    interimTranscript: boothInterimTranscript,
-    retrieval: worldState.retrieval,
-    preMatch: worldState.preMatch,
-    liveMatch: worldState.liveMatch,
-    socialPosts: worldState.liveSignals.social,
-    recentEvents: worldState.recentEvents,
-  });
+  const currentBoothFeatures = useMemo<BoothFeatureSnapshot>(
+    () => ({
+      timestamp: boothClockMs,
+      hesitationScore: 0,
+      confidenceScore: boothSignal.confidenceScore,
+      pauseDurationMs: Math.round(boothSignal.pauseDurationMs),
+      speechStreakMs: Math.round(boothSignal.speechStreakMs),
+      silenceStreakMs: Math.round(boothSignal.silenceStreakMs),
+      audioLevel: boothSignal.audioLevel,
+      isSpeaking: boothSignal.isSpeaking,
+      hasVoiceActivity: boothSignal.hasVoiceActivity,
+      fillerCount: boothSignal.fillerCount,
+      fillerDensity: boothSignal.fillerDensity,
+      fillerWords: boothSignal.fillerWords,
+      repeatedOpeningCount: boothSignal.repeatedOpeningCount,
+      repeatedPhrases: boothSignal.repeatedPhrases,
+      unfinishedPhrase: boothSignal.unfinishedPhrase,
+      transcriptWordCount: boothSignal.transcriptWordCount,
+      transcriptStabilityScore: boothSignal.transcriptStabilityScore,
+      hesitationReasons: boothSignal.hesitationReasons,
+      transcriptWindow: boothTranscript.slice(-LOCAL_TRANSCRIPT_LIMIT),
+      interimTranscript: boothInterimTranscript,
+      contextSummary: buildContextSummary(worldState),
+      expectedTopics: buildExpectedTopics(worldState),
+      previousState: boothInterpretation?.state,
+    }),
+    [
+      boothClockMs,
+      boothInterimTranscript,
+      boothSignal.audioLevel,
+      boothSignal.confidenceScore,
+      boothSignal.fillerCount,
+      boothSignal.fillerDensity,
+      boothSignal.fillerWords,
+      boothSignal.hasVoiceActivity,
+      boothSignal.hesitationReasons,
+      boothSignal.isSpeaking,
+      boothSignal.pauseDurationMs,
+      boothSignal.repeatedOpeningCount,
+      boothSignal.repeatedPhrases,
+      boothSignal.silenceStreakMs,
+      boothSignal.speechStreakMs,
+      boothSignal.transcriptStabilityScore,
+      boothSignal.transcriptWordCount,
+      boothSignal.unfinishedPhrase,
+      boothTranscript,
+      boothInterpretation?.state,
+      worldState,
+    ],
+  );
   const interpretedHesitationScore = boothInterpretation?.hesitationScore ?? 0;
   const interpretedRecoveryScore = boothInterpretation?.recoveryScore ?? 0;
   const effectiveHesitationScore = Math.max(boothSignal.hesitationScore, interpretedHesitationScore);
@@ -1301,9 +1365,9 @@ function App() {
   const boothAssistShouldSurface =
     boothHasLiveInput &&
     liveBoothShouldSurfaceAssist &&
-    boothAssist.type !== 'none';
+    (generatedCue?.assist.type ?? 'none') !== 'none';
   const nextTriggeredAssist = boothAssistShouldSurface
-    ? boothAssist
+    ? generatedCue?.assist ?? null
     : workerAssistShouldSurface
       ? assist
       : null;
@@ -1355,6 +1419,7 @@ function App() {
   const feedHeading = selectedProgramSlot
     ? `${selectedProgramSlot.label} · ${loadedClipName}`
     : 'Select a program feed';
+  const preMatchCueSummary = useMemo(() => buildPreMatchCueSummary(worldState), [worldState]);
   const replayToastSignature = `${activeAssist.type}:${activeAssist.text}:${shouldSurfaceAssist}:${controls.restartToken}`;
   const activeTriggerBadges = [
     boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS ? 'pause' : null,
@@ -1525,29 +1590,9 @@ function App() {
       triggerBadges: activeTriggerBadges,
       activeAssistText: shouldSurfaceAssist ? activeAssist.text : null,
       featureSnapshot: {
-        timestamp: boothClockMs,
+        ...currentBoothFeatures,
         hesitationScore: effectiveHesitationScore,
         confidenceScore: effectiveRecoveryScore,
-        pauseDurationMs: Math.round(boothSignal.pauseDurationMs),
-        speechStreakMs: Math.round(boothSignal.speechStreakMs),
-        silenceStreakMs: Math.round(boothSignal.silenceStreakMs),
-        audioLevel: boothSignal.audioLevel,
-        isSpeaking: boothSignal.isSpeaking,
-        hasVoiceActivity: boothSignal.hasVoiceActivity,
-        fillerCount: boothSignal.fillerCount,
-        fillerDensity: boothSignal.fillerDensity,
-        fillerWords: boothSignal.fillerWords,
-        repeatedOpeningCount: boothSignal.repeatedOpeningCount,
-        repeatedPhrases: boothSignal.repeatedPhrases,
-        unfinishedPhrase: boothSignal.unfinishedPhrase,
-        transcriptWordCount: boothSignal.transcriptWordCount,
-        transcriptStabilityScore: boothSignal.transcriptStabilityScore,
-        hesitationReasons: boothSignal.hesitationReasons,
-        transcriptWindow: boothTranscript.slice(-LOCAL_TRANSCRIPT_LIMIT),
-        interimTranscript: boothInterimTranscript,
-        contextSummary: buildContextSummary(worldState),
-        expectedTopics: buildExpectedTopics(worldState),
-        previousState: boothInterpretation?.state,
       },
       interpretation: boothInterpretation ?? undefined,
     }).catch(() => {
@@ -1577,6 +1622,7 @@ function App() {
     boothSignal.transcriptWordCount,
     boothSignal.unfinishedPhrase,
     boothTranscript,
+    currentBoothFeatures,
     effectiveHesitationScore,
     effectiveRecoveryScore,
     boothInterpretation?.hesitationScore,
@@ -1603,34 +1649,8 @@ function App() {
       return;
     }
 
-    const features: BoothFeatureSnapshot = {
-      timestamp: boothClockMs,
-      hesitationScore: 0,
-      confidenceScore: boothSignal.confidenceScore,
-      pauseDurationMs: Math.round(boothSignal.pauseDurationMs),
-      speechStreakMs: Math.round(boothSignal.speechStreakMs),
-      silenceStreakMs: Math.round(boothSignal.silenceStreakMs),
-      audioLevel: boothSignal.audioLevel,
-      isSpeaking: boothSignal.isSpeaking,
-      hasVoiceActivity: boothSignal.hasVoiceActivity,
-      fillerCount: boothSignal.fillerCount,
-      fillerDensity: boothSignal.fillerDensity,
-      fillerWords: boothSignal.fillerWords,
-      repeatedOpeningCount: boothSignal.repeatedOpeningCount,
-      repeatedPhrases: boothSignal.repeatedPhrases,
-      unfinishedPhrase: boothSignal.unfinishedPhrase,
-      transcriptWordCount: boothSignal.transcriptWordCount,
-      transcriptStabilityScore: boothSignal.transcriptStabilityScore,
-      hesitationReasons: boothSignal.hesitationReasons,
-      transcriptWindow: boothTranscript.slice(-LOCAL_TRANSCRIPT_LIMIT),
-      interimTranscript: boothInterimTranscript,
-      contextSummary: buildContextSummary(worldState),
-      expectedTopics: buildExpectedTopics(worldState),
-      previousState: boothInterpretation?.state,
-    };
-
     const timeoutId = window.setTimeout(() => {
-      void interpretBooth(features)
+      void interpretBooth(currentBoothFeatures)
         .then((nextInterpretation) => {
           setBoothInterpretation(nextInterpretation);
           setBoothError(null);
@@ -1662,12 +1682,87 @@ function App() {
     boothSignal.speechStreakMs,
     boothSignal.transcriptStabilityScore,
       boothSignal.transcriptWordCount,
-      boothSignal.unfinishedPhrase,
-      boothTranscript,
-      worldState,
-      hasStartedBroadcast,
+    boothSignal.unfinishedPhrase,
+    boothTranscript,
+    currentBoothFeatures,
+    worldState,
+    hasStartedBroadcast,
       isMicListening,
       boothInterpretation?.state,
+  ]);
+
+  useEffect(() => {
+    if (
+      !hasStartedBroadcast ||
+      !boothHasLiveInput ||
+      !liveBoothShouldSurfaceAssist ||
+      boothInterpretation?.state === 'weaning-off'
+    ) {
+      if (generatedCue) {
+        setGeneratedCue(null);
+      }
+      if (generatedCueRequestedAt !== 0) {
+        setGeneratedCueRequestedAt(0);
+      }
+      return;
+    }
+
+    const elapsedMs = generatedCueRequestedAt > 0 ? Date.now() - generatedCueRequestedAt : Infinity;
+    const waitMs =
+      generatedCue && elapsedMs < generatedCue.refreshAfterMs
+        ? Math.max(0, generatedCue.refreshAfterMs - elapsedMs)
+        : 0;
+
+    const timeoutId = window.setTimeout(() => {
+      const recentCueTexts = [
+        generatedCue?.assist.text,
+        latchedAssist.type !== 'none' ? latchedAssist.text : null,
+        ...worldState.sessionMemory.surfacedAssists.slice(-3).map((entry) => entry.text),
+      ].filter((value, index, collection): value is string => {
+        return Boolean(value?.trim()) && collection.indexOf(value) === index;
+      });
+
+      setGeneratedCueRequestedAt(Date.now());
+
+      void generateBoothCue({
+        features: currentBoothFeatures,
+        interpretation: boothInterpretation ?? undefined,
+        retrieval: worldState.retrieval,
+        recentEvents: worldState.recentEvents.slice(-4),
+        clipName: loadedClipName,
+        contextSummary: currentBoothFeatures.contextSummary,
+        preMatchSummary: preMatchCueSummary,
+        expectedTopics: currentBoothFeatures.expectedTopics,
+        recentCueTexts,
+      })
+        .then((nextCue) => {
+          if (nextCue.assist.type !== 'none' && nextCue.assist.text.trim()) {
+            setGeneratedCue(nextCue);
+          }
+        })
+        .catch(() => {
+          // Keep the current cue latched instead of replacing it with a fake fallback.
+        });
+    }, waitMs);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    boothHasLiveInput,
+    boothInterpretation,
+    currentBoothFeatures,
+    generatedCue,
+    generatedCueRequestedAt,
+    hasStartedBroadcast,
+    latchedAssist.text,
+    latchedAssist.type,
+    liveBoothShouldSurfaceAssist,
+    loadedClipName,
+    preMatchCueSummary,
+    worldState.recentEvents,
+    worldState.retrieval,
+    worldState.sessionMemory.surfacedAssists,
   ]);
 
   return (

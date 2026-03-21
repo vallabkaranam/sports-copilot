@@ -331,6 +331,8 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 - [ ] remove deterministic fixture dependency from the primary product path
 
 ### Production Assist Pipeline
+- [x] generate live booth cue cards through server-side OpenAI calls
+- [x] refresh cue cards while hesitation persists and stop refreshing during weaning-off
 - [ ] route assists from real live context instead of demo fixtures
 - [ ] preserve grounding with source attribution against real inputs
 - [ ] keep a fixture/demo mode only as an explicit fallback path

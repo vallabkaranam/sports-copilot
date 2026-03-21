@@ -743,3 +743,23 @@ export const TranscribeBoothAudioResponseSchema = z.object({
   source: z.enum(['openai', 'unavailable']),
 });
 export type TranscribeBoothAudioResponse = z.infer<typeof TranscribeBoothAudioResponseSchema>;
+
+export const GenerateBoothCueInputSchema = z.object({
+  features: BoothFeatureSnapshotSchema,
+  interpretation: BoothInterpretationSchema.optional(),
+  retrieval: RetrievalStateSchema,
+  recentEvents: z.array(GameEventSchema).optional(),
+  clipName: z.string().optional(),
+  contextSummary: z.string().optional(),
+  preMatchSummary: z.string().optional(),
+  expectedTopics: z.array(z.string()).optional(),
+  recentCueTexts: z.array(z.string()).optional(),
+});
+export type GenerateBoothCueInput = z.infer<typeof GenerateBoothCueInputSchema>;
+
+export const GenerateBoothCueResponseSchema = z.object({
+  assist: AssistCardSchema,
+  refreshAfterMs: z.number().int().positive(),
+  source: z.enum(['openai', 'unavailable']),
+});
+export type GenerateBoothCueResponse = z.infer<typeof GenerateBoothCueResponseSchema>;

@@ -562,6 +562,29 @@ describe('App dashboard', () => {
         });
       }
 
+      if (url.includes('/booth/generate-cue') && init?.method === 'POST') {
+        return jsonResponse({
+          assist: {
+            type: 'context',
+            text: 'Stay with the save, then bridge to the transition.',
+            styleMode: 'analyst',
+            urgency: 'medium',
+            confidence: 0.76,
+            whyNow: 'Pause and filler signals are active together.',
+            sourceChips: [
+              {
+                id: 'fact-1',
+                label: 'Courtois save',
+                source: 'live:event-feed:save',
+                relevance: 0.96,
+              },
+            ],
+          },
+          refreshAfterMs: 1800,
+          source: 'openai',
+        });
+      }
+
       if (url.includes('/booth/realtime-connect') && init?.method === 'POST') {
         return Promise.resolve({
           ok: true,

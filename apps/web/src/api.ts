@@ -1,6 +1,8 @@
 import {
   BoothFeatureSnapshot,
   BoothInterpretation,
+  GenerateBoothCueInput,
+  GenerateBoothCueResponse,
   BoothSessionReview,
   BoothSessionRecord,
   BoothSessionSample,
@@ -86,6 +88,13 @@ export function interpretBooth(features: BoothFeatureSnapshot) {
   return requestJson<BoothInterpretation>('/booth/interpret', {
     method: 'POST',
     body: JSON.stringify({ features }),
+  });
+}
+
+export function generateBoothCue(input: GenerateBoothCueInput) {
+  return requestJson<GenerateBoothCueResponse>('/booth/generate-cue', {
+    method: 'POST',
+    body: JSON.stringify(input),
   });
 }
 
