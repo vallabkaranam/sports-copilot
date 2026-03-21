@@ -8,15 +8,36 @@ function clamp(value: number, minimum = 0, maximum = 1) {
 }
 
 function buildHeuristicState(features: BoothFeatureSnapshot): BoothInterpretation['state'] {
-  if (!features.isSpeaking && features.pauseDurationMs >= 1_200) {
+  if (
+    (!features.isSpeaking && features.pauseDurationMs >= 1_200) ||
+    features.hesitationScore >= 0.62 ||
+    features.fillerDensity >= 0.22 ||
+    features.repeatedOpeningCount >= 2 ||
+    (features.unfinishedPhrase && features.pauseDurationMs >= 900)
+  ) {
     return 'step-in';
   }
 
-  if (features.isSpeaking && features.confidenceScore >= 0.55 && features.hesitationScore <= 0.18) {
+  if (
+    features.previousState === 'step-in' &&
+    features.isSpeaking &&
+    features.speechStreakMs >= 1_600 &&
+    features.confidenceScore >= 0.52 &&
+    features.transcriptStabilityScore >= 0.68
+  ) {
     return 'weaning-off';
   }
 
-  if (features.isSpeaking || features.hasVoiceActivity) {
+  if (
+    features.previousState === 'weaning-off' &&
+    features.isSpeaking &&
+    features.speechStreakMs >= 2_400 &&
+    features.hesitationScore <= 0.12
+  ) {
+    return 'monitoring';
+  }
+
+  if (features.isSpeaking || features.hasVoiceActivity || features.previousState === 'weaning-off') {
     return 'monitoring';
   }
 

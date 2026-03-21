@@ -16,9 +16,14 @@ function createFeatures(overrides: Partial<BoothFeatureSnapshot> = {}): BoothFea
     audioLevel: 0.02,
     isSpeaking: false,
     hasVoiceActivity: false,
+    fillerCount: 0,
+    fillerDensity: 0,
     fillerWords: [],
+    repeatedOpeningCount: 0,
     repeatedPhrases: [],
     unfinishedPhrase: false,
+    transcriptWordCount: 8,
+    transcriptStabilityScore: 0.92,
     hesitationReasons: ['You paused for 2.8s after the last thought.'],
     transcriptWindow: [],
     interimTranscript: '',
@@ -51,12 +56,34 @@ describe('booth interpretation', () => {
         audioLevel: 0.14,
         isSpeaking: true,
         hasVoiceActivity: true,
+        transcriptStabilityScore: 0.84,
+        previousState: 'step-in',
         hesitationReasons: [],
       }),
     );
 
     expect(interpretation.state).toBe('weaning-off');
     expect(interpretation.shouldSurfaceAssist).toBe(false);
+  });
+
+  it('steps in for transcript instability even before a long silence', () => {
+    const interpretation = buildHeuristicBoothInterpretation(
+      createFeatures({
+        hesitationScore: 0.48,
+        pauseDurationMs: 400,
+        silenceStreakMs: 400,
+        fillerCount: 4,
+        fillerDensity: 0.28,
+        fillerWords: ['um', 'uh', 'um', 'you know'],
+        repeatedOpeningCount: 2,
+        repeatedPhrases: ['vinicius is'],
+        transcriptStabilityScore: 0.34,
+        hesitationReasons: ['Fillers detected: um, uh, you know.', 'Repeated opening: "vinicius is".'],
+      }),
+    );
+
+    expect(interpretation.state).toBe('step-in');
+    expect(interpretation.shouldSurfaceAssist).toBe(true);
   });
 
   it('parses an OpenAI JSON response when available', async () => {

@@ -366,12 +366,18 @@ export const BoothFeatureSnapshotSchema = z.object({
   audioLevel: z.number().min(0).max(1),
   isSpeaking: z.boolean(),
   hasVoiceActivity: z.boolean(),
+  fillerCount: z.number().int().nonnegative(),
+  fillerDensity: z.number().min(0).max(1),
   fillerWords: z.array(z.string()),
+  repeatedOpeningCount: z.number().int().nonnegative(),
   repeatedPhrases: z.array(z.string()),
   unfinishedPhrase: z.boolean(),
+  transcriptWordCount: z.number().int().nonnegative(),
+  transcriptStabilityScore: z.number().min(0).max(1),
   hesitationReasons: z.array(z.string()),
   transcriptWindow: z.array(TranscriptEntrySchema),
   interimTranscript: z.string(),
+  previousState: BoothInterpretationStateSchema.optional(),
 });
 export type BoothFeatureSnapshot = z.infer<typeof BoothFeatureSnapshotSchema>;
 
