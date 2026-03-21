@@ -193,6 +193,39 @@ describe('App dashboard', () => {
     currentBoothSessions = createBoothSessionsResponse();
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+    const fakeStream = {
+      getTracks: () => [{ stop: vi.fn() }],
+    } as unknown as MediaStream;
+    Object.defineProperty(globalThis.navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn().mockResolvedValue(fakeStream),
+      },
+    });
+    vi.stubGlobal(
+      'AudioContext',
+      class FakeAudioContext {
+        createMediaStreamSource() {
+          return {
+            connect: vi.fn(),
+          };
+        }
+
+        createAnalyser() {
+          return {
+            fftSize: 1024,
+            smoothingTimeConstant: 0.78,
+            getByteTimeDomainData(samples: Uint8Array) {
+              samples.fill(128);
+            },
+          };
+        }
+
+        close() {
+          return Promise.resolve();
+        }
+      } as unknown as typeof AudioContext,
+    );
     fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
 
@@ -313,11 +346,11 @@ describe('App dashboard', () => {
     await renderApp();
 
     expect(container.textContent).toContain('Sports Copilot');
-    expect(container.textContent).toContain('Commentary Booth');
+    expect(container.textContent).toContain('Booth Buddy');
     expect(container.textContent).toContain('Load Clip');
-    expect(container.textContent).toContain('Live session');
+    expect(container.textContent).toContain('Sidekick panel');
     expect(container.textContent).toContain('Show Details');
-    expect(container.textContent).toContain('Bring in any local replay clip');
+    expect(container.textContent).toContain('Bring in any local replay clip to rehearse live commentary');
   });
 
   it('keeps the booth in setup mode until a clip is loaded', async () => {
@@ -329,9 +362,10 @@ describe('App dashboard', () => {
     expect(playButton?.textContent).toBe('Start Broadcast');
     expect(playButton?.hasAttribute('disabled')).toBe(true);
     expect(container.textContent).toContain('Waiting for clip upload');
+    expect(container.textContent).toContain('Enable Microphone');
   });
 
-  it('posts replay and backup control updates back to the API after a clip is loaded', async () => {
+  it('arms the mic before letting the booth go live and still posts control updates', async () => {
     await renderApp();
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null;
@@ -357,6 +391,18 @@ describe('App dashboard', () => {
     const playButton = [...container.querySelectorAll('button')].find((button) =>
       button.textContent?.includes('Start Broadcast'),
     );
+
+    expect(playButton?.hasAttribute('disabled')).toBe(true);
+
+    const micButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Enable Microphone'),
+    );
+
+    await act(async () => {
+      micButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
 
     expect(playButton?.hasAttribute('disabled')).toBe(false);
 

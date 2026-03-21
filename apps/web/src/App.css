@@ -51,7 +51,6 @@
 .app-header h1 {
   font-size: clamp(3rem, 7vw, 5.2rem);
   line-height: 0.92;
-  text-transform: uppercase;
   color: var(--ink);
 }
 
@@ -304,6 +303,28 @@
   background: rgba(52, 121, 111, 0.08);
 }
 
+.panel-tag--standby {
+  color: var(--copy-muted);
+}
+
+.panel-tag--steady {
+  color: var(--signal-green);
+  border-color: rgba(63, 141, 95, 0.22);
+  background: var(--signal-green-soft);
+}
+
+.panel-tag--supporting {
+  color: var(--signal-yellow);
+  border-color: rgba(193, 138, 31, 0.22);
+  background: var(--signal-yellow-soft);
+}
+
+.panel-tag--step-in {
+  color: var(--signal-red);
+  border-color: rgba(187, 94, 73, 0.22);
+  background: var(--signal-red-soft);
+}
+
 .replay-panel,
 .control-panel,
 .assist-panel,
@@ -482,6 +503,62 @@
   gap: 12px;
 }
 
+.coach-lane {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  padding: 14px 16px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(9, 18, 31, 0.42);
+  color: #f7f4ee;
+}
+
+.coach-lane__signal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 104px;
+  padding: 10px 12px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.72rem;
+  border: 1px solid currentColor;
+}
+
+.coach-lane strong,
+.readiness-item strong {
+  display: block;
+  font-family: 'Oswald', 'Arial Narrow', sans-serif;
+  font-size: 1.1rem;
+  color: inherit;
+}
+
+.coach-lane p,
+.readiness-item span {
+  margin: 6px 0 0;
+  color: inherit;
+  opacity: 0.82;
+}
+
+.coach-lane--standby {
+  color: #e8edf4;
+}
+
+.coach-lane--steady {
+  color: #d8f0df;
+}
+
+.coach-lane--supporting {
+  color: #f8e2a8;
+}
+
+.coach-lane--step-in {
+  color: #ffd2c8;
+}
+
 .scene-chip {
   text-transform: capitalize;
   background: rgba(255, 255, 255, 0.16);
@@ -519,6 +596,18 @@
   background: linear-gradient(90deg, #84b9cf, #4d7c90);
 }
 
+.meter-track--steady span {
+  background: linear-gradient(90deg, #7ec49a, var(--signal-green));
+}
+
+.meter-track--supporting span {
+  background: linear-gradient(90deg, #f0cf67, var(--signal-yellow));
+}
+
+.meter-track--step-in span {
+  background: linear-gradient(90deg, #ef9e88, var(--signal-red));
+}
+
 .control-group + .control-group {
   margin-top: 18px;
 }
@@ -533,6 +622,10 @@
 .primary-controls {
   display: grid;
   grid-template-columns: 1fr;
+}
+
+.primary-controls--split {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .inline-actions {
@@ -571,6 +664,33 @@
   color: var(--teal-deep);
 }
 
+.tone-button {
+  cursor: default;
+}
+
+.tone-button--standby {
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--copy-muted);
+}
+
+.tone-button--steady {
+  background: var(--signal-green-soft);
+  color: var(--signal-green);
+  border-color: rgba(63, 141, 95, 0.22);
+}
+
+.tone-button--supporting {
+  background: var(--signal-yellow-soft);
+  color: var(--signal-yellow);
+  border-color: rgba(193, 138, 31, 0.22);
+}
+
+.tone-button--step-in {
+  background: var(--signal-red-soft);
+  color: var(--signal-red);
+  border-color: rgba(187, 94, 73, 0.24);
+}
+
 .primary-controls button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
@@ -595,6 +715,42 @@
     linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(243, 239, 233, 0.74));
 }
 
+.booth-summary--preflight {
+  grid-template-columns: 0.7fr repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.readiness-item {
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid var(--border);
+}
+
+.readiness-item--done {
+  background: rgba(63, 141, 95, 0.08);
+  border-color: rgba(63, 141, 95, 0.16);
+}
+
+.readiness-item__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.readiness-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(20, 35, 48, 0.16);
+}
+
+.readiness-dot--done {
+  background: var(--signal-green);
+  box-shadow: 0 0 0 6px rgba(63, 141, 95, 0.12);
+}
+
 .booth-summary strong,
 .metric-badge span {
   font-family: 'Oswald', 'Arial Narrow', sans-serif;
@@ -607,6 +763,24 @@
   background:
     radial-gradient(circle at top right, rgba(98, 169, 156, 0.14), transparent 28%),
     linear-gradient(180deg, rgba(250, 247, 242, 0.96), rgba(244, 239, 232, 0.9));
+}
+
+.booth-card--steady {
+  background:
+    radial-gradient(circle at top right, rgba(63, 141, 95, 0.14), transparent 28%),
+    linear-gradient(180deg, rgba(245, 250, 245, 0.96), rgba(239, 245, 238, 0.9));
+}
+
+.booth-card--supporting {
+  background:
+    radial-gradient(circle at top right, rgba(193, 138, 31, 0.14), transparent 28%),
+    linear-gradient(180deg, rgba(251, 247, 238, 0.96), rgba(247, 241, 228, 0.9));
+}
+
+.booth-card--step-in {
+  background:
+    radial-gradient(circle at top right, rgba(187, 94, 73, 0.15), transparent 28%),
+    linear-gradient(180deg, rgba(252, 244, 240, 0.96), rgba(248, 235, 231, 0.92));
 }
 
 .booth-card__header,
@@ -624,6 +798,31 @@
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.78);
   border: 1px solid var(--border-strong);
+}
+
+.metric-badge--steady {
+  background: var(--signal-green-soft);
+  border-color: rgba(63, 141, 95, 0.2);
+  color: var(--signal-green);
+}
+
+.metric-badge--supporting {
+  background: var(--signal-yellow-soft);
+  border-color: rgba(193, 138, 31, 0.2);
+  color: var(--signal-yellow);
+}
+
+.metric-badge--step-in {
+  background: var(--signal-red-soft);
+  border-color: rgba(187, 94, 73, 0.22);
+  color: var(--signal-red);
+}
+
+.signal-duo {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 18px 0 8px;
 }
 
 .booth-card__header strong,
@@ -651,7 +850,8 @@
 }
 
 @media (max-width: 900px) {
-  .booth-summary {
+  .booth-summary,
+  .booth-summary--preflight {
     grid-template-columns: 1fr;
   }
 }
@@ -712,6 +912,10 @@
 .meter-cluster {
   display: grid;
   gap: 12px;
+}
+
+.field-copy--tight {
+  margin-top: 10px;
 }
 
 .timeline-item {
@@ -840,7 +1044,8 @@
 
   .timeline-item,
   .commentary-metadata,
-  .primary-controls {
+  .primary-controls,
+  .signal-duo {
     grid-template-columns: 1fr;
   }
 

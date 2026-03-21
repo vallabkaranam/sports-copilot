@@ -268,6 +268,11 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 - [x] make worker API target configurable by environment
 - [x] expose worker health endpoint for free web-service hosting
 
+### Productized Booth UX
+- [x] redesign the booth as a teleprompter-style sidekick surface
+- [x] add preflight checks for clip, mic, and backend readiness
+- [x] add green/yellow/red coaching states for steady, hover, and step-in behavior
+
 ### Deployment Config
 - [x] add Render blueprint config
 - [x] add Vercel build config

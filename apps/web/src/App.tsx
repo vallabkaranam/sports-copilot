@@ -35,6 +35,7 @@ import {
 } from './dashboard';
 
 type MicrophoneAvailability = 'supported' | 'degraded' | 'unsupported';
+type CoachingTone = 'standby' | 'steady' | 'supporting' | 'step-in';
 
 type SpeechRecognitionAlternativeLike = {
   transcript: string;
@@ -162,6 +163,61 @@ function createPracticeAssist(boothSignal: BoothSignal) {
   };
 }
 
+function getCoachingTone({
+  hasStartedBroadcast,
+  boothHasLiveInput,
+  boothSignal,
+  shouldSurfaceAssist,
+}: {
+  hasStartedBroadcast: boolean;
+  boothHasLiveInput: boolean;
+  boothSignal: BoothSignal;
+  shouldSurfaceAssist: boolean;
+}) {
+  if (!hasStartedBroadcast) {
+    return {
+      tone: 'standby' as CoachingTone,
+      label: 'Standby',
+      headline: 'Set the booth, then go live.',
+      copy: 'Think of this as training wheels for the call. We stay quiet until you actually need a nudge.',
+    };
+  }
+
+  if (shouldSurfaceAssist) {
+    return {
+      tone: 'step-in' as CoachingTone,
+      label: 'Stepping in',
+      headline: 'The sidekick is helping on this beat.',
+      copy: 'A real wobble is active, so the cue stays present until your delivery settles again.',
+    };
+  }
+
+  if (!boothHasLiveInput) {
+    return {
+      tone: 'standby' as CoachingTone,
+      label: 'Listening',
+      headline: 'The booth is waiting for your first line.',
+      copy: 'Start calling the action and the sidekick will watch for pauses, fillers, and restarts.',
+    };
+  }
+
+  if (boothSignal.isSpeaking && boothSignal.confidenceScore >= 0.68 && boothSignal.hesitationScore < 0.18) {
+    return {
+      tone: 'steady' as CoachingTone,
+      label: 'Backing off',
+      headline: 'You are driving the call cleanly.',
+      copy: 'Confidence is back, so the training wheels are easing off and staying out of your way.',
+    };
+  }
+
+  return {
+    tone: 'supporting' as CoachingTone,
+    label: 'Hovering',
+    headline: 'The sidekick is nearby, but not interrupting.',
+    copy: 'There is a little wobble, so we stay close and only step in if the hesitation grows.',
+  };
+}
+
 function App() {
   const [worldState, setWorldState] = useState(createInitialWorldState);
   const [controls, setControls] = useState<ReplayControlState>({
@@ -193,6 +249,8 @@ function App() {
   const [boothInterimTranscript, setBoothInterimTranscript] = useState('');
   const [boothError, setBoothError] = useState<string | null>(null);
   const [isMicListening, setIsMicListening] = useState(false);
+  const [isMicPrepared, setIsMicPrepared] = useState(false);
+  const [isMicPreparing, setIsMicPreparing] = useState(false);
   const [lastSpeechAtMs, setLastSpeechAtMs] = useState(-1);
   const [lastVoiceActivityAtMs, setLastVoiceActivityAtMs] = useState(-1);
   const [speechStreakStartedAtMs, setSpeechStreakStartedAtMs] = useState(-1);
@@ -376,6 +434,7 @@ function App() {
     setIsClipMuted(true);
     setHasStartedBroadcast(false);
     setActiveBoothSessionId(null);
+    setIsMicPrepared(false);
     setSpeechStreakStartedAtMs(-1);
     setSilenceStreakStartedAtMs(-1);
   }
@@ -448,6 +507,38 @@ function App() {
         setLastVoiceActivityAtMs(Date.now());
       }
     }, AUDIO_ACTIVITY_SAMPLE_MS);
+  }
+
+  async function prepareMicrophone() {
+    if (!supportsAudioMonitoring()) {
+      setMicrophoneAvailability('unsupported');
+      setBoothError('This browser cannot arm the booth microphone. Chrome or Edge work best.');
+      setIsMicPrepared(false);
+      return;
+    }
+
+    setIsMicPreparing(true);
+    setBoothError(null);
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+
+      stream.getTracks().forEach((track) => track.stop());
+      setMicrophoneAvailability('supported');
+      setIsMicPrepared(true);
+    } catch (_error) {
+      setMicrophoneAvailability('degraded');
+      setBoothError('Microphone access was blocked. Allow mic access to arm the booth.');
+      setIsMicPrepared(false);
+    } finally {
+      setIsMicPreparing(false);
+    }
   }
 
   function stopAudioMonitoring() {
@@ -540,6 +631,7 @@ function App() {
       switch (event.error) {
         case 'not-allowed':
           setMicrophoneAvailability('degraded');
+          setIsMicPrepared(false);
           setBoothError('Microphone access was blocked. Allow mic access to test live hesitation.');
           break;
         case 'no-speech':
@@ -547,12 +639,14 @@ function App() {
           break;
         case 'network':
           setMicrophoneAvailability('degraded');
+          setIsMicPrepared(true);
           setBoothError(
             'This browser speech service is unavailable right now. Chrome or Edge usually work best.',
           );
           break;
         default:
           setMicrophoneAvailability('degraded');
+          setIsMicPrepared(false);
           setBoothError(`Microphone error: ${event.error}.`);
       }
     };
@@ -594,11 +688,13 @@ function App() {
     void startAudioMonitoring()
       .then(() => {
         setMicrophoneAvailability('supported');
+        setIsMicPrepared(true);
       })
       .catch(() => {
         shouldKeepMicLiveRef.current = false;
         recognitionRef.current?.stop();
         setMicrophoneAvailability('degraded');
+        setIsMicPrepared(false);
         setBoothError(
           'Microphone access was blocked. Allow mic access to test live hesitation from your voice.',
         );
@@ -628,6 +724,7 @@ function App() {
 
       recognition.start();
       setMicrophoneAvailability('supported');
+      setIsMicPrepared(true);
     } catch (_error) {
       setMicrophoneAvailability('degraded');
       setBoothError(
@@ -660,6 +757,11 @@ function App() {
   async function startBroadcast() {
     if (!loadedClipUrl) {
       setBoothError('Load a clip before starting the booth.');
+      return;
+    }
+
+    if (!isMicPrepared) {
+      setBoothError('Arm the microphone before starting the booth.');
       return;
     }
 
@@ -715,6 +817,8 @@ function App() {
   const isMicSupported =
     microphoneAvailability !== 'unsupported' &&
     (Boolean(getSpeechRecognitionConstructor()) || supportsAudioMonitoring());
+  const isSystemReady = isHydrated && !error;
+  const isBroadcastReady = Boolean(loadedClipUrl) && isMicPrepared && isSystemReady;
   const boothActivity = deriveBoothActivity({
     interimTranscript: boothInterimTranscript,
     isMicListening,
@@ -775,6 +879,34 @@ function App() {
     boothSignal.confidenceReasons.length > 0
       ? boothSignal.confidenceReasons
       : ['Confidence builds only when your delivery restarts and holds.'];
+  const coachingTone = getCoachingTone({
+    hasStartedBroadcast,
+    boothHasLiveInput,
+    boothSignal,
+    shouldSurfaceAssist,
+  });
+  const readinessChecks = [
+    {
+      label: 'Clip loaded',
+      done: Boolean(loadedClipUrl),
+      detail: loadedClipUrl ? loadedClipName || 'Local replay is ready.' : 'Bring in a replay clip first.',
+    },
+    {
+      label: 'Mic armed',
+      done: isMicPrepared,
+      detail: isMicPrepared
+        ? 'Microphone permission is ready for the live booth.'
+        : isMicPreparing
+          ? 'Requesting microphone access.'
+          : 'Enable mic access before going live.',
+    },
+    {
+      label: 'System linked',
+      done: isSystemReady,
+      detail: isSystemReady ? 'The hosted backend is reachable.' : 'Waiting for the backend connection.',
+    },
+  ];
+  const readyCount = readinessChecks.filter((check) => check.done).length;
   const clipClockLabel = formatDurationMs(clipPositionMs);
   const clipDurationLabel = clipDurationMs > 0 ? formatDurationMs(clipDurationMs) : '--:--';
   const clipProgress = clipDurationMs > 0 ? Math.min(100, Math.round((clipPositionMs / clipDurationMs) * 100)) : 0;
@@ -802,9 +934,9 @@ function App() {
   const feedHeading = loadedClipName || 'Load a clip to begin';
   const feedSubheading = loadedClipUrl
     ? hasStartedBroadcast
-      ? 'Call the play naturally. The booth watches for hesitation and backs off when confidence returns.'
-      : 'Your clip is loaded and muted. Start when you want the booth to listen.'
-    : 'Bring in any local replay clip to practice hesitation recovery without the old demo scaffolding.';
+      ? 'Call the play naturally. Your sidekick only leans in when the delivery genuinely wobbles.'
+      : 'Your clip is loaded and muted. Arm the booth, then go live when you are ready.'
+    : 'Bring in any local replay clip to rehearse live commentary with a sidekick that knows when to help and when to disappear.';
   const replayToastSignature = `${activeAssist.type}:${activeAssist.text}:${shouldSurfaceAssist}:${controls.restartToken}`;
   const activeTriggerBadges = [
     boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS ? 'pause' : null,
@@ -901,9 +1033,9 @@ function App() {
       <header className="app-header">
         <div className="brand-lockup">
           <p className="eyebrow">{isPracticeMode ? 'Sports Copilot' : 'Sports Copilot'}</p>
-          <h1>Commentary Booth</h1>
+          <h1>Booth Buddy</h1>
           <p className="hero-copy">
-            A focused practice surface for live hesitation detection, confidence recovery, and just-in-time commentary support.
+            A live training-wheels teleprompter for commentators. It watches your delivery, nudges you through hesitation, and then quietly backs off when your confidence returns.
           </p>
         </div>
 
@@ -911,7 +1043,7 @@ function App() {
           <div className="header-status-card">
             <p className="control-label">System</p>
             <strong>{systemStatusLabel}</strong>
-            <span>{setupStatusLabel}</span>
+            <span>{readyCount}/3 checks ready. {setupStatusLabel}</span>
           </div>
           <button
             type="button"
@@ -935,7 +1067,7 @@ function App() {
             </div>
             <div className="panel-chip-row">
               <span className="panel-tag">{loadedClipUrl ? `${clipClockLabel} / ${clipDurationLabel}` : 'Awaiting upload'}</span>
-              <span className="panel-tag">{isBroadcastLive ? 'Broadcast live' : 'Broadcast idle'}</span>
+              <span className={`panel-tag panel-tag--${coachingTone.tone}`}>{coachingTone.label}</span>
             </div>
           </div>
 
@@ -994,12 +1126,12 @@ function App() {
                 <h3>
                   {loadedClipUrl
                     ? hasStartedBroadcast
-                      ? 'Stay on the call. The booth only steps in when you fade.'
-                      : 'Set the feed, then go live when you are ready.'
-                    : 'Upload a clip, then take the booth live.'}
+                      ? coachingTone.headline
+                      : 'Arm the booth, then take the feed live.'
+                    : 'Upload a clip, then arm your sidekick.'}
                 </h3>
                 <p>
-                  Speak as if you are on air. Pauses, filler-heavy resets, and broken openings should all show up as hesitation.
+                  {coachingTone.copy}
                 </p>
               </div>
 
@@ -1017,9 +1149,9 @@ function App() {
                 </div>
               ) : loadedClipUrl && !hasStartedBroadcast ? (
                 <div className="replay-toast replay-toast--hint">
-                  <p className="assist-type">Standing by</p>
-                  <h3>Go live when you want booth tracking to begin.</h3>
-                  <p>The feed is set and muted. Nothing is scored until you start the session.</p>
+                  <p className="assist-type">Preflight</p>
+                  <h3>Finish the mic check, then go live.</h3>
+                  <p>The feed is set and muted. Nothing is scored until the booth is armed and the session starts.</p>
                 </div>
               ) : null}
 
@@ -1040,6 +1172,13 @@ function App() {
               </div>
 
               <div className="replay-footer">
+                <div className={`coach-lane coach-lane--${coachingTone.tone}`}>
+                  <span className="coach-lane__signal">{coachingTone.label}</span>
+                  <div>
+                    <strong>{coachingTone.headline}</strong>
+                    <p>{coachingTone.copy}</p>
+                  </div>
+                </div>
                 <div className="progress-track" aria-label="Replay progress">
                   <span style={{ width: `${clipProgress}%` }} />
                 </div>
@@ -1053,36 +1192,58 @@ function App() {
             <div className="panel-header">
               <div>
                 <p className="panel-kicker">Booth</p>
-                <h2>Live session</h2>
-                <p className="panel-copy">One place to run the booth, watch the live signal, and keep the surface calm.</p>
+                <h2>Sidekick panel</h2>
+                <p className="panel-copy">A calmer control rail for preflight, live coaching, and that gentle step-back when you are back in rhythm.</p>
               </div>
             </div>
 
-            <article className="booth-summary">
+            <article className="booth-summary booth-summary--preflight">
               <div>
-                <p className="control-label">System</p>
-                <strong>{error ? 'Reconnecting' : isHydrated ? 'Ready' : 'Booting'}</strong>
+                <p className="control-label">Preflight</p>
+                <strong>{readyCount}/3 ready</strong>
               </div>
-              <div>
-                <p className="control-label">Broadcast</p>
-                <strong>{isBroadcastLive ? 'Live' : 'Idle'}</strong>
-              </div>
-              <div>
-                <p className="control-label">Booth</p>
-                <strong>{isUpdatingControls ? 'Applying changes' : setupStatusLabel}</strong>
-              </div>
+              {readinessChecks.map((check) => (
+                <div key={check.label} className={`readiness-item ${check.done ? 'readiness-item--done' : ''}`}>
+                  <div className="readiness-item__row">
+                    <p className="control-label">{check.label}</p>
+                    <span className={`readiness-dot ${check.done ? 'readiness-dot--done' : ''}`} />
+                  </div>
+                  <strong>{check.done ? 'Ready' : 'Pending'}</strong>
+                  <span>{check.detail}</span>
+                </div>
+              ))}
             </article>
 
             <div className="control-group">
-              <p className="control-label">Controls</p>
-              <div className="primary-controls">
+              <p className="control-label">Setup</p>
+              <div className="primary-controls primary-controls--split">
+                <button
+                  type="button"
+                  className={isMicPrepared ? 'is-active' : ''}
+                  disabled={isMicPreparing}
+                  onClick={() => void prepareMicrophone()}
+                >
+                  {isMicPrepared ? 'Mic Ready' : isMicPreparing ? 'Checking Mic…' : 'Enable Microphone'}
+                </button>
                 <button
                   type="button"
                   className={isBroadcastLive ? 'is-active' : ''}
-                  disabled={!loadedClipUrl}
+                  disabled={!isBroadcastReady || isUpdatingControls}
                   onClick={() => void (isBroadcastLive ? stopBroadcast() : startBroadcast())}
                 >
                   {isBroadcastLive ? 'End Session' : 'Start Broadcast'}
+                </button>
+              </div>
+              <p className="field-copy field-copy--tight">
+                The booth will not go live until the clip is loaded, the mic is armed, and the hosted system is connected.
+              </p>
+            </div>
+
+            <div className="control-group">
+              <p className="control-label">Session</p>
+              <div className="primary-controls">
+                <button type="button" className={`tone-button tone-button--${coachingTone.tone}`}>
+                  {coachingTone.label}
                 </button>
               </div>
               <div className="inline-actions">
@@ -1095,19 +1256,39 @@ function App() {
               </div>
             </div>
 
-            <article className="booth-card">
+            <article className={`booth-card booth-card--${coachingTone.tone}`}>
               <div className="booth-card__header">
                 <div>
-                  <p className="control-label">Hesitation</p>
-                  <strong>{boothHesitationPercent}</strong>
+                  <p className="control-label">Coaching zone</p>
+                  <strong>{coachingTone.headline}</strong>
                 </div>
-                <div className="metric-badge">
-                  <span>{boothSignal.activeSpeaker === 'lead' ? 'Speaking' : 'Quiet'}</span>
+                <div className={`metric-badge metric-badge--${coachingTone.tone}`}>
+                  <span>{coachingTone.label}</span>
                 </div>
               </div>
 
-              <div className="meter-track">
-                <span style={{ width: boothHesitationPercent }} />
+              <p className="field-copy">{coachingTone.copy}</p>
+
+              <div className="signal-duo">
+                <div>
+                  <div className="meter-label-row">
+                    <span>Hesitation</span>
+                    <strong>{boothHesitationPercent}</strong>
+                  </div>
+                  <div className={`meter-track meter-track--${coachingTone.tone}`}>
+                    <span style={{ width: boothHesitationPercent }} />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="meter-label-row">
+                    <span>Confidence</span>
+                    <strong>{boothConfidencePercent}</strong>
+                  </div>
+                  <div className="meter-track meter-track--steady">
+                    <span style={{ width: boothConfidencePercent }} />
+                  </div>
+                </div>
               </div>
 
               <div className="meter-label-row">
@@ -1116,8 +1297,8 @@ function App() {
               </div>
 
               <div className="meter-label-row">
-                <span>Confidence</span>
-                <strong>{boothConfidencePercent}</strong>
+                <span>Training wheels</span>
+                <strong>{shouldSurfaceAssist ? 'On screen' : coachingTone.tone === 'steady' ? 'Weaning off' : 'Hovering nearby'}</strong>
               </div>
 
               <div className="reason-list">
@@ -1130,7 +1311,7 @@ function App() {
               </div>
 
               <p className="field-copy">
-                The clip stays muted by default so the booth tracks your voice, not the program feed. Confidence should recover only when your call does.
+                The clip stays muted by default so the booth tracks your voice, not the program feed. Green means we trust you, yellow means we hover, and red means we step in until you are stable again.
               </p>
               {boothError ? <p className="inline-warning">{boothError}</p> : null}
             </article>
