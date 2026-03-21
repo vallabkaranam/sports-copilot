@@ -518,7 +518,7 @@ describe('App dashboard', () => {
     fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
 
-      if (url.includes('/preset-feeds/barca')) {
+      if (url.includes('/media/barca-preset.mp4') || url.includes('/preset-feeds/barca')) {
         return Promise.resolve({
           ok: true,
           status: 206,
@@ -691,7 +691,7 @@ describe('App dashboard', () => {
     expect(container.textContent).toContain('Live control');
     expect(container.textContent).toContain('Show Details');
     expect(container.textContent).toContain('Channel 1 selected');
-    expect(container.textContent).toContain('barca.mov');
+    expect(container.textContent).toContain('Barca preset');
     expect(container.textContent).not.toContain('Pre-match brief');
   });
 
@@ -703,7 +703,7 @@ describe('App dashboard', () => {
     );
     expect(playButton?.textContent).toBe('Go live');
     expect(playButton?.hasAttribute('disabled')).toBe(false);
-    expect(container.textContent).toContain('Channel 1 · barca.mov');
+    expect(container.textContent).toContain('Channel 1 · Barca preset');
     expect(container.textContent).toContain('And-One will request access when you go live.');
   });
 
@@ -824,7 +824,7 @@ describe('App dashboard', () => {
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
 
-      if (url.includes('/preset-feeds/barca')) {
+      if (url.includes('/media/barca-preset.mp4') || url.includes('/preset-feeds/barca')) {
         return Promise.resolve({
           ok: true,
           status: 206,

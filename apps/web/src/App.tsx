@@ -19,7 +19,6 @@ import {
   fetchBoothSessionReview,
   fetchBoothSessions,
   fetchControlState,
-  getPresetFeedUrl,
   fetchWorldState,
   finishBoothSession,
   interpretBooth,
@@ -69,8 +68,8 @@ const PROGRAM_FEED_SLOTS: ProgramFeedSlot[] = [
     label: 'Channel 1',
     tone: 'Preset match feed',
     source: 'preset',
-    presetUrl: getPresetFeedUrl('barca'),
-    presetFileName: 'barca.mov',
+    presetUrl: '/media/barca-preset.mp4',
+    presetFileName: 'Barca preset',
   },
   {
     id: 'program-b',
