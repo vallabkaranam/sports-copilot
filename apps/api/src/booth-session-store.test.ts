@@ -24,11 +24,11 @@ function createTempDatabasePath() {
 }
 
 describe('booth session store', () => {
-  it('persists session samples and analytics in sqlite', () => {
-    const store = createBoothSessionStore(createTempDatabasePath());
-    const session = store.createSession('demo-clip.mp4');
+  it('persists session samples and analytics in sqlite', async () => {
+    const store = await createBoothSessionStore(createTempDatabasePath());
+    const session = await store.createSession('demo-clip.mp4');
 
-    store.appendSample(session.id, {
+    await store.appendSample(session.id, {
       timestamp: 1_000,
       hesitationScore: 0.42,
       confidenceScore: 0.58,
@@ -37,8 +37,40 @@ describe('booth session store', () => {
       isSpeaking: false,
       triggerBadges: ['pause'],
       activeAssistText: 'Reset with a simple scene call and one short takeaway.',
+      featureSnapshot: {
+        timestamp: 1_000,
+        hesitationScore: 0.42,
+        confidenceScore: 0.58,
+        pauseDurationMs: 1_900,
+        speechStreakMs: 0,
+        silenceStreakMs: 1_900,
+        audioLevel: 0.09,
+        isSpeaking: false,
+        hasVoiceActivity: false,
+        fillerCount: 1,
+        fillerDensity: 0.1,
+        fillerWords: ['um'],
+        repeatedOpeningCount: 0,
+        repeatedPhrases: [],
+        unfinishedPhrase: false,
+        transcriptWordCount: 10,
+        transcriptStabilityScore: 0.9,
+        hesitationReasons: ['pause'],
+        transcriptWindow: [],
+        interimTranscript: '',
+      },
+      interpretation: {
+        state: 'monitoring',
+        hesitationScore: 0.42,
+        recoveryScore: 0.58,
+        shouldSurfaceAssist: false,
+        summary: 'Monitoring a short pause.',
+        reasons: ['pause'],
+        signals: [],
+        source: 'openai',
+      },
     });
-    const updatedSession = store.appendSample(session.id, {
+    const updatedSession = await store.appendSample(session.id, {
       timestamp: 2_000,
       hesitationScore: 0.91,
       confidenceScore: 0.24,
@@ -48,9 +80,10 @@ describe('booth session store', () => {
       triggerBadges: ['pause', 'repeat-start'],
       activeAssistText: null,
     });
-    const finishedSession = store.finishSession(session.id);
-    const record = store.getSession(session.id);
-    const analytics = store.getAnalytics();
+    const finishedSession = await store.finishSession(session.id);
+    const record = await store.getSession(session.id);
+    const analytics = await store.getAnalytics();
+    const profile = await store.getSpeakerProfile();
 
     expect(updatedSession.sampleCount).toBe(2);
     expect(updatedSession.maxHesitationScore).toBe(0.91);
@@ -59,8 +92,14 @@ describe('booth session store', () => {
     expect(finishedSession.status).toBe('completed');
     expect(record?.samples).toHaveLength(2);
     expect(record?.samples[1]?.triggerBadges).toEqual(['pause', 'repeat-start']);
+    expect(record?.samples[0]?.featureSnapshot).toBeTruthy();
+    expect(record?.samples[0]?.interpretation).toBeTruthy();
     expect(analytics.totalSessions).toBe(1);
     expect(analytics.completedSessions).toBe(1);
     expect(analytics.totalAssistCount).toBe(1);
+    expect(profile.totalSessions).toBe(1);
+    expect(profile.totalSamples).toBe(2);
+    expect(profile.averageFillerDensity).toBeGreaterThan(0);
+    await store.close?.();
   });
 });

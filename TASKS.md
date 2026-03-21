@@ -266,14 +266,20 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 ### Live Signal Interpretation
 - [x] add server-side booth interpretation endpoint
 - [x] support OpenAI-backed hesitation/recovery interpretation with safe fallback
+- [x] add server-side OpenAI audio transcription endpoint
 - [x] send live booth feature snapshots from the web app
+- [x] remove browser transcription fallback from the primary booth path
 - [x] strengthen transcript-instability features beyond pause dominance
 - [x] add explicit step-in / monitoring / weaning-off state transitions across the booth loop
+- [x] persist booth feature snapshots and interpreted states for session analytics
+- [x] compare live booth moments against stored speaker-profile baselines
+- [x] keep prematch context available in details while removing it from the live surface
 
 ### Tests
-- [x] test heuristic booth interpretation fallback
+- [x] test unavailable booth interpretation fallback
 - [x] test OpenAI response parsing for booth interpretation
-- [ ] test live booth state transitions end to end
+- [x] test OpenAI transcription response parsing
+- [x] test live booth state transitions end to end
 
 ---
 
@@ -318,6 +324,7 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 ### Real Inputs
 - [x] replace browser transcript-only hesitation detection with audio activity / VAD support
 - [x] persist booth sessions and analytics to a real local SQLite store
+- [x] migrate booth sessions and analytics to hosted Postgres when DATABASE_URL is set
 - [ ] ingest a real free match/event API for live game context
 - [ ] ingest real external context from free/public sources
 - [ ] remove deterministic fixture dependency from the primary product path

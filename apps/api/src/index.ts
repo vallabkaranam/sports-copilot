@@ -8,6 +8,8 @@ import {
   InterpretBoothInputSchema,
   StartBoothSessionInputSchema,
   StartBoothSessionResponse,
+  TranscribeBoothAudioInputSchema,
+  TranscribeBoothAudioResponse,
   createEmptyAssistCard,
   ReplayControlState,
   WorldState,
@@ -23,11 +25,20 @@ import fs from 'fs/promises';
 import path from 'path';
 import { interpretBoothWithOpenAI } from './booth-interpretation';
 import { createBoothSessionStore } from './booth-session-store';
+import { transcribeBoothAudioWithOpenAI } from './booth-transcription';
 
 const server = fastify({ logger: true });
-const boothSessionStore = createBoothSessionStore();
 const API_PORT = Number(process.env.PORT ?? 3001);
 const API_HOST = process.env.HOST ?? '0.0.0.0';
+let boothSessionStore: Awaited<ReturnType<typeof createBoothSessionStore>> | null = null;
+
+function requireBoothSessionStore() {
+  if (!boothSessionStore) {
+    throw new Error('Booth session store is not initialized yet.');
+  }
+
+  return boothSessionStore;
+}
 
 server.addHook('onRequest', async (request, reply) => {
   reply.header('Access-Control-Allow-Origin', '*');
@@ -99,23 +110,38 @@ server.post('/controls', async (request) => {
 });
 
 server.get('/booth-sessions', async (): Promise<BoothSessionsResponse> => {
+  const sessionStore = requireBoothSessionStore();
   return {
-    analytics: boothSessionStore.getAnalytics(),
-    sessions: boothSessionStore.listSessions(),
+    analytics: await sessionStore.getAnalytics(),
+    sessions: await sessionStore.listSessions(),
   };
 });
 
 server.post('/booth/interpret', async (request, reply): Promise<BoothInterpretation | void> => {
+  const sessionStore = requireBoothSessionStore();
   const parsed = InterpretBoothInputSchema.safeParse(request.body);
   if (!parsed.success) {
     reply.status(400).send({ error: 'Invalid booth interpretation payload' });
     return;
   }
 
-  return interpretBoothWithOpenAI(parsed.data.features);
+  const profile = parsed.data.profile ?? (await sessionStore.getSpeakerProfile());
+
+  return interpretBoothWithOpenAI(parsed.data.features, profile);
+});
+
+server.post('/booth/transcribe', async (request, reply): Promise<TranscribeBoothAudioResponse | void> => {
+  const parsed = TranscribeBoothAudioInputSchema.safeParse(request.body);
+  if (!parsed.success) {
+    reply.status(400).send({ error: 'Invalid booth transcription payload' });
+    return;
+  }
+
+  return transcribeBoothAudioWithOpenAI(parsed.data.audioBase64, parsed.data.mimeType);
 });
 
 server.post('/booth-sessions/start', async (request, reply): Promise<StartBoothSessionResponse | void> => {
+  const sessionStore = requireBoothSessionStore();
   const parsed = StartBoothSessionInputSchema.safeParse(request.body);
   if (!parsed.success) {
     reply.status(400).send({ error: 'Invalid booth session payload' });
@@ -123,11 +149,12 @@ server.post('/booth-sessions/start', async (request, reply): Promise<StartBoothS
   }
 
   return {
-    session: boothSessionStore.createSession(parsed.data.clipName),
+    session: await sessionStore.createSession(parsed.data.clipName),
   };
 });
 
 server.post('/booth-sessions/:sessionId/sample', async (request, reply) => {
+  const sessionStore = requireBoothSessionStore();
   const parsed = AppendBoothSessionSampleInputSchema.safeParse(request.body);
   if (!parsed.success) {
     reply.status(400).send({ error: 'Invalid booth sample payload' });
@@ -136,7 +163,7 @@ server.post('/booth-sessions/:sessionId/sample', async (request, reply) => {
 
   try {
     return {
-      session: boothSessionStore.appendSample(
+      session: await sessionStore.appendSample(
         (request.params as { sessionId: string }).sessionId,
         parsed.data.sample,
       ),
@@ -147,6 +174,7 @@ server.post('/booth-sessions/:sessionId/sample', async (request, reply) => {
 });
 
 server.post('/booth-sessions/:sessionId/finish', async (request, reply) => {
+  const sessionStore = requireBoothSessionStore();
   const parsed = FinishBoothSessionInputSchema.safeParse(request.body ?? {});
   if (!parsed.success) {
     reply.status(400).send({ error: 'Invalid booth session finish payload' });
@@ -155,7 +183,7 @@ server.post('/booth-sessions/:sessionId/finish', async (request, reply) => {
 
   try {
     return {
-      session: boothSessionStore.finishSession(
+      session: await sessionStore.finishSession(
         (request.params as { sessionId: string }).sessionId,
         parsed.data.endedAt,
       ),
@@ -167,6 +195,7 @@ server.post('/booth-sessions/:sessionId/finish', async (request, reply) => {
 
 const start = async () => {
   try {
+    boothSessionStore = await createBoothSessionStore();
     const rosterPath = path.resolve(__dirname, '../../../data/demo_match/roster.json');
     const rosterData = await fs.readFile(rosterPath, 'utf8');
     const roster = JSON.parse(rosterData);

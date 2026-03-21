@@ -6,6 +6,7 @@ import {
   BoothSessionSummary,
   ReplayControlState,
   StartBoothSessionResponse,
+  TranscribeBoothAudioResponse,
   WorldState,
 } from '@sports-copilot/shared-types';
 
@@ -75,5 +76,12 @@ export function interpretBooth(features: BoothFeatureSnapshot) {
   return requestJson<BoothInterpretation>('/booth/interpret', {
     method: 'POST',
     body: JSON.stringify({ features }),
+  });
+}
+
+export function transcribeBoothAudio(audioBase64: string, mimeType: string) {
+  return requestJson<TranscribeBoothAudioResponse>('/booth/transcribe', {
+    method: 'POST',
+    body: JSON.stringify({ audioBase64, mimeType }),
   });
 }
