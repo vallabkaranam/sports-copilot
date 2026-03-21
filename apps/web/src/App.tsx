@@ -4,6 +4,7 @@ import {
   BoothSessionSummary,
   ReplayControlState,
   TranscriptEntry,
+  createEmptyAssistCard,
 } from '@sports-copilot/shared-types';
 import './App.css';
 import {
@@ -15,7 +16,7 @@ import {
   startBoothSession,
   updateControlState,
 } from './api';
-import type { BoothSignal } from './boothSignal';
+import { buildBoothAssist } from './boothAssist';
 import {
   LOCAL_TRANSCRIPT_LIMIT,
   LIVE_HESITATION_GATE,
@@ -111,58 +112,6 @@ function safelyPlayVideo(videoElement: HTMLVideoElement, onBlocked: () => void) 
   }
 }
 
-function createPracticeAssist(boothSignal: BoothSignal) {
-  const confidence = boothSignal.hesitationScore;
-
-  if (boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS) {
-    return {
-      type: 'context' as const,
-      text: 'Reset with a simple scene call and one short takeaway.',
-      whyNow: 'You left a clear pause after the last thought.',
-      urgency: 'medium' as const,
-      confidence,
-    };
-  }
-
-  if (boothSignal.fillerWords.length >= 2) {
-    return {
-      type: 'transition' as const,
-      text: 'Drop the filler and go straight to what the viewer is seeing.',
-      whyNow: 'The booth cadence is getting clogged with filler words.',
-      urgency: 'medium' as const,
-      confidence,
-    };
-  }
-
-  if (boothSignal.repeatedPhrases.length > 0) {
-    return {
-      type: 'transition' as const,
-      text: 'Pick one clean re-entry line and commit to it.',
-      whyNow: 'You restarted the same opening more than once.',
-      urgency: 'medium' as const,
-      confidence,
-    };
-  }
-
-  if (boothSignal.unfinishedPhrase) {
-    return {
-      type: 'context' as const,
-      text: 'Finish the thought with one short sentence, then breathe.',
-      whyNow: 'The last line trailed off before it landed.',
-      urgency: 'low' as const,
-      confidence,
-    };
-  }
-
-  return {
-    type: 'none' as const,
-    text: '',
-    whyNow: 'No assist needed right now.',
-    urgency: 'low' as const,
-    confidence: 0,
-  };
-}
-
 function formatFormRecord(
   form: {
     record: { wins: number; draws: number; losses: number };
@@ -202,6 +151,7 @@ function App() {
   const [boothTranscript, setBoothTranscript] = useState<TranscriptEntry[]>([]);
   const [boothInterimTranscript, setBoothInterimTranscript] = useState('');
   const [boothError, setBoothError] = useState<string | null>(null);
+  const [latchedAssist, setLatchedAssist] = useState(() => createEmptyAssistCard());
   const [isMicListening, setIsMicListening] = useState(false);
   const [lastSpeechAtMs, setLastSpeechAtMs] = useState(-1);
   const [lastVoiceActivityAtMs, setLastVoiceActivityAtMs] = useState(-1);
@@ -679,8 +629,7 @@ function App() {
         setActiveBoothSessionId(response.session.id);
         await refreshBoothSessions();
       } catch (_error) {
-        setBoothError('The booth session could not be saved locally.');
-        return;
+        setBoothError('The booth session could not be saved locally, but the broadcast can still run.');
       }
     }
 
@@ -766,29 +715,30 @@ function App() {
     hasStartedBroadcast &&
     (isMicListening || boothTranscript.length > 0 || boothInterimTranscript.length > 0);
   const isPracticeMode = true;
-  const practiceAssist = createPracticeAssist(boothSignal);
+  const boothAssist = buildBoothAssist({
+    boothSignal,
+    boothTranscript,
+    interimTranscript: boothInterimTranscript,
+    retrieval: worldState.retrieval,
+    preMatch: worldState.preMatch,
+    liveMatch: worldState.liveMatch,
+    socialPosts: worldState.liveSignals.social,
+    recentEvents: worldState.recentEvents,
+  });
   const workerAssistShouldSurface =
     assist.type !== 'none' &&
     (controls.forceHesitation ||
       !boothHasLiveInput ||
       boothSignal.shouldSurfaceAssist ||
       worldState.commentator.hesitationScore >= LIVE_HESITATION_GATE);
-  const practiceAssistShouldSurface = boothHasLiveInput && boothSignal.shouldSurfaceAssist;
-  const shouldSurfaceAssist = workerAssistShouldSurface || practiceAssistShouldSurface;
-  const activeAssist = workerAssistShouldSurface
-    ? assist
-    : isPracticeMode
-      ? {
-          ...assist,
-          type: practiceAssist.type,
-          text: practiceAssist.text,
-          whyNow: practiceAssist.whyNow,
-          urgency: practiceAssist.urgency,
-          confidence: practiceAssist.confidence,
-          sourceChips: [],
-          styleMode: 'analyst' as const,
-        }
-      : assist;
+  const boothAssistShouldSurface = boothHasLiveInput && boothAssist.type !== 'none';
+  const nextTriggeredAssist = boothAssistShouldSurface
+    ? boothAssist
+    : workerAssistShouldSurface
+      ? assist
+      : null;
+  const activeAssist = latchedAssist;
+  const shouldSurfaceAssist = activeAssist.type !== 'none';
   const assistConfidencePercent = formatPercent(shouldSurfaceAssist ? activeAssist.confidence : 0);
   const hesitationPercent = formatPercent(
     boothHasLiveInput ? boothSignal.hesitationScore : worldState.commentator.hesitationScore,
@@ -844,6 +794,24 @@ function App() {
     boothSignal.unfinishedPhrase ? 'unfinished' : null,
   ].filter(Boolean) as string[];
   const preMatchSummary = worldState.preMatch.aiOpener ?? worldState.preMatch.deterministicOpener;
+
+  useEffect(() => {
+    if (!hasStartedBroadcast) {
+      if (latchedAssist.type !== 'none') {
+        setLatchedAssist(createEmptyAssistCard());
+      }
+      return;
+    }
+
+    if (
+      nextTriggeredAssist &&
+      (latchedAssist.type === 'none' ||
+        latchedAssist.text !== nextTriggeredAssist.text ||
+        latchedAssist.whyNow !== nextTriggeredAssist.whyNow)
+    ) {
+      setLatchedAssist(nextTriggeredAssist);
+    }
+  }, [hasStartedBroadcast, latchedAssist.text, latchedAssist.type, latchedAssist.whyNow, nextTriggeredAssist]);
 
   useEffect(() => {
     if (!hasStartedBroadcast) {

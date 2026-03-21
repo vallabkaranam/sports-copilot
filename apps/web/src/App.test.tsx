@@ -523,6 +523,35 @@ describe('App dashboard', () => {
     await renderApp();
     expect(container.textContent).not.toContain('Courtois keeps Madrid alive with an enormous reflex stop.');
 
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null;
+    expect(fileInput).not.toBeNull();
+
+    const file = new File(['video'], 'test.mp4', { type: 'video/mp4' });
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL: vi.fn(() => 'blob:test'),
+      revokeObjectURL: vi.fn(),
+    });
+
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      });
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    const playButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Start Broadcast'),
+    );
+
+    await act(async () => {
+      playButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
     currentWorldState = createWorldState({
       assist: {
         type: 'hype',
