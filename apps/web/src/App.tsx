@@ -19,6 +19,7 @@ import {
   finishBoothSession,
   interpretBooth,
   startBoothSession,
+  transcribeBoothAudio,
   updateControlState,
 } from './api';
 import { buildBoothAssist } from './boothAssist';
@@ -53,9 +54,45 @@ function supportsAudioMonitoring() {
     typeof window !== 'undefined' &&
     typeof navigator !== 'undefined' &&
     Boolean(navigator.mediaDevices?.getUserMedia) &&
-    typeof window.AudioContext !== 'undefined' &&
-    typeof window.RTCPeerConnection !== 'undefined'
+    typeof window.AudioContext !== 'undefined'
   );
+}
+
+function getSupportedRecorderMimeType() {
+  if (typeof window === 'undefined' || typeof window.MediaRecorder === 'undefined') {
+    return null;
+  }
+
+  const candidates = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/ogg;codecs=opus',
+    'audio/mp4',
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof window.MediaRecorder.isTypeSupported !== 'function') {
+      return candidate;
+    }
+
+    if (window.MediaRecorder.isTypeSupported(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+async function encodeBlobAsBase64(blob: Blob) {
+  const buffer = await blob.arrayBuffer();
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+  return window.btoa(binary);
 }
 
 function createTranscriptEntry(timestamp: number, text: string): TranscriptEntry {
@@ -213,6 +250,8 @@ function App() {
   const audioMonitorIntervalRef = useRef<number | null>(null);
   const realtimePeerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const realtimeDataChannelRef = useRef<RTCDataChannel | null>(null);
+  const bufferedRecorderRef = useRef<MediaRecorder | null>(null);
+  const bufferedTranscriptionQueueRef = useRef(Promise.resolve());
   const realtimeTranscriptItemRef = useRef<{ itemId: string | null; text: string }>({
     itemId: null,
     text: '',
@@ -331,6 +370,7 @@ function App() {
       if (audioMonitorIntervalRef.current !== null) {
         window.clearInterval(audioMonitorIntervalRef.current);
       }
+      bufferedRecorderRef.current?.stop();
       realtimeDataChannelRef.current?.close();
       realtimePeerConnectionRef.current?.close();
       audioContextRef.current?.close().catch(() => undefined);
@@ -509,6 +549,57 @@ function App() {
     return true;
   }
 
+  function startBufferedTranscription(stream: MediaStream) {
+    const mimeType = getSupportedRecorderMimeType();
+
+    if (typeof window === 'undefined' || typeof window.MediaRecorder === 'undefined' || !mimeType) {
+      return false;
+    }
+
+    const recorder = new window.MediaRecorder(stream, { mimeType });
+    bufferedRecorderRef.current = recorder;
+
+    recorder.ondataavailable = (event) => {
+      if (!event.data || event.data.size === 0) {
+        return;
+      }
+
+      bufferedTranscriptionQueueRef.current = bufferedTranscriptionQueueRef.current
+        .then(async () => {
+          const audioBase64 = await encodeBlobAsBase64(event.data);
+          const result = await transcribeBoothAudio(audioBase64, recorder.mimeType || mimeType);
+
+          if (result.source !== 'openai' || !result.transcript.trim()) {
+            return;
+          }
+
+          const transcriptText = result.transcript.trim();
+          const now = Date.now();
+          const baseTimestamp = getCurrentTranscriptTimestamp();
+
+          setBoothTranscript((current) =>
+            [...current, createTranscriptEntry(baseTimestamp, transcriptText)].slice(
+              -LOCAL_TRANSCRIPT_LIMIT,
+            ),
+          );
+          setBoothInterimTranscript('');
+          setLastSpeechAtMs(now);
+          setLastVoiceActivityAtMs(now);
+          setBoothClockMs(now);
+        })
+        .catch(() => {
+          // Keep booth flow alive if a buffered chunk fails.
+        });
+    };
+
+    recorder.onstop = () => {
+      bufferedRecorderRef.current = null;
+    };
+
+    recorder.start(1_500);
+    return true;
+  }
+
   async function startAudioMonitoring() {
     if (
       microphoneStreamRef.current &&
@@ -599,6 +690,8 @@ function App() {
   }
 
   function stopAudioMonitoring() {
+    bufferedRecorderRef.current?.stop();
+    bufferedRecorderRef.current = null;
     realtimeDataChannelRef.current?.close();
     realtimeDataChannelRef.current = null;
     realtimePeerConnectionRef.current?.close();
@@ -663,9 +756,16 @@ function App() {
 
         if (stream) {
           void startRealtimeTranscription(stream).catch(() => {
+            const startedBufferedFallback = startBufferedTranscription(stream);
+
+            if (startedBufferedFallback) {
+              setBoothError(null);
+              return;
+            }
+
             stopAudioMonitoring();
             setIsMicListening(false);
-            setBoothError('OpenAI realtime transcription could not start for the booth mic.');
+            setBoothError('OpenAI transcription could not start for the booth mic.');
           });
         }
       })

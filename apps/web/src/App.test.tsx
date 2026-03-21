@@ -352,6 +352,29 @@ describe('App dashboard', () => {
       } as unknown as typeof AudioContext,
     );
     vi.stubGlobal(
+      'MediaRecorder',
+      class FakeMediaRecorder {
+        static isTypeSupported() {
+          return true;
+        }
+
+        mimeType: string;
+        ondataavailable: ((event: { data: Blob }) => void) | null = null;
+        onerror: (() => void) | null = null;
+        onstop: (() => void) | null = null;
+
+        constructor(_stream: MediaStream, options?: { mimeType?: string }) {
+          this.mimeType = options?.mimeType ?? 'audio/webm';
+        }
+
+        start() {}
+
+        stop() {
+          this.onstop?.();
+        }
+      } as unknown as typeof MediaRecorder,
+    );
+    vi.stubGlobal(
       'RTCPeerConnection',
       class FakeRTCPeerConnection {
         createDataChannel() {
@@ -403,6 +426,13 @@ describe('App dashboard', () => {
           ok: true,
           text: async () => 'fake-answer-sdp',
         } as Response);
+      }
+
+      if (url.includes('/booth/transcribe') && init?.method === 'POST') {
+        return jsonResponse({
+          transcript: 'um vinicius is driving forward',
+          source: 'openai',
+        });
       }
 
       if (url.includes('/controls') && (!init?.method || init.method === 'GET')) {
