@@ -5,6 +5,7 @@ export type BoothActiveSpeaker = 'lead' | 'none';
 export type BoothSignal = {
   activeSpeaker: BoothActiveSpeaker;
   hesitationScore: number;
+  confidenceScore: number;
   hesitationReasons: string[];
   pauseDurationMs: number;
   fillerWords: string[];
@@ -18,12 +19,13 @@ export type BoothSignal = {
 
 export const ACTIVE_SPEECH_WINDOW_MS = 1_400;
 export const LIVE_HESITATION_GATE = 0.36;
-export const LONG_PAUSE_START_MS = 1_600;
-export const PAUSE_RANGE_MS = 2_400;
-export const PAUSE_DECAY_START_MS = 6_000;
-export const PAUSE_DECAY_RANGE_MS = 6_000;
+export const LONG_PAUSE_START_MS = 1_200;
+export const PAUSE_RANGE_MS = 1_800;
+export const PAUSE_DECAY_START_MS = 7_500;
+export const PAUSE_DECAY_RANGE_MS = 7_500;
 export const AUDIO_ACTIVITY_WINDOW_MS = 850;
 export const LOCAL_TRANSCRIPT_LIMIT = 8;
+export const RECOVERY_CONFIDENCE_FLOOR = 0.18;
 
 const FILLER_PATTERNS = [
   { token: 'uh', pattern: /\buh\b/gi },
@@ -134,7 +136,8 @@ export function buildBoothSignal({
 
   if (pauseDurationMs >= LONG_PAUSE_START_MS) {
     const pauseSeconds = Math.round((pauseDurationMs / 1_000) * 10) / 10;
-    const pauseBuild = clamp((pauseDurationMs - LONG_PAUSE_START_MS) / PAUSE_RANGE_MS) * 0.55;
+    const pauseBuild =
+      0.38 + clamp((pauseDurationMs - LONG_PAUSE_START_MS) / PAUSE_RANGE_MS) * 0.38;
     const pauseDecay =
       pauseDurationMs <= PAUSE_DECAY_START_MS
         ? 1
@@ -159,9 +162,20 @@ export function buildBoothSignal({
     hesitationReasons.push(`Repeated opening: "${repeatedPhrases[0]}".`);
   }
 
+  const confidenceScore = isSpeaking
+    ? clamp(0.72 + Math.min(0.18, audioLevel * 1.8) - hesitationScore * 0.3)
+    : clamp(
+        0.78 -
+          hesitationScore * 0.95 -
+          Math.min(0.28, Math.max(0, pauseDurationMs - LONG_PAUSE_START_MS) / 5_000),
+        RECOVERY_CONFIDENCE_FLOOR,
+        0.88,
+      );
+
   return {
     activeSpeaker: isSpeaking ? 'lead' : 'none',
     hesitationScore: clamp(hesitationScore),
+    confidenceScore,
     hesitationReasons,
     pauseDurationMs,
     fillerWords,

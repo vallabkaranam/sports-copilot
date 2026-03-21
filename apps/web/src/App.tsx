@@ -662,6 +662,7 @@ function App() {
   const hesitationPercent = formatPercent(
     boothHasLiveInput ? boothSignal.hesitationScore : worldState.commentator.hesitationScore,
   );
+  const boothConfidencePercent = formatPercent(boothSignal.confidenceScore);
   const boothHesitationPercent = formatPercent(boothSignal.hesitationScore);
   const systemHesitationPercent = formatPercent(worldState.commentator.hesitationScore);
   const visibleReasons =
@@ -888,6 +889,11 @@ function App() {
                 <strong>{Math.round(boothSignal.audioLevel * 100)}%</strong>
               </div>
 
+              <div className="meter-label-row">
+                <span>Delivery confidence</span>
+                <strong>{boothConfidencePercent}</strong>
+              </div>
+
               <div className="reason-list">
                 {visibleReasons.map((reason) => (
                   <p key={reason}>{reason}</p>
@@ -896,8 +902,8 @@ function App() {
 
               <p className="field-copy">
                 The clip is muted by default so the booth mic tracks your voice instead of the
-                program feed. Pause detection now follows live mic activity even when transcript
-                text is delayed.
+                program feed. Pause detection follows live mic activity, and confidence comes back
+                up as soon as you settle back into the call.
               </p>
               {boothError ? <p className="inline-warning">{boothError}</p> : null}
 

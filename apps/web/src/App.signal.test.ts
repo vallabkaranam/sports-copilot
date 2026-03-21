@@ -17,6 +17,7 @@ describe('booth signal audio activity', () => {
     expect(signal.activeSpeaker).toBe('lead');
     expect(signal.pauseDurationMs).toBe(0);
     expect(signal.hasVoiceActivity).toBe(true);
+    expect(signal.confidenceScore).toBeGreaterThan(0.7);
   });
 
   it('raises hesitation after voice activity stops even without transcript recognition', () => {
@@ -32,8 +33,35 @@ describe('booth signal audio activity', () => {
 
     expect(signal.isSpeaking).toBe(false);
     expect(signal.pauseDurationMs).toBe(2_400);
-    expect(signal.hesitationScore).toBeGreaterThan(0);
+    expect(signal.hesitationScore).toBeGreaterThanOrEqual(0.55);
     expect(signal.hesitationReasons[0]).toContain('paused');
+    expect(signal.shouldSurfaceAssist).toBe(true);
+    expect(signal.confidenceScore).toBeLessThan(0.45);
+  });
+
+  it('weans hesitation off and restores confidence once speech resumes', () => {
+    const pausedSignal = buildBoothSignal({
+      boothTranscript: [],
+      interimTranscript: '',
+      isMicListening: true,
+      lastSpeechAtMs: -1,
+      lastVoiceActivityAtMs: 10_000,
+      audioLevel: 0.01,
+      nowMs: 12_600,
+    });
+    const resumedSignal = buildBoothSignal({
+      boothTranscript: [],
+      interimTranscript: '',
+      isMicListening: true,
+      lastSpeechAtMs: -1,
+      lastVoiceActivityAtMs: 12_700,
+      audioLevel: 0.14,
+      nowMs: 12_900,
+    });
+
+    expect(pausedSignal.hesitationScore).toBeGreaterThan(resumedSignal.hesitationScore);
+    expect(resumedSignal.hesitationScore).toBe(0);
+    expect(resumedSignal.confidenceScore).toBeGreaterThan(pausedSignal.confidenceScore);
   });
 
   it('returns a higher level for a louder waveform', () => {
