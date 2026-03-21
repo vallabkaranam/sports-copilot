@@ -268,7 +268,7 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 - [x] support OpenAI-backed hesitation/recovery interpretation with safe fallback
 - [x] add server-side OpenAI audio transcription endpoint
 - [x] send live booth feature snapshots from the web app
-- [x] prefer API transcription over browser transcript when available
+- [x] remove browser transcription fallback from the primary booth path
 - [x] strengthen transcript-instability features beyond pause dominance
 - [x] add explicit step-in / monitoring / weaning-off state transitions across the booth loop
 

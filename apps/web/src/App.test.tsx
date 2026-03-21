@@ -350,6 +350,29 @@ describe('App dashboard', () => {
         }
       } as unknown as typeof AudioContext,
     );
+    vi.stubGlobal(
+      'MediaRecorder',
+      class FakeMediaRecorder {
+        static isTypeSupported() {
+          return true;
+        }
+
+        mimeType: string;
+        ondataavailable: ((event: { data: Blob }) => void) | null = null;
+        onerror: (() => void) | null = null;
+        onstop: (() => void) | null = null;
+
+        constructor(_stream: MediaStream, options?: { mimeType?: string }) {
+          this.mimeType = options?.mimeType ?? 'audio/webm';
+        }
+
+        start() {}
+
+        stop() {
+          this.onstop?.();
+        }
+      } as unknown as typeof MediaRecorder,
+    );
     fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
 
@@ -370,6 +393,13 @@ describe('App dashboard', () => {
           summary: 'Tracking the booth without stepping in.',
           reasons: ['No strong hesitation cue is active in the current booth window.'],
           source: 'heuristic',
+        });
+      }
+
+      if (url.includes('/booth/transcribe') && init?.method === 'POST') {
+        return jsonResponse({
+          transcript: '',
+          source: 'openai',
         });
       }
 

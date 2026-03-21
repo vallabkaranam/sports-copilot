@@ -44,61 +44,16 @@ import {
 type MicrophoneAvailability = 'supported' | 'degraded' | 'unsupported';
 type CoachingTone = 'standby' | 'steady' | 'supporting' | 'step-in';
 
-type SpeechRecognitionAlternativeLike = {
-  transcript: string;
-};
-
-type SpeechRecognitionResultLike = {
-  isFinal: boolean;
-  length: number;
-  [index: number]: SpeechRecognitionAlternativeLike;
-};
-
-type SpeechRecognitionEventLike = {
-  resultIndex: number;
-  results: ArrayLike<SpeechRecognitionResultLike>;
-};
-
-type SpeechRecognitionErrorEventLike = {
-  error: string;
-};
-
-interface SpeechRecognitionLike {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  onend: (() => void) | null;
-  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
-  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  start: () => void;
-  stop: () => void;
-}
-
-type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
-
-type SpeechRecognitionWindow = Window & {
-  SpeechRecognition?: SpeechRecognitionConstructor;
-  webkitSpeechRecognition?: SpeechRecognitionConstructor;
-};
-
 const AUDIO_ACTIVITY_SAMPLE_MS = 120;
 const AUDIO_ACTIVITY_THRESHOLD = 0.045;
-
-function getSpeechRecognitionConstructor() {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-
-  const speechWindow = window as SpeechRecognitionWindow;
-  return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition ?? null;
-}
 
 function supportsAudioMonitoring() {
   return (
     typeof window !== 'undefined' &&
     typeof navigator !== 'undefined' &&
     Boolean(navigator.mediaDevices?.getUserMedia) &&
-    typeof window.AudioContext !== 'undefined'
+    typeof window.AudioContext !== 'undefined' &&
+    getSupportedRecorderMimeType() !== null
   );
 }
 
@@ -262,7 +217,6 @@ function App() {
   const [boothInterpretation, setBoothInterpretation] = useState<BoothInterpretation | null>(null);
   const [microphoneAvailability, setMicrophoneAvailability] =
     useState<MicrophoneAvailability>('supported');
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const shouldKeepMicLiveRef = useRef(false);
   const microphoneStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -380,7 +334,6 @@ function App() {
   useEffect(() => {
     return () => {
       shouldKeepMicLiveRef.current = false;
-      recognitionRef.current?.stop();
       if (audioMonitorIntervalRef.current !== null) {
         window.clearInterval(audioMonitorIntervalRef.current);
       }
@@ -654,104 +607,11 @@ function App() {
     event.currentTarget.value = '';
   }
 
-  function attachRecognitionHandlers(recognition: SpeechRecognitionLike) {
-    recognition.onresult = (event) => {
-      let nextInterimTranscript = '';
-      const finalTranscripts: string[] = [];
-
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const result = event.results[index];
-        const transcriptText = result[0]?.transcript.trim();
-
-        if (!transcriptText) {
-          continue;
-        }
-
-        if (result.isFinal) {
-          finalTranscripts.push(transcriptText);
-          continue;
-        }
-
-        nextInterimTranscript = transcriptText;
-      }
-
-      const currentTime = Date.now();
-      setBoothClockMs(currentTime);
-
-      if (finalTranscripts.length > 0) {
-        const baseTimestamp = getCurrentTranscriptTimestamp();
-        setBoothTranscript((current) => {
-          const nextEntries = finalTranscripts.map((text, index) =>
-            createTranscriptEntry(baseTimestamp + index * 25, text),
-          );
-          return [...current, ...nextEntries].slice(-LOCAL_TRANSCRIPT_LIMIT);
-        });
-        setLastSpeechAtMs(currentTime);
-        setBoothInterimTranscript('');
-        return;
-      }
-
-      if (nextInterimTranscript) {
-        setLastSpeechAtMs(currentTime);
-      }
-
-      setBoothInterimTranscript(nextInterimTranscript);
-    };
-
-    recognition.onerror = (event) => {
-      shouldKeepMicLiveRef.current = false;
-      setIsMicListening(false);
-      setBoothInterimTranscript('');
-      setAudioLevel(0);
-
-      switch (event.error) {
-        case 'not-allowed':
-          setMicrophoneAvailability('degraded');
-          setIsMicPrepared(false);
-          setBoothError('Microphone access was blocked. Allow mic access to test live hesitation.');
-          break;
-        case 'no-speech':
-          setBoothError('No speech was detected. Try speaking a little closer to the mic.');
-          break;
-        case 'network':
-          setMicrophoneAvailability('degraded');
-          setIsMicPrepared(true);
-          setBoothError(
-            'This browser speech service is unavailable right now. Chrome or Edge usually work best.',
-          );
-          break;
-        default:
-          setMicrophoneAvailability('degraded');
-          setIsMicPrepared(false);
-          setBoothError(`Microphone error: ${event.error}.`);
-      }
-    };
-
-    recognition.onend = () => {
-      if (!shouldKeepMicLiveRef.current) {
-        setIsMicListening(false);
-        setBoothInterimTranscript('');
-        return;
-      }
-
-      window.setTimeout(() => {
-        try {
-          recognition.start();
-          setIsMicListening(true);
-        } catch (_error) {
-          setIsMicListening(false);
-        }
-      }, 250);
-    };
-  }
-
   function startMicrophone() {
-    const SpeechRecognition = getSpeechRecognitionConstructor();
-
-    if (!SpeechRecognition && !supportsAudioMonitoring()) {
+    if (!supportsAudioMonitoring()) {
       setMicrophoneAvailability('unsupported');
       setBoothError(
-        'This browser does not expose a usable microphone API for the booth. Chrome or Edge work best.',
+        'This browser cannot run the live And-One booth stack. Use a browser with getUserMedia, AudioContext, and MediaRecorder support.',
       );
       return;
     }
@@ -772,7 +632,6 @@ function App() {
       })
       .catch(() => {
         shouldKeepMicLiveRef.current = false;
-        recognitionRef.current?.stop();
         setMicrophoneAvailability('degraded');
         setIsMicPrepared(false);
         setBoothError(
@@ -780,48 +639,10 @@ function App() {
         );
         setIsMicListening(false);
       });
-
-    if (!SpeechRecognition) {
-      setMicrophoneAvailability('degraded');
-      if (!isApiTranscriptionActiveRef.current) {
-        setBoothError(
-          'Voice activity is live, but browser speech transcription is unavailable in this tab.',
-        );
-      }
-      return;
-    }
-
-    if (isApiTranscriptionActiveRef.current) {
-      return;
-    }
-
-    try {
-      const recognition =
-        recognitionRef.current ??
-        (() => {
-          const nextRecognition = new SpeechRecognition();
-          nextRecognition.continuous = true;
-          nextRecognition.interimResults = true;
-          nextRecognition.lang = 'en-US';
-          attachRecognitionHandlers(nextRecognition);
-          recognitionRef.current = nextRecognition;
-          return nextRecognition;
-        })();
-
-      recognition.start();
-      setMicrophoneAvailability('supported');
-      setIsMicPrepared(true);
-    } catch (_error) {
-      setMicrophoneAvailability('degraded');
-      setBoothError(
-        'Voice activity is live, but speech transcription could not start in this browser session.',
-      );
-    }
   }
 
   function stopMicrophone() {
     shouldKeepMicLiveRef.current = false;
-    recognitionRef.current?.stop();
     stopAudioMonitoring();
     setIsMicListening(false);
     setBoothInterimTranscript('');
@@ -916,8 +737,7 @@ function App() {
   const recentEvents = [...worldState.recentEvents].reverse();
   const surfacedAssists = [...worldState.sessionMemory.surfacedAssists].reverse();
   const isMicSupported =
-    microphoneAvailability !== 'unsupported' &&
-    (Boolean(getSpeechRecognitionConstructor()) || supportsAudioMonitoring());
+    microphoneAvailability !== 'unsupported' && supportsAudioMonitoring();
   const isSystemReady = isHydrated && !error;
   const isBroadcastReady = Boolean(loadedClipUrl) && isMicPrepared && isSystemReady;
   const boothActivity = deriveBoothActivity({
@@ -1546,7 +1366,7 @@ function App() {
                   <p className="transcript-line transcript-line--muted">
                     {isMicSupported
                       ? 'Start the mic and talk through the match to see live booth transcript here.'
-                      : 'This browser does not expose speech recognition, so the booth stays in live-feed-only mode.'}
+                      : 'This browser cannot run the API-backed booth transcript path.'}
                   </p>
                 )}
                 {boothInterimTranscript ? (
