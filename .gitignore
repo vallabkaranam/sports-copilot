@@ -1,5 +1,7 @@
 node_modules/
 dist/
+*.sqlite
+data/app/
 .turbo/
 package-lock.json
 *.log

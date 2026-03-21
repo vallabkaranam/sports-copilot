@@ -1,7 +1,20 @@
 import { startTransition, useEffect, useRef, useState } from 'react';
-import { ReplayControlState, TranscriptEntry } from '@sports-copilot/shared-types';
+import {
+  BoothSessionAnalytics,
+  BoothSessionSummary,
+  ReplayControlState,
+  TranscriptEntry,
+} from '@sports-copilot/shared-types';
 import './App.css';
-import { fetchControlState, fetchWorldState, updateControlState } from './api';
+import {
+  appendBoothSessionSample,
+  fetchBoothSessions,
+  fetchControlState,
+  fetchWorldState,
+  finishBoothSession,
+  startBoothSession,
+  updateControlState,
+} from './api';
 import type { BoothSignal } from './boothSignal';
 import {
   LOCAL_TRANSCRIPT_LIMIT,
@@ -164,6 +177,15 @@ function App() {
   const [isHydrated, setIsHydrated] = useState(false);
   const [isUpdatingControls, setIsUpdatingControls] = useState(false);
   const [hasStartedBroadcast, setHasStartedBroadcast] = useState(false);
+  const [boothAnalytics, setBoothAnalytics] = useState<BoothSessionAnalytics>({
+    totalSessions: 0,
+    completedSessions: 0,
+    averageMaxHesitationScore: 0,
+    averageLongestPauseMs: 0,
+    totalAssistCount: 0,
+  });
+  const [recentBoothSessions, setRecentBoothSessions] = useState<BoothSessionSummary[]>([]);
+  const [activeBoothSessionId, setActiveBoothSessionId] = useState<string | null>(null);
   const [loadedClipName, setLoadedClipName] = useState('');
   const [loadedClipUrl, setLoadedClipUrl] = useState<string | null>(null);
   const [clipPositionMs, setClipPositionMs] = useState(0);
@@ -185,6 +207,7 @@ function App() {
   const microphoneStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioMonitorIntervalRef = useRef<number | null>(null);
+  const lastPersistedSampleAtRef = useRef<number>(-1);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const clipObjectUrlRef = useRef<string | null>(null);
   const lastRestartTokenRef = useRef(controls.restartToken);
@@ -194,9 +217,10 @@ function App() {
 
     const syncDashboard = async () => {
       try {
-        const [nextWorldState, nextControls] = await Promise.all([
+        const [nextWorldState, nextControls, nextBoothSessions] = await Promise.all([
           fetchWorldState(),
           fetchControlState(),
+          fetchBoothSessions(),
         ]);
 
         if (!isActive) {
@@ -206,6 +230,8 @@ function App() {
         startTransition(() => {
           setWorldState(nextWorldState);
           setControls(nextControls);
+          setBoothAnalytics(nextBoothSessions.analytics);
+          setRecentBoothSessions(nextBoothSessions.sessions);
           setError(null);
           setIsHydrated(true);
         });
@@ -348,6 +374,33 @@ function App() {
     setClipDurationMs(0);
     setIsClipMuted(true);
     setHasStartedBroadcast(false);
+    setActiveBoothSessionId(null);
+  }
+
+  async function refreshBoothSessions() {
+    try {
+      const nextBoothSessions = await fetchBoothSessions();
+      setBoothAnalytics(nextBoothSessions.analytics);
+      setRecentBoothSessions(nextBoothSessions.sessions);
+    } catch (_error) {
+      // Keep the live booth usable even if session analytics are unavailable.
+    }
+  }
+
+  async function finalizeBoothSession() {
+    if (!activeBoothSessionId) {
+      return;
+    }
+
+    try {
+      await finishBoothSession(activeBoothSessionId);
+      await refreshBoothSessions();
+    } catch (_error) {
+      setBoothError('The booth session could not be finalized in the local store.');
+    } finally {
+      setActiveBoothSessionId(null);
+      lastPersistedSampleAtRef.current = -1;
+    }
   }
 
   async function startAudioMonitoring() {
@@ -603,6 +656,17 @@ function App() {
       return;
     }
 
+    if (!activeBoothSessionId) {
+      try {
+        const response = await startBoothSession(loadedClipName || 'Untitled clip');
+        setActiveBoothSessionId(response.session.id);
+        await refreshBoothSessions();
+      } catch (_error) {
+        setBoothError('The booth session could not be saved locally.');
+        return;
+      }
+    }
+
     setHasStartedBroadcast(true);
 
     if (controls.playbackStatus !== 'playing') {
@@ -624,6 +688,8 @@ function App() {
     if (controls.playbackStatus !== 'paused') {
       await sendControlPatch({ playbackStatus: 'paused' });
     }
+
+    await finalizeBoothSession();
   }
 
   async function resetBroadcast() {
@@ -721,6 +787,43 @@ function App() {
     boothSignal.repeatedPhrases.length > 0 ? 'repeat-start' : null,
     boothSignal.unfinishedPhrase ? 'unfinished' : null,
   ].filter(Boolean) as string[];
+
+  useEffect(() => {
+    if (!hasStartedBroadcast || !activeBoothSessionId) {
+      return;
+    }
+
+    const sampleTimestamp = Math.floor(Date.now() / 1_000) * 1_000;
+    if (lastPersistedSampleAtRef.current === sampleTimestamp) {
+      return;
+    }
+
+    lastPersistedSampleAtRef.current = sampleTimestamp;
+
+    void appendBoothSessionSample(activeBoothSessionId, {
+      timestamp: sampleTimestamp,
+      hesitationScore: boothSignal.hesitationScore,
+      confidenceScore: boothSignal.confidenceScore,
+      pauseDurationMs: boothSignal.pauseDurationMs,
+      audioLevel: boothSignal.audioLevel,
+      isSpeaking: boothSignal.isSpeaking,
+      triggerBadges: activeTriggerBadges,
+      activeAssistText: shouldSurfaceAssist ? activeAssist.text : null,
+    }).catch(() => {
+      setBoothError('Live booth metrics could not be saved to the local store.');
+    });
+  }, [
+    activeAssist.text,
+    activeBoothSessionId,
+    activeTriggerBadges,
+    boothSignal.audioLevel,
+    boothSignal.confidenceScore,
+    boothSignal.hesitationScore,
+    boothSignal.isSpeaking,
+    boothSignal.pauseDurationMs,
+    hasStartedBroadcast,
+    shouldSurfaceAssist,
+  ]);
 
   return (
     <div className="app-shell">
@@ -961,6 +1064,56 @@ function App() {
 
       {showDetails ? (
         <div className="bottom-grid">
+          <section className="panel">
+            <div className="panel-header">
+              <div>
+                <p className="panel-kicker">Booth Sessions</p>
+                <h2>Saved analytics</h2>
+              </div>
+              <span className="panel-tag">{boothAnalytics.totalSessions} runs</span>
+            </div>
+
+            <div className="commentary-metadata">
+              <div>
+                <p className="control-label">Completed</p>
+                <strong>{boothAnalytics.completedSessions}</strong>
+              </div>
+              <div>
+                <p className="control-label">Avg max hesitation</p>
+                <strong>{formatPercent(boothAnalytics.averageMaxHesitationScore)}</strong>
+              </div>
+              <div>
+                <p className="control-label">Avg longest pause</p>
+                <strong>{formatDurationMs(boothAnalytics.averageLongestPauseMs)}</strong>
+              </div>
+              <div>
+                <p className="control-label">Assists surfaced</p>
+                <strong>{boothAnalytics.totalAssistCount}</strong>
+              </div>
+            </div>
+
+            <div className="timeline-list">
+              {recentBoothSessions.length > 0 ? (
+                recentBoothSessions.slice(0, 5).map((session) => (
+                  <article className="timeline-item" key={session.id}>
+                    <div className="timeline-time">
+                      <span>{session.clipName}</span>
+                      <small>{session.status}</small>
+                    </div>
+                    <p>
+                      Max hesitation {formatPercent(session.maxHesitationScore)}, longest pause{' '}
+                      {formatDurationMs(session.longestPauseMs)}, assists {session.assistCount}.
+                    </p>
+                  </article>
+                ))
+              ) : (
+                <p className="empty-copy">
+                  Saved booth analytics will appear here after you run a broadcast session.
+                </p>
+              )}
+            </div>
+          </section>
+
           <section className="panel">
           <div className="panel-header">
             <div>

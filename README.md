@@ -35,6 +35,7 @@ Open the web URL Vite prints, then use the practice booth to:
 - The replay is deterministic and runs from local JSON fixtures in [data/demo_match](/Users/vallabkaranam/Desktop/sports-copilot/data/demo_match).
 - The current landing screen is a practice-first booth for testing hesitation on arbitrary local clips.
 - The browser booth mode is local-first: clip loading is done from your machine, pause detection uses live mic activity, and transcript text uses in-browser speech recognition when available.
+- Booth sessions and analytics are now persisted locally in SQLite at `data/app/sports-copilot.sqlite`.
 - Chrome or Edge currently give the best microphone support for the live booth flow.
 - Deterministic fixtures still exist in the repo for the original demo path, but the next work phase is replacing the primary path with real free-input integrations.
 

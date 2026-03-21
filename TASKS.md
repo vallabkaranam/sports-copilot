@@ -279,6 +279,7 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 
 ### Real Inputs
 - [x] replace browser transcript-only hesitation detection with audio activity / VAD support
+- [x] persist booth sessions and analytics to a real local SQLite store
 - [ ] ingest a real free match/event API for live game context
 - [ ] ingest real external context from free/public sources
 - [ ] remove deterministic fixture dependency from the primary product path

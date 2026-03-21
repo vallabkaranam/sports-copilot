@@ -277,3 +277,73 @@ export const WorldStateSchema = z.object({
   }),
 });
 export type WorldState = z.infer<typeof WorldStateSchema>;
+
+export const BoothSessionSampleSchema = z.object({
+  timestamp: z.number().int().nonnegative(),
+  hesitationScore: z.number().min(0).max(1),
+  confidenceScore: z.number().min(0).max(1),
+  pauseDurationMs: z.number().int().nonnegative(),
+  audioLevel: z.number().min(0).max(1),
+  isSpeaking: z.boolean(),
+  triggerBadges: z.array(z.string()),
+  activeAssistText: z.string().nullable(),
+});
+export type BoothSessionSample = z.infer<typeof BoothSessionSampleSchema>;
+
+export const BoothSessionStatusSchema = z.enum(['active', 'completed']);
+export type BoothSessionStatus = z.infer<typeof BoothSessionStatusSchema>;
+
+export const BoothSessionSummarySchema = z.object({
+  id: z.string(),
+  clipName: z.string(),
+  startedAt: z.string(),
+  endedAt: z.string().nullable(),
+  status: BoothSessionStatusSchema,
+  sampleCount: z.number().int().nonnegative(),
+  maxHesitationScore: z.number().min(0).max(1),
+  maxConfidenceScore: z.number().min(0).max(1),
+  longestPauseMs: z.number().int().nonnegative(),
+  assistCount: z.number().int().nonnegative(),
+  lastTriggerBadges: z.array(z.string()),
+});
+export type BoothSessionSummary = z.infer<typeof BoothSessionSummarySchema>;
+
+export const BoothSessionAnalyticsSchema = z.object({
+  totalSessions: z.number().int().nonnegative(),
+  completedSessions: z.number().int().nonnegative(),
+  averageMaxHesitationScore: z.number().min(0).max(1),
+  averageLongestPauseMs: z.number().int().nonnegative(),
+  totalAssistCount: z.number().int().nonnegative(),
+});
+export type BoothSessionAnalytics = z.infer<typeof BoothSessionAnalyticsSchema>;
+
+export const BoothSessionRecordSchema = BoothSessionSummarySchema.extend({
+  samples: z.array(BoothSessionSampleSchema),
+});
+export type BoothSessionRecord = z.infer<typeof BoothSessionRecordSchema>;
+
+export const BoothSessionsResponseSchema = z.object({
+  analytics: BoothSessionAnalyticsSchema,
+  sessions: z.array(BoothSessionSummarySchema),
+});
+export type BoothSessionsResponse = z.infer<typeof BoothSessionsResponseSchema>;
+
+export const StartBoothSessionInputSchema = z.object({
+  clipName: z.string().min(1),
+});
+export type StartBoothSessionInput = z.infer<typeof StartBoothSessionInputSchema>;
+
+export const StartBoothSessionResponseSchema = z.object({
+  session: BoothSessionSummarySchema,
+});
+export type StartBoothSessionResponse = z.infer<typeof StartBoothSessionResponseSchema>;
+
+export const AppendBoothSessionSampleInputSchema = z.object({
+  sample: BoothSessionSampleSchema,
+});
+export type AppendBoothSessionSampleInput = z.infer<typeof AppendBoothSessionSampleInputSchema>;
+
+export const FinishBoothSessionInputSchema = z.object({
+  endedAt: z.string().optional(),
+});
+export type FinishBoothSessionInput = z.infer<typeof FinishBoothSessionInputSchema>;

@@ -9,7 +9,8 @@
 ## Product Gaps Before Production
 - No real user microphone capture or live speech-to-text pipeline yet.
 - No real model API calls for generation, ranking, or verification yet.
-- No authentication, persistence, or multi-user session model yet.
+- No authentication or multi-user session model yet.
+- Persistence is local SQLite only; there is no hosted database or user-scoped data separation yet.
 - No live external sports feed ingestion or reconciliation against real providers yet.
 - No deployment automation, monitoring, or runtime alerting yet.
 

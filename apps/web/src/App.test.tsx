@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import {
+  BoothSessionsResponse,
   ReplayControlState,
   WorldState,
   createEmptyAssistCard,
@@ -159,12 +160,26 @@ function jsonResponse<T>(data: T) {
   } as Response);
 }
 
+function createBoothSessionsResponse(): BoothSessionsResponse {
+  return {
+    analytics: {
+      totalSessions: 0,
+      completedSessions: 0,
+      averageMaxHesitationScore: 0,
+      averageLongestPauseMs: 0,
+      totalAssistCount: 0,
+    },
+    sessions: [],
+  };
+}
+
 describe('App dashboard', () => {
   let container: HTMLDivElement;
   let root: Root;
   let fetchMock = vi.fn();
   let currentWorldState: WorldState;
   let currentControls: ReplayControlState;
+  let currentBoothSessions: BoothSessionsResponse;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -175,6 +190,9 @@ describe('App dashboard', () => {
     ).IS_REACT_ACT_ENVIRONMENT = true;
     currentWorldState = createWorldState();
     currentControls = createControls();
+    currentBoothSessions = createBoothSessionsResponse();
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
     fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
 
@@ -182,8 +200,64 @@ describe('App dashboard', () => {
         return jsonResponse(currentWorldState);
       }
 
+      if (url.includes('/booth-sessions') && (!init?.method || init.method === 'GET')) {
+        return jsonResponse(currentBoothSessions);
+      }
+
       if (url.includes('/controls') && (!init?.method || init.method === 'GET')) {
         return jsonResponse(currentControls);
+      }
+
+      if (url.includes('/booth-sessions/start') && init?.method === 'POST') {
+        currentBoothSessions = {
+          ...currentBoothSessions,
+          analytics: {
+            ...currentBoothSessions.analytics,
+            totalSessions: currentBoothSessions.analytics.totalSessions + 1,
+          },
+          sessions: [
+            {
+              id: 'session-1',
+              clipName: 'test.mp4',
+              startedAt: '2026-03-20T00:00:00.000Z',
+              endedAt: null,
+              status: 'active',
+              sampleCount: 0,
+              maxHesitationScore: 0,
+              maxConfidenceScore: 0,
+              longestPauseMs: 0,
+              assistCount: 0,
+              lastTriggerBadges: [],
+            },
+            ...currentBoothSessions.sessions,
+          ],
+        };
+
+        return jsonResponse({ session: currentBoothSessions.sessions[0] });
+      }
+
+      if (url.includes('/booth-sessions/session-1/sample') && init?.method === 'POST') {
+        return jsonResponse({ session: currentBoothSessions.sessions[0] });
+      }
+
+      if (url.includes('/booth-sessions/session-1/finish') && init?.method === 'POST') {
+        currentBoothSessions = {
+          ...currentBoothSessions,
+          analytics: {
+            ...currentBoothSessions.analytics,
+            completedSessions: currentBoothSessions.analytics.completedSessions + 1,
+          },
+          sessions: currentBoothSessions.sessions.map((session) =>
+            session.id === 'session-1'
+              ? {
+                  ...session,
+                  status: 'completed',
+                  endedAt: '2026-03-20T00:01:00.000Z',
+                }
+              : session,
+          ),
+        };
+        return jsonResponse({ session: currentBoothSessions.sessions[0] });
       }
 
       if (url.includes('/controls') && init?.method === 'POST') {
