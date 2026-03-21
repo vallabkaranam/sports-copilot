@@ -2,7 +2,8 @@ import fs from 'fs/promises';
 import path from 'path';
 import http from 'http';
 import { ReplayEngine } from './engine';
-import { GameEvent, WorldState } from '@sports-copilot/shared-types';
+import { analyzeCommentary } from './commentator';
+import { GameEvent, TranscriptEntry, WorldState } from '@sports-copilot/shared-types';
 
 async function syncState(state: Partial<WorldState>) {
   return new Promise((resolve, reject) => {
@@ -37,8 +38,11 @@ async function getControls(): Promise<{ status: string }> {
 
 async function run() {
   const eventsPath = path.resolve(__dirname, '../../../data/demo_match/events.json');
+  const transcriptPath = path.resolve(__dirname, '../../../data/demo_match/transcript_seed.json');
   const eventsData = await fs.readFile(eventsPath, 'utf8');
+  const transcriptData = await fs.readFile(transcriptPath, 'utf8');
   const events: GameEvent[] = JSON.parse(eventsData);
+  const transcript: TranscriptEntry[] = JSON.parse(transcriptData);
 
   const engine = new ReplayEngine({ events, tickRateMs: 500 });
   engine.play();
@@ -56,10 +60,16 @@ async function run() {
       // 2. Tick engine
       const newEvents = engine.tick(500);
       const status = engine.getStatus();
+      const commentator = analyzeCommentary({
+        clockMs: engine.getMatchClockMs(),
+        events,
+        transcript,
+      });
 
       // 3. Sync to API
       await syncState({
         ...status,
+        commentator,
         recentEvents: newEvents || [],
       });
       

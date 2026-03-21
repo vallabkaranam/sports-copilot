@@ -7,6 +7,25 @@ export const StyleModeSchema = z.enum(['hype', 'analyst']);
 export type StyleMode = z.infer<typeof StyleModeSchema>;
 
 /**
+ * Transcript speaker labels
+ */
+export const SpeakerSchema = z.enum(['lead', 'cohost']);
+export type Speaker = z.infer<typeof SpeakerSchema>;
+
+export const ActiveSpeakerSchema = z.enum(['lead', 'cohost', 'none']);
+export type ActiveSpeaker = z.infer<typeof ActiveSpeakerSchema>;
+
+/**
+ * Structured transcript entries shared across replay and commentary analysis
+ */
+export const TranscriptEntrySchema = z.object({
+  timestamp: z.number(),
+  text: z.string(),
+  speaker: SpeakerSchema,
+});
+export type TranscriptEntry = z.infer<typeof TranscriptEntrySchema>;
+
+/**
  * Source attribution chips
  */
 export const SourceChipSchema = z.object({
@@ -55,14 +74,37 @@ export type GameEvent = z.infer<typeof GameEventSchema>;
  * Commentator state trackers
  */
 export const CommentatorStateSchema = z.object({
+  activeSpeaker: ActiveSpeakerSchema,
   isSpeaking: z.boolean(),
-  recentTranscript: z.string(),
-  hesitationScore: z.number().min(0).max(1),
-  pauseDuration: z.number(),
+  coHostIsSpeaking: z.boolean(),
+  pauseDurationMs: z.number(),
   fillerWords: z.array(z.string()),
-  lastSpokeAt: z.number(),
+  repeatedPhrases: z.array(z.string()),
+  unfinishedPhrase: z.boolean(),
+  hesitationScore: z.number().min(0).max(1),
+  hesitationReasons: z.array(z.string()),
+  shouldSuppressAssist: z.boolean(),
+  lastLeadSpokeAt: z.number(),
+  recentTranscript: z.array(TranscriptEntrySchema),
 });
 export type CommentatorState = z.infer<typeof CommentatorStateSchema>;
+
+export function createEmptyCommentatorState(): CommentatorState {
+  return {
+    activeSpeaker: 'none',
+    isSpeaking: false,
+    coHostIsSpeaking: false,
+    pauseDurationMs: 0,
+    fillerWords: [],
+    repeatedPhrases: [],
+    unfinishedPhrase: false,
+    hesitationScore: 0,
+    hesitationReasons: [],
+    shouldSuppressAssist: false,
+    lastLeadSpokeAt: -1,
+    recentTranscript: [],
+  };
+}
 
 /**
  * Narrative state

@@ -1,5 +1,5 @@
 import fastify from 'fastify';
-import { WorldState, WorldStateSchema } from '@sports-copilot/shared-types';
+import { WorldState, createEmptyCommentatorState } from '@sports-copilot/shared-types';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -12,6 +12,12 @@ let worldState: Partial<WorldState> = {
   score: { home: 0, away: 0 },
   possession: 'BAR',
   recentEvents: [],
+  commentator: createEmptyCommentatorState(),
+  narrative: {
+    activeNarratives: [],
+    currentSentiment: 'neutral',
+    momentum: 'neutral',
+  },
   liveSignals: { social: [], vision: [] },
 };
 

@@ -89,29 +89,29 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 ## P2 — Transcript + Hesitation
 
 ### Transcript Agent
-- [ ] ingest transcript input stream
-- [ ] track timestamps
-- [ ] detect pauses
-- [ ] detect fillers
-- [ ] detect repeated phrase patterns
+- [x] ingest transcript input stream
+- [x] track timestamps
+- [x] detect pauses
+- [x] detect fillers
+- [x] detect repeated phrase patterns
 
 ### Co-Host Agent
-- [ ] model co-host speaking state
-- [ ] suppress assist if co-host is actively speaking
+- [x] model co-host speaking state
+- [x] suppress assist if co-host is actively speaking
 - [ ] allow toss-up prompt generation
 
 ### Hesitation Agent
-- [ ] compute hesitation score
-- [ ] trigger on silence after high-salience event
-- [ ] trigger on repeated fillers
-- [ ] trigger on unfinished phrase
-- [ ] expose hesitation reason
+- [x] compute hesitation score
+- [x] trigger on silence after high-salience event
+- [x] trigger on repeated fillers
+- [x] trigger on unfinished phrase
+- [x] expose hesitation reason
 
 ### Tests
-- [ ] test silence threshold trigger
-- [ ] test filler-based trigger
-- [ ] test co-host suppression
-- [ ] test hesitation score bounds
+- [x] test silence threshold trigger
+- [x] test filler-based trigger
+- [x] test co-host suppression
+- [x] test hesitation score bounds
 
 ---
 

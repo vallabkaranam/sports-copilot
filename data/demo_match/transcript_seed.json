@@ -1,26 +1,37 @@
 [
   {
     "timestamp": 0,
+    "speaker": "lead",
     "text": "Welcome to the Camp Nou for another edition of El Clásico."
   },
   {
     "timestamp": 5000,
+    "speaker": "lead",
     "text": "Barcelona in their traditional colors, Real Madrid in all white."
   },
   {
     "timestamp": 60000,
+    "speaker": "lead",
     "text": "Pedri looking for options, finds a gap—"
   },
   {
     "timestamp": 65000,
+    "speaker": "lead",
     "text": "Lewandowski! Right place, right time!"
   },
   {
     "timestamp": 74000,
+    "speaker": "lead",
     "text": "He hits it hard—"
   },
   {
+    "timestamp": 76000,
+    "speaker": "cohost",
+    "text": "Courtois had to be perfect there."
+  },
+  {
     "timestamp": 85000,
-    "text": "I... wow. I thought that was in."
+    "speaker": "lead",
+    "text": "I... wow. I mean, I thought that was in."
   }
 ]

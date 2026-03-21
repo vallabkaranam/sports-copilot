@@ -59,6 +59,10 @@ export class ReplayEngine {
     };
   }
 
+  public getMatchClockMs() {
+    return this.matchClockMs;
+  }
+
   public play() { this.isPlaying = true; }
   public pause() { this.isPlaying = false; }
   public restart() {
