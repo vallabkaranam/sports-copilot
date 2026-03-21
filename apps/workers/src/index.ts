@@ -29,6 +29,30 @@ async function loadFixture<T>(fixturePath: string) {
   return JSON.parse(data) as T;
 }
 
+async function loadRequiredFixture<T>(fixturePath: string, label: string) {
+  try {
+    return await loadFixture<T>(fixturePath);
+  } catch (error) {
+    throw new Error(
+      `Failed to load required fixture "${label}" from ${fixturePath}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+}
+
+async function loadOptionalFixture<T>(fixturePath: string, label: string, fallback: T) {
+  try {
+    return await loadFixture<T>(fixturePath);
+  } catch (error) {
+    console.warn(
+      `Optional fixture "${label}" is unavailable. Falling back to demo-safe defaults.`,
+      error,
+    );
+    return fallback;
+  }
+}
+
 async function syncState(state: Partial<WorldState>) {
   return new Promise<boolean>((resolve, reject) => {
     const data = JSON.stringify(state);
@@ -86,12 +110,12 @@ function applyForcedHesitation(commentator: CommentatorState, forceHesitation: b
 async function run() {
   const fixturesDir = path.resolve(__dirname, '../../../data/demo_match');
   const [events, roster, narratives, socialPosts, transcript, visionFrames] = await Promise.all([
-    loadFixture<GameEvent[]>(path.join(fixturesDir, 'events.json')),
-    loadFixture<RosterFixture>(path.join(fixturesDir, 'roster.json')),
-    loadFixture<NarrativeFixture[]>(path.join(fixturesDir, 'narratives.json')),
-    loadFixture<SocialPost[]>(path.join(fixturesDir, 'fake_social.json')),
-    loadFixture<TranscriptEntry[]>(path.join(fixturesDir, 'transcript_seed.json')),
-    loadFixture<VisionFrame[]>(path.join(fixturesDir, 'vision_frames.json')),
+    loadRequiredFixture<GameEvent[]>(path.join(fixturesDir, 'events.json'), 'events'),
+    loadRequiredFixture<RosterFixture>(path.join(fixturesDir, 'roster.json'), 'roster'),
+    loadRequiredFixture<NarrativeFixture[]>(path.join(fixturesDir, 'narratives.json'), 'narratives'),
+    loadOptionalFixture<SocialPost[]>(path.join(fixturesDir, 'fake_social.json'), 'social', []),
+    loadRequiredFixture<TranscriptEntry[]>(path.join(fixturesDir, 'transcript_seed.json'), 'transcript'),
+    loadOptionalFixture<VisionFrame[]>(path.join(fixturesDir, 'vision_frames.json'), 'vision', []),
   ]);
   const visionCues: VisionCue[] = ingestVisionFrames(visionFrames);
 

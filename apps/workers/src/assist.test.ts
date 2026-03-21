@@ -188,4 +188,23 @@ describe('assist pipeline', () => {
       }),
     ).toBe('hype');
   });
+
+  it('respects a preferred analyst mode when grounded analyst candidates are available', () => {
+    const event = makeEvent();
+    const assist = buildAssistCard({
+      clockMs: 77_500,
+      events: [event],
+      commentator: makeCommentatorState({
+        coHostTossUp: null,
+      }),
+      narrative: {
+        ...createEmptyNarrativeState(),
+        topNarrative: 'The 256th Official Clásico',
+      },
+      retrieval: makeRetrievalState(),
+      preferredStyleMode: 'analyst',
+    });
+
+    expect(assist.styleMode).toBe('analyst');
+  });
 });

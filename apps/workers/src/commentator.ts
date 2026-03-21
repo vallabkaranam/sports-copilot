@@ -169,6 +169,10 @@ function buildCoHostTossUp(params: {
     return null;
   }
 
+  if (!['SAVE', 'CHANCE'].includes(latestHighSalienceEvent.type)) {
+    return null;
+  }
+
   if (clockMs - latestHighSalienceEvent.timestamp > COHOST_TOSS_UP_LOOKBACK_MS) {
     return null;
   }

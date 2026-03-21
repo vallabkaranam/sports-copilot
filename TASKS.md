@@ -235,28 +235,28 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 ## P7 — Demo Hardening
 
 ### Demo Script
-- [ ] write judge demo flow
-- [ ] define exact event timestamps
-- [ ] define exact hesitation moments
-- [ ] define exact expected assists
+- [x] write judge demo flow
+- [x] define exact event timestamps
+- [x] define exact hesitation moments
+- [x] define exact expected assists
 
 ### Reliability
-- [ ] one-command local startup
-- [ ] stable fixture loading
-- [ ] graceful fallback if optional modules fail
-- [ ] no hard dependency on live internet
+- [x] one-command local startup
+- [x] stable fixture loading
+- [x] graceful fallback if optional modules fail
+- [x] no hard dependency on live internet
 
 ### Handoff Docs
-- [ ] write DEMO_SCRIPT.md
-- [ ] write JUDGE_PITCH.md
-- [ ] write KNOWN_LIMITATIONS.md
-- [ ] write local setup instructions in README.md
+- [x] write DEMO_SCRIPT.md
+- [x] write JUDGE_PITCH.md
+- [x] write KNOWN_LIMITATIONS.md
+- [x] write local setup instructions in README.md
 
 ### Final QA
-- [ ] full test suite green
-- [ ] lint clean
-- [ ] build passes
-- [ ] demo run-through passes
+- [x] full test suite green
+- [x] lint clean
+- [x] build passes
+- [x] demo run-through passes
 
 ---
 

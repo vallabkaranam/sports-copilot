@@ -228,7 +228,9 @@ function buildHypeLine(event: GameEvent) {
 function buildContextLine(event: GameEvent, topNarrative: string | null) {
   const player = getEventPlayer(event);
   const focus = player ?? getEventTeamName(event.data?.team);
-  const narrativeText = topNarrative ? `${topNarrative} is still the thread here` : 'the tension is rising';
+  const narrativeText = topNarrative
+    ? `the bigger story is ${topNarrative.replace(/[.!?]+$/g, '')}`
+    : 'the tension is rising';
 
   return sanitizeSentence(`${focus} is at the heart of it, and ${narrativeText}.`);
 }
@@ -403,7 +405,16 @@ export function buildAssistCard(input: AssistPipelineInput): AssistCard {
     return createEmptyAssistCard();
   }
 
-  return rankAssistCandidates(candidates, preferredStyleMode)[0] ?? createEmptyAssistCard();
+  const rankedCandidates = rankAssistCandidates(candidates, preferredStyleMode);
+
+  return (
+    rankedCandidates.find(
+      (candidate) =>
+        candidate.type === 'co-host-tossup' || candidate.styleMode === preferredStyleMode,
+    ) ??
+    rankedCandidates[0] ??
+    createEmptyAssistCard()
+  );
 }
 
 export { MAX_ASSIST_CHARS };

@@ -10,6 +10,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "demo": "turbo dev --filter=@sports-copilot/api --filter=@sports-copilot/workers --filter=@sports-copilot/web",
     "dev": "turbo dev",
     "build": "turbo build",
     "test": "turbo test",
