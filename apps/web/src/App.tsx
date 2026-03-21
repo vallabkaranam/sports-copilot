@@ -808,13 +808,14 @@ function App() {
     socialPosts: worldState.liveSignals.social,
     recentEvents: worldState.recentEvents,
   });
+  const liveBoothShouldSurfaceAssist = boothInterpretation?.shouldSurfaceAssist ?? boothSignal.shouldSurfaceAssist;
   const workerAssistShouldSurface =
     assist.type !== 'none' &&
     (controls.forceHesitation ||
       (!boothHasLiveInput && worldState.commentator.hesitationScore >= LIVE_HESITATION_GATE));
   const boothAssistShouldSurface =
     boothHasLiveInput &&
-    boothInterpretation?.shouldSurfaceAssist === true &&
+    liveBoothShouldSurfaceAssist &&
     boothAssist.type !== 'none';
   const nextTriggeredAssist = boothAssistShouldSurface
     ? boothAssist
@@ -824,20 +825,22 @@ function App() {
   const activeAssist = latchedAssist;
   const shouldSurfaceAssist = activeAssist.type !== 'none';
   const assistConfidencePercent = formatPercent(shouldSurfaceAssist ? activeAssist.confidence : 0);
-  const boothHesitationPercent = boothInterpretation
-    ? formatPercent(boothInterpretation.hesitationScore)
-    : '--';
+  const boothHesitationPercent = formatPercent(
+    boothInterpretation?.hesitationScore ?? boothSignal.hesitationScore,
+  );
   const visibleReasons =
     boothInterpretation?.reasons && boothInterpretation.reasons.length > 0
       ? boothInterpretation.reasons
-      : ['Waiting for the live booth model to classify the current moment.'];
+      : boothSignal.hesitationReasons.length > 0
+        ? boothSignal.hesitationReasons
+        : ['Waiting for the live booth model to classify the current moment.'];
   const coachingTone = getCoachingTone({
     hasStartedBroadcast,
     boothHasLiveInput,
     boothSignal: {
       ...boothSignal,
       hesitationScore: boothInterpretation?.hesitationScore ?? 0,
-      confidenceScore: boothInterpretation?.recoveryScore ?? 0,
+      confidenceScore: boothInterpretation?.recoveryScore ?? boothSignal.confidenceScore,
     },
     shouldSurfaceAssist,
   });
@@ -1054,7 +1057,7 @@ function App() {
     const features: BoothFeatureSnapshot = {
       timestamp: boothClockMs,
       hesitationScore: 0,
-      confidenceScore: 0,
+      confidenceScore: boothSignal.confidenceScore,
       pauseDurationMs: Math.round(boothSignal.pauseDurationMs),
       speechStreakMs: Math.round(boothSignal.speechStreakMs),
       silenceStreakMs: Math.round(boothSignal.silenceStreakMs),

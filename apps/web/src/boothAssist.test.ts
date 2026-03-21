@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  createEmptyAssistCard,
   createEmptyLiveMatchState,
   createEmptyPreMatchState,
   createEmptyRetrievalState,
@@ -193,7 +192,7 @@ describe('buildBoothAssist', () => {
     expect(assist.sourceChips.length).toBeGreaterThan(0);
   });
 
-  it('returns no assist if hesitation is not strong enough', () => {
+  it('can still build a grounded assist even if visibility is gated elsewhere', () => {
     const assist = buildBoothAssist({
       boothSignal: makeSignal({ shouldSurfaceAssist: false }),
       boothTranscript: makeTranscript('steady call'),
@@ -201,6 +200,6 @@ describe('buildBoothAssist', () => {
       retrieval: createEmptyRetrievalState(),
     });
 
-    expect(assist).toEqual(createEmptyAssistCard());
+    expect(assist.type).not.toBe('none');
   });
 });

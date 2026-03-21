@@ -440,10 +440,6 @@ export function buildBoothAssist(params: {
     recentEvents = [],
   } = params;
 
-  if (!boothSignal.shouldSurfaceAssist) {
-    return createEmptyAssistCard();
-  }
-
   const currentLine = interimTranscript.trim() || boothTranscript[boothTranscript.length - 1]?.text.trim() || '';
   const queryTokens = tokenize(currentLine);
   const candidateFacts = buildFallbackFacts({
