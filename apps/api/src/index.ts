@@ -1,5 +1,10 @@
 import fastify from 'fastify';
 import {
+  AppendBoothSessionSampleInputSchema,
+  BoothSessionsResponse,
+  FinishBoothSessionInputSchema,
+  StartBoothSessionInputSchema,
+  StartBoothSessionResponse,
   createEmptyAssistCard,
   ReplayControlState,
   WorldState,
@@ -13,8 +18,12 @@ import {
 } from '@sports-copilot/shared-types';
 import fs from 'fs/promises';
 import path from 'path';
+import { createBoothSessionStore } from './booth-session-store';
 
 const server = fastify({ logger: true });
+const boothSessionStore = createBoothSessionStore();
+const API_PORT = Number(process.env.PORT ?? 3001);
+const API_HOST = process.env.HOST ?? '0.0.0.0';
 
 server.addHook('onRequest', async (request, reply) => {
   reply.header('Access-Control-Allow-Origin', '*');
@@ -85,6 +94,63 @@ server.post('/controls', async (request) => {
   return controlState;
 });
 
+server.get('/booth-sessions', async (): Promise<BoothSessionsResponse> => {
+  return {
+    analytics: boothSessionStore.getAnalytics(),
+    sessions: boothSessionStore.listSessions(),
+  };
+});
+
+server.post('/booth-sessions/start', async (request, reply): Promise<StartBoothSessionResponse | void> => {
+  const parsed = StartBoothSessionInputSchema.safeParse(request.body);
+  if (!parsed.success) {
+    reply.status(400).send({ error: 'Invalid booth session payload' });
+    return;
+  }
+
+  return {
+    session: boothSessionStore.createSession(parsed.data.clipName),
+  };
+});
+
+server.post('/booth-sessions/:sessionId/sample', async (request, reply) => {
+  const parsed = AppendBoothSessionSampleInputSchema.safeParse(request.body);
+  if (!parsed.success) {
+    reply.status(400).send({ error: 'Invalid booth sample payload' });
+    return;
+  }
+
+  try {
+    return {
+      session: boothSessionStore.appendSample(
+        (request.params as { sessionId: string }).sessionId,
+        parsed.data.sample,
+      ),
+    };
+  } catch (_error) {
+    reply.status(404).send({ error: 'Booth session not found' });
+  }
+});
+
+server.post('/booth-sessions/:sessionId/finish', async (request, reply) => {
+  const parsed = FinishBoothSessionInputSchema.safeParse(request.body ?? {});
+  if (!parsed.success) {
+    reply.status(400).send({ error: 'Invalid booth session finish payload' });
+    return;
+  }
+
+  try {
+    return {
+      session: boothSessionStore.finishSession(
+        (request.params as { sessionId: string }).sessionId,
+        parsed.data.endedAt,
+      ),
+    };
+  } catch (_error) {
+    reply.status(404).send({ error: 'Booth session not found' });
+  }
+});
+
 const start = async () => {
   try {
     const rosterPath = path.resolve(__dirname, '../../../data/demo_match/roster.json');
@@ -93,8 +159,8 @@ const start = async () => {
     
     console.log('Loaded Roster:', roster.home.name, 'vs', roster.away.name);
 
-    await server.listen({ port: 3001, host: '0.0.0.0' });
-    console.log('API running on http://localhost:3001');
+    await server.listen({ port: API_PORT, host: API_HOST });
+    console.log(`API running on http://${API_HOST}:${API_PORT}`);
   } catch (err) {
     server.log.error(err);
     process.exit(1);

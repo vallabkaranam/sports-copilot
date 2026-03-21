@@ -1,0 +1,6 @@
+{
+  "framework": "vite",
+  "installCommand": "npm install",
+  "buildCommand": "npm --workspace @sports-copilot/shared-types run build && npm --workspace @sports-copilot/web run build",
+  "outputDirectory": "apps/web/dist"
+}

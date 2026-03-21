@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: sports-copilot-api
+    runtime: node
+    plan: free
+    rootDir: .
+    buildCommand: npm install && npm --workspace @sports-copilot/shared-types run build && npm --workspace @sports-copilot/api run build
+    startCommand: npm --workspace @sports-copilot/api run start
+    healthCheckPath: /health
+
+  - type: web
+    name: sports-copilot-worker
+    runtime: node
+    plan: free
+    rootDir: .
+    buildCommand: npm install && npm --workspace @sports-copilot/shared-types run build && npm --workspace @sports-copilot/workers run build
+    startCommand: npm --workspace @sports-copilot/workers run start
+    healthCheckPath: /health

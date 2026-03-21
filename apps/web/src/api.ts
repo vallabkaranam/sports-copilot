@@ -1,4 +1,11 @@
-import { ReplayControlState, WorldState } from '@sports-copilot/shared-types';
+import {
+  BoothSessionSample,
+  BoothSessionsResponse,
+  BoothSessionSummary,
+  ReplayControlState,
+  StartBoothSessionResponse,
+  WorldState,
+} from '@sports-copilot/shared-types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001';
 
@@ -34,5 +41,30 @@ export function updateControlState(
   return requestJson<ReplayControlState>('/controls', {
     method: 'POST',
     body: JSON.stringify(patch),
+  });
+}
+
+export function fetchBoothSessions() {
+  return requestJson<BoothSessionsResponse>('/booth-sessions');
+}
+
+export function startBoothSession(clipName: string) {
+  return requestJson<StartBoothSessionResponse>('/booth-sessions/start', {
+    method: 'POST',
+    body: JSON.stringify({ clipName }),
+  });
+}
+
+export function appendBoothSessionSample(sessionId: string, sample: BoothSessionSample) {
+  return requestJson<{ session: BoothSessionSummary }>(`/booth-sessions/${sessionId}/sample`, {
+    method: 'POST',
+    body: JSON.stringify({ sample }),
+  });
+}
+
+export function finishBoothSession(sessionId: string) {
+  return requestJson<{ session: BoothSessionSummary }>(`/booth-sessions/${sessionId}/finish`, {
+    method: 'POST',
+    body: JSON.stringify({}),
   });
 }

@@ -15,7 +15,7 @@ npm run test
 npm run lint
 ```
 
-## One-Command Demo Startup
+## One-Command Startup
 ```bash
 npm run demo
 ```
@@ -25,19 +25,40 @@ That command starts:
 - `apps/workers` replay loop pointed at the local fixtures
 - `apps/web` on `http://localhost:5173`
 
-Open the web URL Vite prints, then use the booth controls to:
-- play, pause, and restart the replay
-- switch between `analyst` and `hype`
-- load a local replay clip so the footage is visible in the UI
-- start the browser mic to test live hesitation tracking
-- trigger the manual `force hesitation` backup if needed
+Open the web URL Vite prints, then use the practice booth to:
+- load a local replay clip
+- start the broadcast
+- speak over the clip to test hesitation tracking
+- leave pauses, use fillers, or restart phrases to trigger assists
+
+## Quick Free Deployment
+- `Vercel` for [apps/web](/Users/vallabkaranam/Desktop/sports-copilot/apps/web)
+- `Render` free web service for [apps/api](/Users/vallabkaranam/Desktop/sports-copilot/apps/api)
+- `Render` free web service for [apps/workers](/Users/vallabkaranam/Desktop/sports-copilot/apps/workers)
+
+Deployment files already in the repo:
+- [vercel.json](/Users/vallabkaranam/Desktop/sports-copilot/vercel.json)
+- [render.yaml](/Users/vallabkaranam/Desktop/sports-copilot/render.yaml)
+- [.env.deployment.example](/Users/vallabkaranam/Desktop/sports-copilot/.env.deployment.example)
+
+Recommended hosted setup:
+1. Create the `sports-copilot-api` service from [render.yaml](/Users/vallabkaranam/Desktop/sports-copilot/render.yaml)
+2. Create the `sports-copilot-worker` service from [render.yaml](/Users/vallabkaranam/Desktop/sports-copilot/render.yaml)
+3. Set `API_BASE_URL` on the worker to your Render API URL, for example `https://sports-copilot-api.onrender.com`
+4. Deploy the repo to Vercel with `VITE_API_BASE_URL` set to that same Render API URL
+
+Notes:
+- the worker now exposes a `/health` endpoint so Render can keep it as a web service
+- the API now respects the host platform `PORT`
+- booth session persistence is still local SQLite, so on free hosted platforms it should be treated as ephemeral until we move it to Postgres
 
 ## Demo Notes
 - The replay is deterministic and runs from local JSON fixtures in [data/demo_match](/Users/vallabkaranam/Desktop/sports-copilot/data/demo_match).
-- The dashboard is intentionally broadcast-oriented, not chat-oriented.
-- The browser booth mode is local-first: clip loading is done from your machine and mic transcription uses in-browser speech recognition.
+- The current landing screen is a practice-first booth for testing hesitation on arbitrary local clips.
+- The browser booth mode is local-first: clip loading is done from your machine, pause detection uses live mic activity, and transcript text uses in-browser speech recognition when available.
+- Booth sessions and analytics are now persisted locally in SQLite at `data/app/sports-copilot.sqlite`.
 - Chrome or Edge currently give the best microphone support for the live booth flow.
-- Source chips, hesitation state, narrative stack, recent events, and vision cues all update from the shared world state.
+- Deterministic fixtures still exist in the repo for the original demo path, but the next work phase is replacing the primary path with real free-input integrations.
 
 ## Verification
 ```bash

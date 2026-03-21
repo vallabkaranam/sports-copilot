@@ -37,8 +37,11 @@ import {
   createEmptyRetrievalState,
 } from '@sports-copilot/shared-types';
 
-const API_HOSTNAME = 'localhost';
-const API_PORT = 3001;
+const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3001';
+const API_URL = new URL(API_BASE_URL);
+const API_HOSTNAME = API_URL.hostname;
+const API_PORT = Number(API_URL.port || (API_URL.protocol === 'https:' ? 443 : 80));
+const HEALTH_PORT = Number(process.env.PORT ?? 0);
 const POLL_INTERVAL_MS = 15_000;
 
 async function loadFixture<T>(fixturePath: string) {
@@ -73,7 +76,7 @@ async function syncState(state: Partial<WorldState>) {
       {
         hostname: API_HOSTNAME,
         port: API_PORT,
-        path: '/internal/state',
+        path: `${API_URL.pathname.replace(/\/$/, '')}/internal/state`,
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -91,13 +94,34 @@ async function syncState(state: Partial<WorldState>) {
 
 async function getControls() {
   return new Promise<ReplayControlState>((resolve, reject) => {
-    http.get(`http://${API_HOSTNAME}:${API_PORT}/controls`, (res) => {
+    http.get(new URL(`${API_URL.pathname.replace(/\/$/, '')}/controls`, API_BASE_URL), (res) => {
       let data = '';
       res.on('data', (chunk) => {
         data += chunk;
       });
       res.on('end', () => resolve(JSON.parse(data) as ReplayControlState));
     }).on('error', reject);
+  });
+}
+
+function startHealthServer() {
+  if (!HEALTH_PORT) {
+    return;
+  }
+
+  const healthServer = http.createServer((request, response) => {
+    if (request.url === '/health') {
+      response.writeHead(200, { 'Content-Type': 'application/json' });
+      response.end(JSON.stringify({ status: 'ok', apiBaseUrl: API_BASE_URL }));
+      return;
+    }
+
+    response.writeHead(200, { 'Content-Type': 'text/plain' });
+    response.end('Sports Copilot worker is running.\n');
+  });
+
+  healthServer.listen(HEALTH_PORT, '0.0.0.0', () => {
+    console.log(`Worker health server listening on :${HEALTH_PORT}`);
   });
 }
 
@@ -144,6 +168,7 @@ function buildDegradedState(reason: string, fixtureId: string) {
 }
 
 async function run() {
+  startHealthServer();
   const fixturesDir = path.resolve(__dirname, '../../../data/demo_match');
   const [narratives, socialPosts, transcript, visionFrames] = await Promise.all([
     loadRequiredFixture<NarrativeFixture[]>(path.join(fixturesDir, 'narratives.json'), 'narratives'),

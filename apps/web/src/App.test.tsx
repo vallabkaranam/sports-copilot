@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import {
+  BoothSessionsResponse,
   ReplayControlState,
   WorldState,
   createEmptyAssistCard,
@@ -283,12 +284,26 @@ function jsonResponse<T>(data: T) {
   } as Response);
 }
 
+function createBoothSessionsResponse(): BoothSessionsResponse {
+  return {
+    analytics: {
+      totalSessions: 0,
+      completedSessions: 0,
+      averageMaxHesitationScore: 0,
+      averageLongestPauseMs: 0,
+      totalAssistCount: 0,
+    },
+    sessions: [],
+  };
+}
+
 describe('App dashboard', () => {
   let container: HTMLDivElement;
   let root: Root;
   let fetchMock = vi.fn();
   let currentWorldState: WorldState;
   let currentControls: ReplayControlState;
+  let currentBoothSessions: BoothSessionsResponse;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -299,6 +314,9 @@ describe('App dashboard', () => {
     ).IS_REACT_ACT_ENVIRONMENT = true;
     currentWorldState = createWorldState();
     currentControls = createControls();
+    currentBoothSessions = createBoothSessionsResponse();
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
     fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
 
@@ -306,8 +324,64 @@ describe('App dashboard', () => {
         return jsonResponse(currentWorldState);
       }
 
+      if (url.includes('/booth-sessions') && (!init?.method || init.method === 'GET')) {
+        return jsonResponse(currentBoothSessions);
+      }
+
       if (url.includes('/controls') && (!init?.method || init.method === 'GET')) {
         return jsonResponse(currentControls);
+      }
+
+      if (url.includes('/booth-sessions/start') && init?.method === 'POST') {
+        currentBoothSessions = {
+          ...currentBoothSessions,
+          analytics: {
+            ...currentBoothSessions.analytics,
+            totalSessions: currentBoothSessions.analytics.totalSessions + 1,
+          },
+          sessions: [
+            {
+              id: 'session-1',
+              clipName: 'test.mp4',
+              startedAt: '2026-03-20T00:00:00.000Z',
+              endedAt: null,
+              status: 'active',
+              sampleCount: 0,
+              maxHesitationScore: 0,
+              maxConfidenceScore: 0,
+              longestPauseMs: 0,
+              assistCount: 0,
+              lastTriggerBadges: [],
+            },
+            ...currentBoothSessions.sessions,
+          ],
+        };
+
+        return jsonResponse({ session: currentBoothSessions.sessions[0] });
+      }
+
+      if (url.includes('/booth-sessions/session-1/sample') && init?.method === 'POST') {
+        return jsonResponse({ session: currentBoothSessions.sessions[0] });
+      }
+
+      if (url.includes('/booth-sessions/session-1/finish') && init?.method === 'POST') {
+        currentBoothSessions = {
+          ...currentBoothSessions,
+          analytics: {
+            ...currentBoothSessions.analytics,
+            completedSessions: currentBoothSessions.analytics.completedSessions + 1,
+          },
+          sessions: currentBoothSessions.sessions.map((session) =>
+            session.id === 'session-1'
+              ? {
+                  ...session,
+                  status: 'completed',
+                  endedAt: '2026-03-20T00:01:00.000Z',
+                }
+              : session,
+          ),
+        };
+        return jsonResponse({ session: currentBoothSessions.sessions[0] });
       }
 
       if (url.includes('/controls') && init?.method === 'POST') {
@@ -363,20 +437,54 @@ describe('App dashboard', () => {
     await renderApp();
 
     expect(container.textContent).toContain('Sports Copilot');
-    expect(container.textContent).toContain('Practice Booth');
     expect(container.textContent).toContain('Pre-match brief');
     expect(container.textContent).toContain('Barcelona arrive with strong recent form');
-    expect(container.textContent).toContain('Load Replay Clip');
-    expect(container.textContent).toContain('Start the booth');
-    expect(container.textContent).toContain('Show system details');
-    expect(container.textContent).toContain('Load a clip and start talking.');
+    expect(container.textContent).toContain('Commentary Booth');
+    expect(container.textContent).toContain('Load Clip');
+    expect(container.textContent).toContain('Live session');
+    expect(container.textContent).toContain('Show Details');
+    expect(container.textContent).toContain('Bring in any local replay clip');
   });
 
-  it('posts replay and backup control updates back to the API', async () => {
+  it('keeps the booth in setup mode until a clip is loaded', async () => {
     await renderApp();
 
-    const playButton = container.querySelector('button');
+    const playButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Start Broadcast'),
+    );
     expect(playButton?.textContent).toBe('Start Broadcast');
+    expect(playButton?.hasAttribute('disabled')).toBe(true);
+    expect(container.textContent).toContain('Waiting for clip upload');
+  });
+
+  it('posts replay and backup control updates back to the API after a clip is loaded', async () => {
+    await renderApp();
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null;
+    expect(fileInput).not.toBeNull();
+
+    const file = new File(['video'], 'test.mp4', { type: 'video/mp4' });
+    const createObjectUrl = vi.fn(() => 'blob:test');
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL: createObjectUrl,
+      revokeObjectURL: vi.fn(),
+    });
+
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      });
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    const playButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Start Broadcast'),
+    );
+
+    expect(playButton?.hasAttribute('disabled')).toBe(false);
 
     await act(async () => {
       playButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -384,7 +492,7 @@ describe('App dashboard', () => {
     });
 
     const resetButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Reset broadcast'),
+      button.textContent?.includes('Reset session'),
     );
 
     await act(async () => {
@@ -398,10 +506,12 @@ describe('App dashboard', () => {
 
     expect(postBodies).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({ clipName: 'test.mp4' }),
         expect.objectContaining({ playbackStatus: 'playing' }),
         expect.objectContaining({ restart: true }),
       ]),
     );
+    expect(createObjectUrl).toHaveBeenCalled();
   });
 
   it('prefers the worker assist in the main overlay when one is available', async () => {
@@ -439,6 +549,6 @@ describe('App dashboard', () => {
     });
 
     expect(container.textContent).toContain('Courtois keeps Madrid alive with an enormous reflex stop.');
-    expect(container.textContent).toContain('Show system details');
+    expect(container.textContent).toContain('Show Details');
   });
 });
