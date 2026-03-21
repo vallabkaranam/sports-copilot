@@ -867,11 +867,6 @@ function App() {
                 <div className="progress-track" aria-label="Replay progress">
                   <span style={{ width: `${clipProgress}%` }} />
                 </div>
-                <p className="pulse-copy">
-                  {boothInterimTranscript ||
-                    boothTranscript[boothTranscript.length - 1]?.text ||
-                    'Live transcript and hesitation cues will appear as you speak.'}
-                </p>
               </div>
             </div>
           </div>
@@ -944,29 +939,6 @@ function App() {
                 up as soon as you settle back into the call.
               </p>
               {boothError ? <p className="inline-warning">{boothError}</p> : null}
-
-              <div className="transcript-list">
-                {boothTranscript.length > 0 ? (
-                  boothTranscript.slice(-3).map((entry) => (
-                    <p className="transcript-line" key={`${entry.timestamp}-${entry.text}`}>
-                      {entry.text}
-                    </p>
-                  ))
-                ) : (
-                  <p className="transcript-line transcript-line--muted">
-                    {!loadedClipUrl
-                      ? 'Load a clip first, then start the booth.'
-                      : !hasStartedBroadcast
-                        ? 'Start the booth to begin live mic tracking.'
-                        : isMicSupported
-                      ? 'Start the mic and talk through the replay to see live booth transcript here.'
-                      : 'This browser does not expose usable mic APIs, so live hesitation is unavailable here.'}
-                  </p>
-                )}
-                {boothInterimTranscript ? (
-                  <p className="transcript-line transcript-line--interim">{boothInterimTranscript}</p>
-                ) : null}
-              </div>
             </article>
           </section>
 
@@ -1128,6 +1100,32 @@ function App() {
             <div>
               <p className="control-label">Repeated opens</p>
               <strong>{boothSignal.repeatedPhrases[0] ?? 'None'}</strong>
+            </div>
+          </div>
+
+          <div className="memory-strip">
+            <p className="memory-title">Booth transcript</p>
+            <div className="transcript-list">
+              {boothTranscript.length > 0 ? (
+                boothTranscript.slice(-5).map((entry) => (
+                  <p className="transcript-line" key={`${entry.timestamp}-${entry.text}`}>
+                    {entry.text}
+                  </p>
+                ))
+              ) : (
+                <p className="transcript-line transcript-line--muted">
+                  {!loadedClipUrl
+                    ? 'Load a clip first, then start the booth.'
+                    : !hasStartedBroadcast
+                      ? 'Start the booth to begin live mic tracking.'
+                      : isMicSupported
+                        ? 'Live booth transcript will appear here once you start speaking.'
+                        : 'This browser does not expose usable mic APIs, so live hesitation is unavailable here.'}
+                </p>
+              )}
+              {boothInterimTranscript ? (
+                <p className="transcript-line transcript-line--interim">{boothInterimTranscript}</p>
+              ) : null}
             </div>
           </div>
           </section>
