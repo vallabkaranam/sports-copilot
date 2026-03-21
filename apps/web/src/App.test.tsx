@@ -319,6 +319,7 @@ describe('App dashboard', () => {
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
     const fakeStream = {
       getTracks: () => [{ stop: vi.fn() }],
+      getAudioTracks: () => [{ kind: 'audio', stop: vi.fn() }],
     } as unknown as MediaStream;
     Object.defineProperty(globalThis.navigator, 'mediaDevices', {
       configurable: true,
@@ -351,27 +352,27 @@ describe('App dashboard', () => {
       } as unknown as typeof AudioContext,
     );
     vi.stubGlobal(
-      'MediaRecorder',
-      class FakeMediaRecorder {
-        static isTypeSupported() {
-          return true;
+      'RTCPeerConnection',
+      class FakeRTCPeerConnection {
+        createDataChannel() {
+          return {
+            addEventListener: vi.fn(),
+            close: vi.fn(),
+          };
         }
 
-        mimeType: string;
-        ondataavailable: ((event: { data: Blob }) => void) | null = null;
-        onerror: (() => void) | null = null;
-        onstop: (() => void) | null = null;
+        addTrack() {}
 
-        constructor(_stream: MediaStream, options?: { mimeType?: string }) {
-          this.mimeType = options?.mimeType ?? 'audio/webm';
+        async createOffer() {
+          return { type: 'offer', sdp: 'fake-offer-sdp' };
         }
 
-        start() {}
+        async setLocalDescription() {}
 
-        stop() {
-          this.onstop?.();
-        }
-      } as unknown as typeof MediaRecorder,
+        async setRemoteDescription() {}
+
+        close() {}
+      } as unknown as typeof RTCPeerConnection,
     );
     fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -392,15 +393,16 @@ describe('App dashboard', () => {
           shouldSurfaceAssist: false,
           summary: 'Tracking the booth without stepping in.',
           reasons: ['No strong hesitation cue is active in the current booth window.'],
-          source: 'heuristic',
+          signals: [],
+          source: 'openai',
         });
       }
 
-      if (url.includes('/booth/transcribe') && init?.method === 'POST') {
-        return jsonResponse({
-          transcript: '',
-          source: 'openai',
-        });
+      if (url.includes('/booth/realtime-connect') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          text: async () => 'fake-answer-sdp',
+        } as Response);
       }
 
       if (url.includes('/controls') && (!init?.method || init.method === 'GET')) {
@@ -588,7 +590,13 @@ describe('App dashboard', () => {
     });
 
     const postBodies = fetchMock.mock.calls
-      .filter(([, init]) => init?.method === 'POST')
+      .filter(
+        ([, init]) =>
+          init?.method === 'POST' &&
+          String(
+            ((init?.headers as Record<string, string> | undefined)?.['Content-Type']) ?? '',
+          ).includes('application/json'),
+      )
       .map(([, init]) => JSON.parse(String(init?.body ?? '{}')));
 
     expect(postBodies).toEqual(

@@ -85,3 +85,19 @@ export function transcribeBoothAudio(audioBase64: string, mimeType: string) {
     body: JSON.stringify({ audioBase64, mimeType }),
   });
 }
+
+export async function connectRealtimeBoothSession(offerSdp: string) {
+  const response = await fetch(`${API_BASE_URL}/booth/realtime-connect`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/sdp',
+    },
+    body: offerSdp,
+  });
+
+  if (!response.ok) {
+    throw new Error(`POST /booth/realtime-connect failed with ${response.status}`);
+  }
+
+  return response.text();
+}

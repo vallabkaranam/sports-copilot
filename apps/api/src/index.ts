@@ -24,6 +24,7 @@ import {
 import fs from 'fs/promises';
 import path from 'path';
 import { interpretBoothWithOpenAI } from './booth-interpretation';
+import { createRealtimeBoothSdpAnswer } from './booth-realtime';
 import { createBoothSessionStore } from './booth-session-store';
 import { transcribeBoothAudioWithOpenAI } from './booth-transcription';
 
@@ -31,6 +32,10 @@ const server = fastify({ logger: true });
 const API_PORT = Number(process.env.PORT ?? 3001);
 const API_HOST = process.env.HOST ?? '0.0.0.0';
 let boothSessionStore: Awaited<ReturnType<typeof createBoothSessionStore>> | null = null;
+
+server.addContentTypeParser(['application/sdp', 'text/plain'], { parseAs: 'string' }, (_req, body, done) => {
+  done(null, body);
+});
 
 function requireBoothSessionStore() {
   if (!boothSessionStore) {
@@ -138,6 +143,22 @@ server.post('/booth/transcribe', async (request, reply): Promise<TranscribeBooth
   }
 
   return transcribeBoothAudioWithOpenAI(parsed.data.audioBase64, parsed.data.mimeType);
+});
+
+server.post('/booth/realtime-connect', async (request, reply) => {
+  const offerSdp = typeof request.body === 'string' ? request.body : '';
+
+  if (!offerSdp.trim()) {
+    reply.status(400).send({ error: 'Missing SDP offer' });
+    return;
+  }
+
+  try {
+    const answerSdp = await createRealtimeBoothSdpAnswer(offerSdp);
+    reply.header('Content-Type', 'application/sdp').send(answerSdp);
+  } catch (_error) {
+    reply.status(502).send({ error: 'Failed to create realtime booth session' });
+  }
 });
 
 server.post('/booth-sessions/start', async (request, reply): Promise<StartBoothSessionResponse | void> => {

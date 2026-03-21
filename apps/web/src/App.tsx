@@ -12,13 +12,13 @@ import './App.css';
 import { BRAND } from './brand';
 import {
   appendBoothSessionSample,
+  connectRealtimeBoothSession,
   fetchBoothSessions,
   fetchControlState,
   fetchWorldState,
   finishBoothSession,
   interpretBooth,
   startBoothSession,
-  transcribeBoothAudio,
   updateControlState,
 } from './api';
 import { buildBoothAssist } from './boothAssist';
@@ -45,7 +45,8 @@ type MicrophoneAvailability = 'supported' | 'degraded' | 'unsupported';
 type CoachingTone = 'standby' | 'steady' | 'supporting' | 'step-in';
 
 const AUDIO_ACTIVITY_SAMPLE_MS = 120;
-const AUDIO_ACTIVITY_THRESHOLD = 0.045;
+const MIN_AUDIO_ACTIVITY_THRESHOLD = 0.012;
+const MAX_AUDIO_ACTIVITY_THRESHOLD = 0.08;
 
 function supportsAudioMonitoring() {
   return (
@@ -53,7 +54,7 @@ function supportsAudioMonitoring() {
     typeof navigator !== 'undefined' &&
     Boolean(navigator.mediaDevices?.getUserMedia) &&
     typeof window.AudioContext !== 'undefined' &&
-    getSupportedRecorderMimeType() !== null
+    typeof window.RTCPeerConnection !== 'undefined'
   );
 }
 
@@ -106,43 +107,6 @@ function buildExpectedTopics(worldState: ReturnType<typeof createInitialWorldSta
     .filter((value): value is string => Boolean(value));
 
   return [...new Set(topics)].slice(0, 8);
-}
-
-function getSupportedRecorderMimeType() {
-  if (typeof window === 'undefined' || typeof window.MediaRecorder === 'undefined') {
-    return null;
-  }
-
-  const candidates = [
-    'audio/webm;codecs=opus',
-    'audio/webm',
-    'audio/ogg;codecs=opus',
-    'audio/mp4',
-  ];
-
-  for (const candidate of candidates) {
-    if (typeof window.MediaRecorder.isTypeSupported !== 'function') {
-      return candidate;
-    }
-
-    if (window.MediaRecorder.isTypeSupported(candidate)) {
-      return candidate;
-    }
-  }
-
-  return null;
-}
-
-async function encodeBlobAsBase64(blob: Blob) {
-  const buffer = await blob.arrayBuffer();
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-
-  return window.btoa(binary);
 }
 
 function getCoachingTone({
@@ -247,10 +211,14 @@ function App() {
   const microphoneStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioMonitorIntervalRef = useRef<number | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const transcriptionQueueRef = useRef(Promise.resolve());
-  const isApiTranscriptionActiveRef = useRef(false);
-  const lastApiTranscriptRef = useRef('');
+  const realtimePeerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const realtimeDataChannelRef = useRef<RTCDataChannel | null>(null);
+  const realtimeTranscriptItemRef = useRef<{ itemId: string | null; text: string }>({
+    itemId: null,
+    text: '',
+  });
+  const audioNoiseFloorRef = useRef(0.004);
+  const audioActivityThresholdRef = useRef(0.02);
   const lastPersistedSampleAtRef = useRef<number>(-1);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const clipObjectUrlRef = useRef<string | null>(null);
@@ -363,7 +331,8 @@ function App() {
       if (audioMonitorIntervalRef.current !== null) {
         window.clearInterval(audioMonitorIntervalRef.current);
       }
-      mediaRecorderRef.current?.stop();
+      realtimeDataChannelRef.current?.close();
+      realtimePeerConnectionRef.current?.close();
       audioContextRef.current?.close().catch(() => undefined);
       microphoneStreamRef.current?.getTracks().forEach((track) => track.stop());
 
@@ -452,65 +421,91 @@ function App() {
     }
   }
 
-  function startRealtimeTranscription(stream: MediaStream) {
-    const supportedMimeType = getSupportedRecorderMimeType();
-
-    if (typeof window === 'undefined' || typeof window.MediaRecorder === 'undefined' || !supportedMimeType) {
-      isApiTranscriptionActiveRef.current = false;
+  async function startRealtimeTranscription(stream: MediaStream) {
+    if (typeof window === 'undefined' || typeof window.RTCPeerConnection === 'undefined') {
       return false;
     }
 
-    const recorder = new window.MediaRecorder(stream, { mimeType: supportedMimeType });
-    mediaRecorderRef.current = recorder;
-    isApiTranscriptionActiveRef.current = true;
+    const audioTrack = stream.getAudioTracks()[0];
+    if (!audioTrack) {
+      return false;
+    }
 
-    recorder.ondataavailable = (event) => {
-      if (!event.data || event.data.size === 0) {
-        return;
-      }
+    const peerConnection = new window.RTCPeerConnection();
+    realtimePeerConnectionRef.current = peerConnection;
 
-      const currentMimeType = recorder.mimeType || supportedMimeType;
-      transcriptionQueueRef.current = transcriptionQueueRef.current
-        .then(async () => {
-          const audioBase64 = await encodeBlobAsBase64(event.data);
-          const result = await transcribeBoothAudio(audioBase64, currentMimeType);
+    const eventsChannel = peerConnection.createDataChannel('oai-events');
+    realtimeDataChannelRef.current = eventsChannel;
 
-          if (!result.transcript || result.source !== 'openai') {
+    eventsChannel.addEventListener('message', (event) => {
+      try {
+        const payload = JSON.parse(String(event.data)) as {
+          type?: string;
+          item_id?: string;
+          delta?: string;
+          transcript?: string;
+        };
+        const now = Date.now();
+
+        if (payload.type === 'input_audio_buffer.speech_started') {
+          setLastVoiceActivityAtMs(now);
+          setBoothClockMs(now);
+          return;
+        }
+
+        if (payload.type === 'conversation.item.input_audio_transcription.delta') {
+          const nextItemId = payload.item_id ?? realtimeTranscriptItemRef.current.itemId;
+          const nextText =
+            realtimeTranscriptItemRef.current.itemId === nextItemId
+              ? `${realtimeTranscriptItemRef.current.text}${payload.delta ?? ''}`
+              : payload.delta ?? '';
+
+          realtimeTranscriptItemRef.current = {
+            itemId: nextItemId ?? null,
+            text: nextText,
+          };
+          setBoothInterimTranscript(nextText.trim());
+          setLastSpeechAtMs(now);
+          setLastVoiceActivityAtMs(now);
+          setBoothClockMs(now);
+          return;
+        }
+
+        if (payload.type === 'conversation.item.input_audio_transcription.completed') {
+          const transcriptText = (payload.transcript ?? realtimeTranscriptItemRef.current.text).trim();
+          realtimeTranscriptItemRef.current = { itemId: null, text: '' };
+
+          if (!transcriptText) {
+            setBoothInterimTranscript('');
             return;
           }
 
-          const transcriptText = result.transcript.trim();
-          if (!transcriptText || transcriptText === lastApiTranscriptRef.current) {
-            return;
-          }
-
-          lastApiTranscriptRef.current = transcriptText;
-          const currentTime = Date.now();
           const baseTimestamp = getCurrentTranscriptTimestamp();
-          setBoothClockMs(currentTime);
           setBoothTranscript((current) =>
             [...current, createTranscriptEntry(baseTimestamp, transcriptText)].slice(
               -LOCAL_TRANSCRIPT_LIMIT,
             ),
           );
           setBoothInterimTranscript('');
-          setLastSpeechAtMs(currentTime);
-        })
-        .catch(() => {
-          // Keep the booth running even if a transcription chunk fails.
-        });
-    };
+          setLastSpeechAtMs(now);
+          setLastVoiceActivityAtMs(now);
+          setBoothClockMs(now);
+        }
+      } catch (_error) {
+        // Ignore malformed realtime events and keep the booth live.
+      }
+    });
 
-    recorder.onerror = () => {
-      isApiTranscriptionActiveRef.current = false;
-    };
+    peerConnection.addTrack(audioTrack, stream);
 
-    recorder.onstop = () => {
-      isApiTranscriptionActiveRef.current = false;
-      mediaRecorderRef.current = null;
-    };
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    const answerSdp = await connectRealtimeBoothSession(offer.sdp ?? '');
+    await peerConnection.setRemoteDescription({
+      type: 'answer',
+      sdp: answerSdp,
+    });
 
-    recorder.start(2_000);
     return true;
   }
 
@@ -549,10 +544,21 @@ function App() {
     audioMonitorIntervalRef.current = window.setInterval(() => {
       analyser.getByteTimeDomainData(samples);
       const nextAudioLevel = calculateAudioLevel(samples);
+      const currentThreshold = audioActivityThresholdRef.current;
+      const isLikelyAmbient = nextAudioLevel < currentThreshold * 1.15;
+
+      if (isLikelyAmbient) {
+        audioNoiseFloorRef.current = audioNoiseFloorRef.current * 0.92 + nextAudioLevel * 0.08;
+        audioActivityThresholdRef.current = Math.min(
+          MAX_AUDIO_ACTIVITY_THRESHOLD,
+          Math.max(MIN_AUDIO_ACTIVITY_THRESHOLD, audioNoiseFloorRef.current * 3.2),
+        );
+      }
+
       setAudioLevel(nextAudioLevel);
       setBoothClockMs(Date.now());
 
-      if (nextAudioLevel >= AUDIO_ACTIVITY_THRESHOLD) {
+      if (nextAudioLevel >= audioActivityThresholdRef.current) {
         setLastVoiceActivityAtMs(Date.now());
       }
     }, AUDIO_ACTIVITY_SAMPLE_MS);
@@ -593,10 +599,11 @@ function App() {
   }
 
   function stopAudioMonitoring() {
-    mediaRecorderRef.current?.stop();
-    mediaRecorderRef.current = null;
-    isApiTranscriptionActiveRef.current = false;
-    lastApiTranscriptRef.current = '';
+    realtimeDataChannelRef.current?.close();
+    realtimeDataChannelRef.current = null;
+    realtimePeerConnectionRef.current?.close();
+    realtimePeerConnectionRef.current = null;
+    realtimeTranscriptItemRef.current = { itemId: null, text: '' };
     if (audioMonitorIntervalRef.current !== null) {
       window.clearInterval(audioMonitorIntervalRef.current);
       audioMonitorIntervalRef.current = null;
@@ -606,6 +613,8 @@ function App() {
     audioContextRef.current = null;
     microphoneStreamRef.current?.getTracks().forEach((track) => track.stop());
     microphoneStreamRef.current = null;
+    audioNoiseFloorRef.current = 0.004;
+    audioActivityThresholdRef.current = 0.02;
     setAudioLevel(0);
     setSpeechStreakStartedAtMs(-1);
     setSilenceStreakStartedAtMs(-1);
@@ -637,7 +646,7 @@ function App() {
     if (!supportsAudioMonitoring()) {
       setMicrophoneAvailability('unsupported');
       setBoothError(
-        'This browser cannot run the live And-One booth stack. Use a browser with getUserMedia, AudioContext, and MediaRecorder support.',
+        'This browser cannot run the live And-One booth stack. Use a browser with getUserMedia, AudioContext, and RTCPeerConnection support.',
       );
       return;
     }
@@ -653,7 +662,11 @@ function App() {
         setIsMicPrepared(true);
 
         if (stream) {
-          startRealtimeTranscription(stream);
+          void startRealtimeTranscription(stream).catch(() => {
+            stopAudioMonitoring();
+            setIsMicListening(false);
+            setBoothError('OpenAI realtime transcription could not start for the booth mic.');
+          });
         }
       })
       .catch(() => {
@@ -678,7 +691,7 @@ function App() {
   function clearBoothTranscript() {
     setBoothTranscript([]);
     setBoothInterimTranscript('');
-    lastApiTranscriptRef.current = '';
+    realtimeTranscriptItemRef.current = { itemId: null, text: '' };
     setLastSpeechAtMs(-1);
     setLastVoiceActivityAtMs(-1);
     setSpeechStreakStartedAtMs(-1);
