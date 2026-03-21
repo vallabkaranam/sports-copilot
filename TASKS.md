@@ -216,19 +216,19 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 ## P6 — Optional Multimodal Layer
 
 ### Vision Agent
-- [ ] ingest sampled frames
-- [ ] infer coarse scene tags:
-  - [ ] attack
-  - [ ] replay
-  - [ ] crowd reaction
-  - [ ] player close-up
-  - [ ] coach reaction
-  - [ ] celebration
-- [ ] add vision cues to live memory
+- [x] ingest sampled frames
+- [x] infer coarse scene tags:
+  - [x] attack
+  - [x] replay
+  - [x] crowd reaction
+  - [x] player close-up
+  - [x] coach reaction
+  - [x] celebration
+- [x] add vision cues to live memory
 
 ### Tests
-- [ ] test frame-to-tag mapping
-- [ ] test vision cue availability in retrieval
+- [x] test frame-to-tag mapping
+- [x] test vision cue availability in retrieval
 
 ---
 

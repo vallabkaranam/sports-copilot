@@ -7,7 +7,7 @@ import { ReplayEngine } from './engine';
 import { buildNarrativeState } from './narrative';
 import { buildRetrievalState, ingestLiveSocialPosts, NarrativeFixture, RosterFixture } from './retrieval';
 import { createSessionMemoryTracker } from './session-memory';
-import { getActiveVisionCues } from './vision';
+import { getActiveVisionCues, ingestVisionFrames } from './vision';
 import {
   CommentatorState,
   GameEvent,
@@ -15,6 +15,7 @@ import {
   SocialPost,
   TranscriptEntry,
   VisionCue,
+  VisionFrame,
   WorldState,
   createDefaultReplayControlState,
 } from '@sports-copilot/shared-types';
@@ -84,14 +85,15 @@ function applyForcedHesitation(commentator: CommentatorState, forceHesitation: b
 
 async function run() {
   const fixturesDir = path.resolve(__dirname, '../../../data/demo_match');
-  const [events, roster, narratives, socialPosts, transcript, visionCues] = await Promise.all([
+  const [events, roster, narratives, socialPosts, transcript, visionFrames] = await Promise.all([
     loadFixture<GameEvent[]>(path.join(fixturesDir, 'events.json')),
     loadFixture<RosterFixture>(path.join(fixturesDir, 'roster.json')),
     loadFixture<NarrativeFixture[]>(path.join(fixturesDir, 'narratives.json')),
     loadFixture<SocialPost[]>(path.join(fixturesDir, 'fake_social.json')),
     loadFixture<TranscriptEntry[]>(path.join(fixturesDir, 'transcript_seed.json')),
-    loadFixture<VisionCue[]>(path.join(fixturesDir, 'vision_cues.json')),
+    loadFixture<VisionFrame[]>(path.join(fixturesDir, 'vision_frames.json')),
   ]);
+  const visionCues: VisionCue[] = ingestVisionFrames(visionFrames);
 
   const engine = new ReplayEngine({ events, tickRateMs: TICK_RATE_MS });
   const sessionMemory = createSessionMemoryTracker();

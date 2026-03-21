@@ -73,6 +73,12 @@ export const VisionCueSchema = z.object({
 });
 export type VisionCue = z.infer<typeof VisionCueSchema>;
 
+export const VisionFrameSchema = z.object({
+  timestamp: z.number(),
+  description: z.string(),
+});
+export type VisionFrame = z.infer<typeof VisionFrameSchema>;
+
 /**
  * Source attribution chips
  */
