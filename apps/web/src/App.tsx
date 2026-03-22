@@ -544,6 +544,10 @@ function buildPreMatchCueSummary(worldState: ReturnType<typeof createInitialWorl
     worldState.preMatch.aiOpener,
     worldState.preMatch.deterministicOpener,
     worldState.preMatch.headToHead.summary,
+    worldState.preMatch.homeScoringTrend.summary,
+    worldState.preMatch.awayScoringTrend.summary,
+    worldState.preMatch.homeFirstToScore.summary,
+    worldState.preMatch.awayFirstToScore.summary,
     worldState.preMatch.weather
       ? `Weather: ${worldState.preMatch.weather.summary}${
           worldState.preMatch.weather.temperatureC !== null
@@ -2688,6 +2692,7 @@ function App() {
           query: boothAssistQuery || worldState.retrieval.query,
           supportingFacts: rankedBoothAssistFacts.map(({ fact }) => fact),
         },
+        preMatch: worldState.preMatch,
         liveMatch: worldState.liveMatch,
         contextBundle: worldState.contextBundle,
         recentEvents: worldState.recentEvents.slice(-4),

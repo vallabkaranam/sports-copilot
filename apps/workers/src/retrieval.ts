@@ -447,6 +447,46 @@ function buildPreMatchFacts(preMatch?: PreMatchState): RankableFact[] {
     );
   }
 
+  const scoringTrendFacts = [preMatch.homeScoringTrend, preMatch.awayScoringTrend] as const;
+  for (const trend of scoringTrendFacts) {
+    facts.push(
+      createRankableFact({
+        id: `pre-match-scoring-trend-${trend.teamSide}`,
+        tier: 'pre_match',
+        text: trend.summary,
+        source: 'pre-match:trend',
+        timestamp: preMatch.generatedAt,
+        metadata: buildPreMatchMetadata({
+          chunkCategory: 'trend',
+          teamSide: trend.teamSide,
+          fixtureId,
+          phaseHints: ['pre_kickoff', 'early_match', 'quiet_stretch'],
+        }),
+        tags: tokenize(trend.summary),
+      }),
+    );
+  }
+
+  const firstToScoreFacts = [preMatch.homeFirstToScore, preMatch.awayFirstToScore] as const;
+  for (const pattern of firstToScoreFacts) {
+    facts.push(
+      createRankableFact({
+        id: `pre-match-first-to-score-${pattern.teamSide}`,
+        tier: 'pre_match',
+        text: pattern.summary,
+        source: 'pre-match:trend',
+        timestamp: preMatch.generatedAt,
+        metadata: buildPreMatchMetadata({
+          chunkCategory: 'trend',
+          teamSide: pattern.teamSide,
+          fixtureId,
+          phaseHints: ['pre_kickoff', 'early_match', 'quiet_stretch'],
+        }),
+        tags: tokenize(pattern.summary),
+      }),
+    );
+  }
+
   facts.push(
     createRankableFact({
       id: 'pre-match-opener',

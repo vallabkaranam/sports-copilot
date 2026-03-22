@@ -425,6 +425,120 @@ describe('buildBoothAssist', () => {
     expect(assist.sourceChips.length).toBeGreaterThan(0);
   });
 
+  it('prefers the head-to-head fact for a head-to-head setup line', () => {
+    const assist = buildBoothAssist({
+      boothSignal: makeSignal(),
+      boothTranscript: makeTranscript('The head-to-head between Rangers and Aberdeen tells you'),
+      interimTranscript: '',
+      currentTimestampMs: 1000,
+      retrieval: createEmptyRetrievalState(),
+      preMatch: {
+        ...createEmptyPreMatchState(),
+        loadStatus: 'ready',
+        generatedAt: 1000,
+        homeRecentForm: {
+          teamSide: 'home',
+          teamName: 'Rangers',
+          record: { wins: 3, draws: 1, losses: 1 },
+          lastFive: [],
+        },
+        awayRecentForm: {
+          teamSide: 'away',
+          teamName: 'Aberdeen',
+          record: { wins: 1, draws: 2, losses: 2 },
+          lastFive: [],
+        },
+        headToHead: {
+          meetings: [],
+          homeWins: 3,
+          awayWins: 1,
+          draws: 1,
+          summary: 'Rangers have had the better of the last five meetings with Aberdeen.',
+        },
+        venue: {
+          name: 'Ibrox Stadium',
+          city: 'Glasgow',
+          country: 'Scotland',
+          capacity: null,
+          surface: null,
+        },
+        weather: null,
+        deterministicOpener: 'Rangers and Aberdeen bring a familiar rivalry into Ibrox.',
+        aiOpener: null,
+        sourceMetadata: {
+          provider: 'sportmonks',
+          fetchedAt: 1000,
+          sourceNotes: [],
+          usedWeatherFallback: false,
+        },
+      },
+      liveMatch: {
+        ...createEmptyLiveMatchState(),
+        stats: [{ teamSide: 'home', label: 'Possession', value: '62%' }],
+      },
+    });
+
+    expect(assist.text).toMatch(/Rangers have had the better of the last five meetings/i);
+    expect(assist.text).not.toMatch(/Possession/i);
+  });
+
+  it('prefers recent form for a recent-form setup line', () => {
+    const assist = buildBoothAssist({
+      boothSignal: makeSignal(),
+      boothTranscript: makeTranscript("Coming into this match, Rangers' recent form really stands out because"),
+      interimTranscript: '',
+      currentTimestampMs: 1000,
+      retrieval: createEmptyRetrievalState(),
+      preMatch: {
+        ...createEmptyPreMatchState(),
+        loadStatus: 'ready',
+        generatedAt: 1000,
+        homeRecentForm: {
+          teamSide: 'home',
+          teamName: 'Rangers',
+          record: { wins: 4, draws: 0, losses: 1 },
+          lastFive: [],
+        },
+        awayRecentForm: {
+          teamSide: 'away',
+          teamName: 'Aberdeen',
+          record: { wins: 1, draws: 2, losses: 2 },
+          lastFive: [],
+        },
+        headToHead: {
+          meetings: [],
+          homeWins: 3,
+          awayWins: 1,
+          draws: 1,
+          summary: 'Rangers have had the better of the last five meetings with Aberdeen.',
+        },
+        venue: {
+          name: 'Ibrox Stadium',
+          city: 'Glasgow',
+          country: 'Scotland',
+          capacity: null,
+          surface: null,
+        },
+        weather: null,
+        deterministicOpener: 'Rangers arrive in stronger recent form.',
+        aiOpener: null,
+        sourceMetadata: {
+          provider: 'sportmonks',
+          fetchedAt: 1000,
+          sourceNotes: [],
+          usedWeatherFallback: false,
+        },
+      },
+      liveMatch: {
+        ...createEmptyLiveMatchState(),
+        stats: [{ teamSide: 'away', label: 'Corners', value: '4' }],
+      },
+    });
+
+    expect(assist.text).toMatch(/Rangers recent form: 4-0-1/i);
+    expect(assist.text).not.toMatch(/Corners/i);
+  });
+
   it('uses live match stats instead of a generic stat bridge when numbers are needed', () => {
     const assist = buildBoothAssist({
       boothSignal: makeSignal(),

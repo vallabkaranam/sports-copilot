@@ -2,7 +2,9 @@ import {
   MatchResult,
   PreMatchState,
   RecentMatchSummary,
+  TeamFirstToScorePattern,
   TeamRecentForm,
+  TeamScoringTrendSummary,
   createEmptyPreMatchState,
 } from '@sports-copilot/shared-types';
 
@@ -11,7 +13,7 @@ const OPENAI_BASE_URL = 'https://api.openai.com/v1';
 const OPENAI_PREMATCH_MODEL = 'gpt-5.4-mini';
 
 const FIXTURE_PREMATCH_INCLUDES = ['participants', 'venue'].join(';');
-const TEAM_FIXTURE_INCLUDES = ['participants', 'scores', 'state'].join(';');
+const TEAM_FIXTURE_INCLUDES = ['participants', 'scores', 'state', 'events'].join(';');
 
 interface BuilderConfig {
   apiToken: string;
@@ -39,12 +41,24 @@ interface SportmonksScore {
   description?: string;
 }
 
+interface SportmonksEvent {
+  id?: number | string;
+  participant_id?: number | string;
+  minute?: number | string;
+  extra_minute?: number | string | null;
+  type?: {
+    developer_name?: string | null;
+    name?: string | null;
+  } | null;
+}
+
 interface SportmonksFixtureRecord {
   id?: number | string;
   name?: string;
   starting_at?: string;
   participants?: SportmonksParticipant[];
   scores?: SportmonksScore[];
+  events?: SportmonksEvent[];
   venue?: {
     id?: number | string;
     name?: string | null;
@@ -120,6 +134,10 @@ function asNullableString(value: unknown) {
 function asNumber(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function roundToTenths(value: number) {
+  return Math.round(value * 10) / 10;
 }
 
 function buildSportmonksUrl(pathname: string, apiToken: string, include?: string) {
@@ -312,6 +330,171 @@ function summarizeHeadToHead(
   };
 }
 
+function buildScoringTrendSummary(
+  teamSide: 'home' | 'away',
+  teamName: string,
+  matches: RecentMatchSummary[],
+): TeamScoringTrendSummary {
+  const sampleSize = matches.length;
+  const matchesScoredIn = matches.filter((match) => match.scoreFor > 0).length;
+  const matchesConcededIn = matches.filter((match) => match.scoreAgainst > 0).length;
+  const totalGoalsFor = matches.reduce((total, match) => total + match.scoreFor, 0);
+  const totalGoalsAgainst = matches.reduce((total, match) => total + match.scoreAgainst, 0);
+  const matchesOverTwoPointFive = matches.filter((match) => match.scoreFor + match.scoreAgainst > 2).length;
+  const bothTeamsScoredMatches = matches.filter((match) => match.scoreFor > 0 && match.scoreAgainst > 0).length;
+
+  if (sampleSize === 0) {
+    return {
+      teamSide,
+      teamName,
+      sampleSize,
+      matchesScoredIn,
+      matchesConcededIn,
+      averageGoalsFor: 0,
+      averageGoalsAgainst: 0,
+      matchesOverTwoPointFive,
+      bothTeamsScoredMatches,
+      summary: `${teamName} scoring trends are unavailable from the recent sample.`,
+    };
+  }
+
+  const averageGoalsFor = roundToTenths(totalGoalsFor / sampleSize);
+  const averageGoalsAgainst = roundToTenths(totalGoalsAgainst / sampleSize);
+  const overTwoPointFiveLine =
+    matchesOverTwoPointFive >= Math.ceil(sampleSize / 2)
+      ? ` ${matchesOverTwoPointFive} of the last ${sampleSize} cleared 2.5 total goals.`
+      : '';
+  const bothTeamsScoredLine =
+    bothTeamsScoredMatches >= Math.ceil(sampleSize / 2)
+      ? ` Both teams scored in ${bothTeamsScoredMatches} of those ${sampleSize}.`
+      : '';
+
+  return {
+    teamSide,
+    teamName,
+    sampleSize,
+    matchesScoredIn,
+    matchesConcededIn,
+    averageGoalsFor,
+    averageGoalsAgainst,
+    matchesOverTwoPointFive,
+    bothTeamsScoredMatches,
+    summary: `${teamName} scored in ${matchesScoredIn} of the last ${sampleSize}, conceded in ${matchesConcededIn}, and average ${averageGoalsFor} scored / ${averageGoalsAgainst} conceded.${overTwoPointFiveLine}${bothTeamsScoredLine}`,
+  };
+}
+
+function normalizeEventType(event: SportmonksEvent) {
+  return (event.type?.developer_name ?? event.type?.name ?? '')
+    .replace(/\s+/g, '_')
+    .toUpperCase();
+}
+
+function compareEventTimes(left: SportmonksEvent, right: SportmonksEvent) {
+  const leftMinute = asNumber(left.minute) ?? 0;
+  const rightMinute = asNumber(right.minute) ?? 0;
+  if (leftMinute !== rightMinute) {
+    return leftMinute - rightMinute;
+  }
+
+  const leftExtra = asNumber(left.extra_minute) ?? 0;
+  const rightExtra = asNumber(right.extra_minute) ?? 0;
+  return leftExtra - rightExtra;
+}
+
+function inferFirstScoringOutcome(
+  fixture: SportmonksFixtureRecord,
+  teamId: string,
+): 'team' | 'opponent' | 'none' | 'unknown' {
+  const goalEvent = (fixture.events ?? [])
+    .filter((event) => normalizeEventType(event).includes('GOAL'))
+    .sort(compareEventTimes)[0];
+
+  if (goalEvent) {
+    return asString(goalEvent.participant_id) === teamId ? 'team' : 'opponent';
+  }
+
+  const participants = fixture.participants ?? [];
+  const subject = participants.find((participant) => asString(participant.id) === teamId);
+  if (!subject) {
+    return 'unknown';
+  }
+
+  const side =
+    subject.meta?.location === 'home'
+      ? 'home'
+      : subject.meta?.location === 'away'
+        ? 'away'
+        : 'neutral';
+  const scores = fixture.scores ?? [];
+  const scoreFor = getGoalsForSide(scores, teamId, side === 'away' ? 'away' : 'home');
+  const opponent = participants.find((participant) => asString(participant.id) !== teamId);
+  const scoreAgainst = getGoalsForSide(
+    scores,
+    asString(opponent?.id),
+    side === 'away' ? 'home' : 'away',
+  );
+
+  if (scoreFor === 0 && scoreAgainst === 0) {
+    return 'none';
+  }
+
+  return 'unknown';
+}
+
+function buildFirstToScorePatternSummary(
+  teamSide: 'home' | 'away',
+  teamName: string,
+  fixtures: SportmonksFixtureRecord[],
+  teamId: string,
+): TeamFirstToScorePattern {
+  const relevantFixtures = fixtures.slice(0, 5);
+  const sampleSize = relevantFixtures.length;
+  let scoredFirst = 0;
+  let concededFirst = 0;
+  let scorelessMatches = 0;
+  let unknownMatches = 0;
+
+  for (const fixture of relevantFixtures) {
+    const outcome = inferFirstScoringOutcome(fixture, teamId);
+    if (outcome === 'team') {
+      scoredFirst += 1;
+    } else if (outcome === 'opponent') {
+      concededFirst += 1;
+    } else if (outcome === 'none') {
+      scorelessMatches += 1;
+    } else {
+      unknownMatches += 1;
+    }
+  }
+
+  if (sampleSize === 0) {
+    return {
+      teamSide,
+      teamName,
+      sampleSize,
+      scoredFirst,
+      concededFirst,
+      scorelessMatches,
+      unknownMatches,
+      summary: `${teamName} first-to-score pattern is unavailable from the recent sample.`,
+    };
+  }
+
+  const unknownLine =
+    unknownMatches > 0 ? ` ${unknownMatches} recent match${unknownMatches === 1 ? ' was' : 'es were'} unclear on the first scorer.` : '';
+
+  return {
+    teamSide,
+    teamName,
+    sampleSize,
+    scoredFirst,
+    concededFirst,
+    scorelessMatches,
+    unknownMatches,
+    summary: `${teamName} scored first in ${scoredFirst} of the last ${sampleSize}, conceded first in ${concededFirst}, with ${scorelessMatches} scoreless matches.${unknownLine}`,
+  };
+}
+
 function describeWeatherCode(code?: number) {
   switch (code) {
     case 0:
@@ -353,6 +536,8 @@ function buildDeterministicOpener(preMatch: Omit<PreMatchState, 'aiOpener'>) {
     preMatch.headToHead.summary,
     `${preMatch.venue.name}${preMatch.venue.city ? ` in ${preMatch.venue.city}` : ''} is the setting tonight.`,
     weatherLine,
+    preMatch.homeScoringTrend.summary,
+    preMatch.awayFirstToScore.summary,
   ].join(' ');
 }
 
@@ -433,6 +618,10 @@ async function maybeGenerateAiOpener(
             headToHead: preMatch.headToHead,
             venue: preMatch.venue,
             weather: preMatch.weather,
+            homeScoringTrend: preMatch.homeScoringTrend,
+            awayScoringTrend: preMatch.awayScoringTrend,
+            homeFirstToScore: preMatch.homeFirstToScore,
+            awayFirstToScore: preMatch.awayFirstToScore,
           }),
         },
       ],
@@ -556,6 +745,10 @@ export async function buildPreMatchContext(config: BuilderConfig): Promise<PreMa
       surface: asNullableString(fixture.venue?.surface),
     },
     weather,
+    homeScoringTrend: buildScoringTrendSummary('home', homeName, homeRecentMatches),
+    awayScoringTrend: buildScoringTrendSummary('away', awayName, awayRecentMatches),
+    homeFirstToScore: buildFirstToScorePatternSummary('home', homeName, homeFixtures, homeId),
+    awayFirstToScore: buildFirstToScorePatternSummary('away', awayName, awayFixtures, awayId),
     deterministicOpener: '',
     sourceMetadata: {
       provider: 'sportmonks',
@@ -605,6 +798,10 @@ export function buildPreMatchRetrievalFacts(preMatch: PreMatchState) {
     `${preMatch.awayRecentForm.teamName} recent form: ${formatRecentForm(preMatch.awayRecentForm)}.`,
     preMatch.headToHead.summary,
     `Venue: ${preMatch.venue.name}${preMatch.venue.city ? `, ${preMatch.venue.city}` : ''}.`,
+    preMatch.homeScoringTrend.summary,
+    preMatch.awayScoringTrend.summary,
+    preMatch.homeFirstToScore.summary,
+    preMatch.awayFirstToScore.summary,
   ];
 
   if (preMatch.weather) {

@@ -8,6 +8,7 @@ import {
   GenerateBoothCueResponse,
   LiveMatchState,
   GenerationExplainability,
+  PreMatchState,
   RetrievedFact,
   SourceChip,
 } from '@sports-copilot/shared-types';
@@ -72,6 +73,27 @@ function summarizeLiveMatchForPrompt(liveMatch?: LiveMatchState) {
       label: stat.label,
       value: stat.value,
     })),
+  };
+}
+
+function summarizePreMatchForPrompt(preMatch?: PreMatchState) {
+  if (!preMatch || preMatch.loadStatus === 'pending') {
+    return null;
+  }
+
+  return {
+    loadStatus: preMatch.loadStatus,
+    homeRecentForm: preMatch.homeRecentForm,
+    awayRecentForm: preMatch.awayRecentForm,
+    headToHead: preMatch.headToHead,
+    venue: preMatch.venue,
+    weather: preMatch.weather,
+    homeScoringTrend: preMatch.homeScoringTrend,
+    awayScoringTrend: preMatch.awayScoringTrend,
+    homeFirstToScore: preMatch.homeFirstToScore,
+    awayFirstToScore: preMatch.awayFirstToScore,
+    deterministicOpener: preMatch.deterministicOpener,
+    aiOpener: preMatch.aiOpener,
   };
 }
 
@@ -147,6 +169,7 @@ function buildPrompt(params: {
   retrievalQuery?: string;
   contextSummary?: string;
   preMatchSummary?: string;
+  preMatch?: PreMatchState;
   clipName?: string;
   expectedTopics?: string[];
   recentCueTexts?: string[];
@@ -166,6 +189,7 @@ function buildPrompt(params: {
     retrievalQuery,
     contextSummary,
     preMatchSummary,
+    preMatch,
     clipName,
     expectedTopics = [],
     recentCueTexts = [],
@@ -201,6 +225,7 @@ function buildPrompt(params: {
       retrievalQuery,
       contextSummary,
       preMatchSummary,
+      preMatch: summarizePreMatchForPrompt(preMatch),
       expectedTopics,
       recentCueTexts,
       excludedCueTexts,
@@ -243,6 +268,7 @@ export async function generateBoothCueWithOpenAI(params: {
   interpretation?: BoothInterpretation;
   retrievalQuery?: string;
   retrievalFacts: RetrievedFact[];
+  preMatch?: PreMatchState;
   liveMatch?: LiveMatchState;
   recentEvents?: Array<{ matchTime: string; description: string; highSalience: boolean }>;
   clipName?: string;
@@ -280,6 +306,7 @@ export async function generateBoothCueWithOpenAI(params: {
         retrievalQuery: params.retrievalQuery,
         contextSummary: params.contextSummary,
         preMatchSummary: params.preMatchSummary,
+        preMatch: params.preMatch,
         clipName: params.clipName,
         expectedTopics: params.expectedTopics,
         recentCueTexts: params.recentCueTexts,

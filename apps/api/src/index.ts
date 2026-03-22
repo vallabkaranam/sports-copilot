@@ -307,6 +307,7 @@ server.post('/booth/generate-cue', async (request, reply): Promise<GenerateBooth
     interpretation: parsed.data.interpretation,
     retrievalQuery: parsed.data.retrieval.query,
     retrievalFacts: parsed.data.retrieval.supportingFacts,
+    preMatch: parsed.data.preMatch,
     liveMatch: parsed.data.liveMatch,
     contextBundle: parsed.data.contextBundle,
     recentEvents: parsed.data.recentEvents?.map((event) => ({

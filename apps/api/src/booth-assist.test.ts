@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   BoothFeatureSnapshot,
   createEmptyLiveMatchState,
+  createEmptyPreMatchState,
   RetrievedFact,
 } from '@sports-copilot/shared-types';
 import { generateBoothCueWithOpenAI } from './booth-assist';
@@ -270,5 +271,135 @@ describe('booth cue generation', () => {
       label: 'Ball Possession %',
       value: '62',
     });
+  });
+
+  it('includes rich pre-match context in the OpenAI prompt payload', async () => {
+    process.env.OPENAI_API_KEY = 'test-key';
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        output_text: JSON.stringify({
+          type: 'context',
+          text: 'Rangers have been scoring first consistently coming in.',
+          whyNow: 'The setup prompt is asking for a pre-match frame.',
+          confidence: 0.79,
+          sourceFactIds: ['fact-1'],
+          refreshAfterMs: 2100,
+        }),
+      }),
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await generateBoothCueWithOpenAI({
+      features: makeFeatures(),
+      retrievalQuery: 'Set up the match with recent form and scoring trends',
+      preMatch: {
+        ...createEmptyPreMatchState(),
+        loadStatus: 'ready',
+        generatedAt: 1_000,
+        homeRecentForm: {
+          teamSide: 'home',
+          teamName: 'Rangers',
+          record: { wins: 3, draws: 1, losses: 1 },
+          lastFive: [],
+        },
+        awayRecentForm: {
+          teamSide: 'away',
+          teamName: 'Aberdeen',
+          record: { wins: 1, draws: 2, losses: 2 },
+          lastFive: [],
+        },
+        headToHead: {
+          meetings: [],
+          homeWins: 3,
+          awayWins: 1,
+          draws: 1,
+          summary: 'Rangers have had the better of the last five meetings.',
+        },
+        venue: {
+          name: 'Ibrox Stadium',
+          city: 'Glasgow',
+          country: 'Scotland',
+          capacity: 50987,
+          surface: 'grass',
+        },
+        weather: {
+          summary: 'Light rain',
+          temperatureC: 7,
+          windKph: 16,
+          precipitationMm: 0.4,
+          source: 'open-meteo',
+          isFallback: true,
+        },
+        homeScoringTrend: {
+          teamSide: 'home',
+          teamName: 'Rangers',
+          sampleSize: 5,
+          matchesScoredIn: 4,
+          matchesConcededIn: 2,
+          averageGoalsFor: 2.2,
+          averageGoalsAgainst: 0.8,
+          matchesOverTwoPointFive: 3,
+          bothTeamsScoredMatches: 2,
+          summary: 'Rangers have scored in 4 of their last 5, averaging 2.2 goals.',
+        },
+        awayScoringTrend: {
+          teamSide: 'away',
+          teamName: 'Aberdeen',
+          sampleSize: 5,
+          matchesScoredIn: 3,
+          matchesConcededIn: 4,
+          averageGoalsFor: 1,
+          averageGoalsAgainst: 1.6,
+          matchesOverTwoPointFive: 2,
+          bothTeamsScoredMatches: 3,
+          summary: 'Aberdeen have conceded in 4 of their last 5.',
+        },
+        homeFirstToScore: {
+          teamSide: 'home',
+          teamName: 'Rangers',
+          sampleSize: 5,
+          scoredFirst: 4,
+          concededFirst: 1,
+          scorelessMatches: 0,
+          unknownMatches: 0,
+          summary: 'Rangers have scored first in 4 of their last 5 matches.',
+        },
+        awayFirstToScore: {
+          teamSide: 'away',
+          teamName: 'Aberdeen',
+          sampleSize: 5,
+          scoredFirst: 2,
+          concededFirst: 3,
+          scorelessMatches: 0,
+          unknownMatches: 0,
+          summary: 'Aberdeen have conceded first in 3 of their last 5 matches.',
+        },
+        deterministicOpener: 'Rangers bring stronger form, a scoring edge, and home support at Ibrox.',
+        aiOpener: null,
+        sourceMetadata: {
+          provider: 'sportmonks',
+          fetchedAt: 1_000,
+          sourceNotes: [],
+          usedWeatherFallback: true,
+        },
+      },
+      retrievalFacts: [makeFact()],
+    });
+
+    const requestBody = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body ?? '{}')) as {
+      input?: string;
+    };
+    const promptPayload = JSON.parse(requestBody.input?.split('\n').at(-1) ?? '{}') as {
+      preMatch?: {
+        venue?: { name?: string };
+        homeScoringTrend?: { summary?: string };
+        awayFirstToScore?: { summary?: string };
+      };
+    };
+
+    expect(promptPayload.preMatch?.venue?.name).toBe('Ibrox Stadium');
+    expect(promptPayload.preMatch?.homeScoringTrend?.summary).toContain('averaging 2.2 goals');
+    expect(promptPayload.preMatch?.awayFirstToScore?.summary).toContain('conceded first');
   });
 });

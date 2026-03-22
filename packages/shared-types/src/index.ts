@@ -403,6 +403,32 @@ export const WeatherSummarySchema = z.object({
 });
 export type WeatherSummary = z.infer<typeof WeatherSummarySchema>;
 
+export const TeamScoringTrendSummarySchema = z.object({
+  teamSide: TeamSideSchema,
+  teamName: z.string(),
+  sampleSize: z.number().int().nonnegative(),
+  matchesScoredIn: z.number().int().nonnegative(),
+  matchesConcededIn: z.number().int().nonnegative(),
+  averageGoalsFor: z.number().nonnegative(),
+  averageGoalsAgainst: z.number().nonnegative(),
+  matchesOverTwoPointFive: z.number().int().nonnegative(),
+  bothTeamsScoredMatches: z.number().int().nonnegative(),
+  summary: z.string(),
+});
+export type TeamScoringTrendSummary = z.infer<typeof TeamScoringTrendSummarySchema>;
+
+export const TeamFirstToScorePatternSchema = z.object({
+  teamSide: TeamSideSchema,
+  teamName: z.string(),
+  sampleSize: z.number().int().nonnegative(),
+  scoredFirst: z.number().int().nonnegative(),
+  concededFirst: z.number().int().nonnegative(),
+  scorelessMatches: z.number().int().nonnegative(),
+  unknownMatches: z.number().int().nonnegative(),
+  summary: z.string(),
+});
+export type TeamFirstToScorePattern = z.infer<typeof TeamFirstToScorePatternSchema>;
+
 export const PreMatchSourceMetadataSchema = z.object({
   provider: z.string(),
   fetchedAt: z.number(),
@@ -419,6 +445,10 @@ export const PreMatchStateSchema = z.object({
   headToHead: HeadToHeadSummarySchema,
   venue: VenueSummarySchema,
   weather: WeatherSummarySchema.nullable(),
+  homeScoringTrend: TeamScoringTrendSummarySchema,
+  awayScoringTrend: TeamScoringTrendSummarySchema,
+  homeFirstToScore: TeamFirstToScorePatternSchema,
+  awayFirstToScore: TeamFirstToScorePatternSchema,
   deterministicOpener: z.string(),
   aiOpener: z.string().nullable(),
   sourceMetadata: PreMatchSourceMetadataSchema,
@@ -471,6 +501,34 @@ function createEmptyTeamRecentForm(teamSide: TeamSide, teamName: string): TeamRe
   };
 }
 
+function createEmptyTeamScoringTrend(teamSide: TeamSide, teamName: string): TeamScoringTrendSummary {
+  return {
+    teamSide,
+    teamName,
+    sampleSize: 0,
+    matchesScoredIn: 0,
+    matchesConcededIn: 0,
+    averageGoalsFor: 0,
+    averageGoalsAgainst: 0,
+    matchesOverTwoPointFive: 0,
+    bothTeamsScoredMatches: 0,
+    summary: `${teamName} scoring trends are not loaded yet.`,
+  };
+}
+
+function createEmptyFirstToScorePattern(teamSide: TeamSide, teamName: string): TeamFirstToScorePattern {
+  return {
+    teamSide,
+    teamName,
+    sampleSize: 0,
+    scoredFirst: 0,
+    concededFirst: 0,
+    scorelessMatches: 0,
+    unknownMatches: 0,
+    summary: `${teamName} first-to-score pattern is not loaded yet.`,
+  };
+}
+
 export function createEmptyPreMatchState(): PreMatchState {
   return {
     loadStatus: 'pending',
@@ -492,6 +550,10 @@ export function createEmptyPreMatchState(): PreMatchState {
       surface: null,
     },
     weather: null,
+    homeScoringTrend: createEmptyTeamScoringTrend('home', 'Home'),
+    awayScoringTrend: createEmptyTeamScoringTrend('away', 'Away'),
+    homeFirstToScore: createEmptyFirstToScorePattern('home', 'Home'),
+    awayFirstToScore: createEmptyFirstToScorePattern('away', 'Away'),
     deterministicOpener: 'Pre-match context is loading.',
     aiOpener: null,
     sourceMetadata: {
@@ -840,6 +902,7 @@ export const GenerateBoothCueInputSchema = z.object({
   features: BoothFeatureSnapshotSchema,
   interpretation: BoothInterpretationSchema.optional(),
   retrieval: RetrievalStateSchema,
+  preMatch: PreMatchStateSchema.optional(),
   liveMatch: LiveMatchStateSchema.optional(),
   contextBundle: ContextBundleSchema.optional(),
   recentEvents: z.array(GameEventSchema).optional(),

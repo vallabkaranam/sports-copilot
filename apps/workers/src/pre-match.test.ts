@@ -47,6 +47,14 @@ describe('pre-match context', () => {
                 { participant_id: 7466, description: 'CURRENT', score: { participant: 'home', goals: 2 } },
                 { participant_id: 999, description: 'CURRENT', score: { participant: 'away', goals: 1 } },
               ],
+              events: [
+                {
+                  id: 101,
+                  participant_id: 7466,
+                  minute: 12,
+                  type: { developer_name: 'goal' },
+                },
+              ],
             },
             {
               id: 2,
@@ -58,6 +66,14 @@ describe('pre-match context', () => {
               scores: [
                 { participant_id: 7466, description: 'CURRENT', score: { participant: 'away', goals: 1 } },
                 { participant_id: 1789, description: 'CURRENT', score: { participant: 'home', goals: 1 } },
+              ],
+              events: [
+                {
+                  id: 102,
+                  participant_id: 1789,
+                  minute: 8,
+                  type: { developer_name: 'goal' },
+                },
               ],
             },
           ],
@@ -78,6 +94,14 @@ describe('pre-match context', () => {
                 { participant_id: 1789, description: 'CURRENT', score: { participant: 'home', goals: 3 } },
                 { participant_id: 555, description: 'CURRENT', score: { participant: 'away', goals: 0 } },
               ],
+              events: [
+                {
+                  id: 103,
+                  participant_id: 1789,
+                  minute: 6,
+                  type: { developer_name: 'goal' },
+                },
+              ],
             },
             {
               id: 2,
@@ -89,6 +113,14 @@ describe('pre-match context', () => {
               scores: [
                 { participant_id: 7466, description: 'CURRENT', score: { participant: 'away', goals: 1 } },
                 { participant_id: 1789, description: 'CURRENT', score: { participant: 'home', goals: 1 } },
+              ],
+              events: [
+                {
+                  id: 102,
+                  participant_id: 1789,
+                  minute: 8,
+                  type: { developer_name: 'goal' },
+                },
               ],
             },
           ],
@@ -128,6 +160,10 @@ describe('pre-match context', () => {
     expect(preMatch.headToHead.meetings).toHaveLength(1);
     expect(preMatch.venue.name).toBe('Vejle Stadion');
     expect(preMatch.weather?.source).toBe('open-meteo');
+    expect(preMatch.homeScoringTrend.matchesScoredIn).toBe(2);
+    expect(preMatch.awayScoringTrend.averageGoalsFor).toBe(2);
+    expect(preMatch.homeFirstToScore.concededFirst).toBe(1);
+    expect(preMatch.awayFirstToScore.scoredFirst).toBe(2);
     expect(preMatch.aiOpener).toContain('weather should stay clear');
     expect(preMatch.deterministicOpener).toContain('Vejle Stadion');
   });

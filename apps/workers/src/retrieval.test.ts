@@ -220,7 +220,11 @@ describe('retrieval pipeline', () => {
     expect(state.supportingFacts.some((fact) => fact.tier === 'pre_match')).toBe(true);
     expect(
       state.supportingFacts.some(
-        (fact) => fact.metadata?.chunkCategory === 'recent-form' || fact.metadata?.chunkCategory === 'venue',
+        (fact) =>
+          fact.metadata?.chunkCategory === 'recent-form' ||
+          fact.metadata?.chunkCategory === 'venue' ||
+          fact.text.includes('scored first') ||
+          fact.text.includes('average'),
       ),
     ).toBe(true);
   });

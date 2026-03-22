@@ -246,7 +246,11 @@ function inferBoothIntent(query: string): BoothIntent {
     return 'live-play';
   }
 
-  if (/\b(form|history|meeting|head to head|venue|weather|setup|coming in|tonight)\b/i.test(query)) {
+  if (
+    /\b(recent form|form|history|meeting|meetings|head(?:\s*|-)?to(?:\s*|-)?head|rivalry|venue|stadium|weather|setup|pre(?:\s*|-)?match|coming in|coming into|scored first|first to score|first goal|tonight)\b/i.test(
+      query,
+    )
+  ) {
     return 'setup';
   }
 
@@ -629,6 +633,58 @@ export function buildBoothAssistFacts(params: {
         },
       }),
       createSyntheticFact({
+        id: 'booth-pre-match-scoring-trend-home',
+        tier: 'pre_match',
+        text: params.preMatch.homeScoringTrend.summary,
+        source: 'pre-match:trend',
+        timestamp: params.preMatch.generatedAt,
+        relevance: 0.68,
+        metadata: {
+          chunkCategory: 'trend',
+          teamSide: 'home',
+          phaseHints: ['pre_kickoff', 'early_match', 'quiet_stretch'],
+        },
+      }),
+      createSyntheticFact({
+        id: 'booth-pre-match-scoring-trend-away',
+        tier: 'pre_match',
+        text: params.preMatch.awayScoringTrend.summary,
+        source: 'pre-match:trend',
+        timestamp: params.preMatch.generatedAt,
+        relevance: 0.68,
+        metadata: {
+          chunkCategory: 'trend',
+          teamSide: 'away',
+          phaseHints: ['pre_kickoff', 'early_match', 'quiet_stretch'],
+        },
+      }),
+      createSyntheticFact({
+        id: 'booth-pre-match-first-to-score-home',
+        tier: 'pre_match',
+        text: params.preMatch.homeFirstToScore.summary,
+        source: 'pre-match:trend',
+        timestamp: params.preMatch.generatedAt,
+        relevance: 0.68,
+        metadata: {
+          chunkCategory: 'trend',
+          teamSide: 'home',
+          phaseHints: ['pre_kickoff', 'early_match', 'quiet_stretch'],
+        },
+      }),
+      createSyntheticFact({
+        id: 'booth-pre-match-first-to-score-away',
+        tier: 'pre_match',
+        text: params.preMatch.awayFirstToScore.summary,
+        source: 'pre-match:trend',
+        timestamp: params.preMatch.generatedAt,
+        relevance: 0.68,
+        metadata: {
+          chunkCategory: 'trend',
+          teamSide: 'away',
+          phaseHints: ['pre_kickoff', 'early_match', 'quiet_stretch'],
+        },
+      }),
+      createSyntheticFact({
         id: 'booth-pre-match-opener',
         tier: 'pre_match',
         text: params.preMatch.aiOpener ?? params.preMatch.deterministicOpener,
@@ -752,6 +808,7 @@ function scoreFact(
   const isPlayQuery = /\b(save|chance|play|shot|sequence|move|moment|attack|counter)\b/i.test(fullQuery);
   const queryTeamSide = inferQueryTeamSide(fullQuery, liveMatch);
   const controlQuery = isControlQuery(fullQuery);
+  const setupQuery = inferBoothIntent(fullQuery) === 'setup';
 
   score += overlap * 0.12;
 
@@ -767,9 +824,34 @@ function scoreFact(
   }
   if (
     fact.metadata?.chunkCategory &&
-    /\b(form|history|meeting|head|venue|weather|setup|coming in|tonight)\b/i.test(fullQuery)
+    /\b(recent form|form|history|meeting|meetings|head|rivalry|venue|stadium|weather|setup|pre|coming in|coming into|first to score|scored first|tonight)\b/i.test(
+      fullQuery,
+    )
   ) {
     score += 0.24;
+  }
+  if (setupQuery && fact.tier === 'pre_match') {
+    score += 0.3;
+  }
+  if (
+    setupQuery &&
+    (fact.metadata?.chunkCategory === 'recent-form' ||
+      fact.metadata?.chunkCategory === 'head-to-head' ||
+      fact.metadata?.chunkCategory === 'venue' ||
+      fact.metadata?.chunkCategory === 'weather' ||
+      fact.metadata?.chunkCategory === 'trend' ||
+      fact.metadata?.chunkCategory === 'opener')
+  ) {
+    score += 0.22;
+  }
+  if (setupQuery && fact.tier === 'live') {
+    score -= 0.14;
+  }
+  if (setupQuery && fact.source.includes('event-feed:')) {
+    score -= 0.18;
+  }
+  if (setupQuery && fact.source.includes('social:')) {
+    score -= 0.12;
   }
   if (fact.source.includes('stats:') && /\b(stat|number|possession|shots|corners)\b/i.test(fullQuery)) {
     score += 0.24;
@@ -788,6 +870,30 @@ function scoreFact(
   }
   if (fact.source.includes('event-feed:') && isPlayQuery) {
     score += 0.28;
+  }
+  if (fact.metadata?.chunkCategory === 'recent-form' && /\brecent form|form\b/i.test(fullQuery)) {
+    score += 0.28;
+  }
+  if (
+    fact.metadata?.chunkCategory === 'head-to-head' &&
+    /\bhead(?:\s*|-)?to(?:\s*|-)?head|history|meeting|meetings|rivalry\b/i.test(fullQuery)
+  ) {
+    score += 0.34;
+  }
+  if (
+    fact.metadata?.chunkCategory === 'venue' &&
+    /\bvenue|stadium|ibrox|parkhead|arena|ground\b/i.test(fullQuery)
+  ) {
+    score += 0.28;
+  }
+  if (fact.metadata?.chunkCategory === 'weather' && /\bweather|rain|wind|cold|conditions\b/i.test(fullQuery)) {
+    score += 0.28;
+  }
+  if (
+    fact.metadata?.chunkCategory === 'trend' &&
+    /\bscoring trend|trend|scored first|first to score|first goal\b/i.test(fullQuery)
+  ) {
+    score += 0.3;
   }
 
   return score;
