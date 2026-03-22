@@ -224,6 +224,61 @@ export function createEmptyContextBundle(): ContextBundle {
   };
 }
 
+export const LiveStreamContextEventSchema = z.object({
+  id: z.string(),
+  timestamp: z.number(),
+  source: z.enum(['event', 'transcript', 'vision', 'scoreboard']),
+  headline: z.string(),
+  detail: z.string(),
+  salience: z.number().min(0).max(1),
+});
+export type LiveStreamContextEvent = z.infer<typeof LiveStreamContextEventSchema>;
+
+export const LiveStreamContextSchema = z.object({
+  windowStartMs: z.number().int().nonnegative(),
+  windowEndMs: z.number().int().nonnegative(),
+  windowMs: z.number().int().positive(),
+  summary: z.string(),
+  teams: z.object({
+    home: z.string(),
+    away: z.string(),
+  }),
+  scoreState: z.object({
+    clock: z.string(),
+    status: z.string(),
+    home: z.number(),
+    away: z.number(),
+  }),
+  momentumHint: z.string(),
+  recentEvents: z.array(LiveStreamContextEventSchema),
+  transcriptSnippets: z.array(z.string()),
+  signalSummary: z.array(z.string()),
+});
+export type LiveStreamContext = z.infer<typeof LiveStreamContextSchema>;
+
+export function createEmptyLiveStreamContext(): LiveStreamContext {
+  return {
+    windowStartMs: 0,
+    windowEndMs: 0,
+    windowMs: 12_000,
+    summary: 'Live stream context is waiting for the next active beat.',
+    teams: {
+      home: '',
+      away: '',
+    },
+    scoreState: {
+      clock: '00:00',
+      status: 'waiting',
+      home: 0,
+      away: 0,
+    },
+    momentumHint: 'Balanced',
+    recentEvents: [],
+    transcriptSnippets: [],
+    signalSummary: [],
+  };
+}
+
 /**
  * Assist cards displayed to the commentator
  */
@@ -684,6 +739,7 @@ export const WorldStateSchema = z.object({
   narrative: NarrativeStateSchema,
   retrieval: RetrievalStateSchema,
   contextBundle: ContextBundleSchema,
+  liveStreamContext: LiveStreamContextSchema,
   assist: AssistCardSchema,
   preMatch: PreMatchStateSchema,
   liveMatch: LiveMatchStateSchema,
@@ -694,6 +750,13 @@ export const WorldStateSchema = z.object({
   orchestration: z
     .object({
       agentRuns: z.array(AgentExplainabilitySchema),
+      agentWeights: z.array(
+        z.object({
+          agentName: z.string(),
+          weight: z.number().min(0).max(1),
+          reasons: z.array(z.string()),
+        }),
+      ),
       retrievalReasoning: z.array(z.string()),
       memoryState: z.array(z.string()),
       lastGeneration: GenerationExplainabilitySchema.nullable(),
@@ -905,12 +968,22 @@ export const GenerateBoothCueInputSchema = z.object({
   preMatch: PreMatchStateSchema.optional(),
   liveMatch: LiveMatchStateSchema.optional(),
   contextBundle: ContextBundleSchema.optional(),
+  liveStreamContext: LiveStreamContextSchema.optional(),
   recentEvents: z.array(GameEventSchema).optional(),
   liveSignals: z
     .object({
       social: z.array(SocialPostSchema),
       vision: z.array(VisionCueSchema),
     })
+    .optional(),
+  agentWeights: z
+    .array(
+      z.object({
+        agentName: z.string(),
+        weight: z.number().min(0).max(1),
+        reasons: z.array(z.string()),
+      }),
+    )
     .optional(),
   clipName: z.string().optional(),
   contextSummary: z.string().optional(),

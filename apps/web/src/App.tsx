@@ -547,6 +547,7 @@ function isMissingApiRouteError(error: unknown, path: string) {
 function buildContextSummary(worldState: ReturnType<typeof createInitialWorldState>) {
   const latestEvent = worldState.recentEvents[worldState.recentEvents.length - 1];
   const parts = [
+    worldState.liveStreamContext.summary,
     worldState.gameStateSummary,
     worldState.narrative.topNarrative,
     latestEvent ? `${latestEvent.matchTime} ${latestEvent.description}` : null,
@@ -560,6 +561,7 @@ function buildExpectedTopics(worldState: ReturnType<typeof createInitialWorldSta
     worldState.narrative.topNarrative,
     ...worldState.narrative.activeNarratives,
     ...worldState.retrieval.supportingFacts.slice(0, 3).map((fact) => fact.text),
+    ...worldState.liveStreamContext.recentEvents.slice(-2).map((event) => event.detail),
     ...worldState.recentEvents.slice(-3).map((event) => event.description),
     worldState.liveMatch.homeTeam.name,
     worldState.liveMatch.awayTeam.name,
@@ -2466,6 +2468,8 @@ function App() {
   const contextPreviewFacts = usedContextFacts.slice(0, 3);
   const heldContextPreviewFacts = unusedContextFacts.slice(0, 2);
   const liveContextItems = worldState.contextBundle.items.slice(0, 4);
+  const liveStreamContext = worldState.liveStreamContext;
+  const topAgentWeights = (worldState.orchestration?.agentWeights ?? []).slice(0, 4);
   const coachingTone = getCoachingTone({
     hasStartedBroadcast,
     boothHasLiveInput,
@@ -3064,8 +3068,10 @@ function App() {
         preMatch: worldState.preMatch,
         liveMatch: worldState.liveMatch,
         contextBundle: worldState.contextBundle,
+        liveStreamContext: worldState.liveStreamContext,
         recentEvents: worldState.recentEvents.slice(-4),
         liveSignals: worldState.liveSignals,
+        agentWeights: worldState.orchestration?.agentWeights,
         clipName: loadedClipName,
         contextSummary: currentBoothFeatures.contextSummary,
         preMatchSummary: preMatchCueSummary,
@@ -3113,6 +3119,8 @@ function App() {
     preMatchCueSummary,
     recentCueTexts,
     worldState.contextBundle,
+    worldState.liveStreamContext,
+    worldState.orchestration?.agentWeights,
     worldState.recentEvents,
     worldState.retrieval,
     worldState.sessionMemory.surfacedAssists,
@@ -3175,8 +3183,10 @@ function App() {
         },
         liveMatch: worldState.liveMatch,
         contextBundle: worldState.contextBundle,
+        liveStreamContext: worldState.liveStreamContext,
         recentEvents: worldState.recentEvents.slice(-4),
         liveSignals: worldState.liveSignals,
+        agentWeights: worldState.orchestration?.agentWeights,
         clipName: loadedClipName,
         contextSummary: currentBoothFeatures.contextSummary,
         preMatchSummary: preMatchCueSummary,
@@ -3219,6 +3229,8 @@ function App() {
     worldState.contextBundle,
     worldState.liveMatch,
     worldState.liveSignals,
+    worldState.liveStreamContext,
+    worldState.orchestration?.agentWeights,
     worldState.recentEvents,
     worldState.retrieval,
   ]);
@@ -3377,7 +3389,7 @@ function App() {
                 <div>
                   <p className="panel-kicker">Live desk</p>
                   <h2>{feedHeading}</h2>
-                  <p className="panel-copy">The feed stays central. The sidekick only opens up when it has something real to add.</p>
+                  <p className="panel-copy">Respecting the art of your craft. AndOne follows your flow silently, surfacing a 'line' only when it anticipates hesitation—keeping you in command and on rhythm.</p>
                 </div>
                 <div className="panel-chip-row">
                   <span className="panel-tag">{loadedClipUrl ? 'Feed armed' : 'No feed live'}</span>
@@ -3399,7 +3411,7 @@ function App() {
                     ? 'Saving the session and building the review.'
                     : loadedClipUrl
                       ? isBroadcastLive
-                        ? 'The desk is live. AndOne stays quiet until your delivery slips.'
+                        ? 'The desk is live. AndOne stays silent while you’re in rhythm, only surfacing prompts when it senses hesitation.'
                         : 'The feed is loaded and muted. Go live when you are ready.'
                       : 'Pick a preset above or load a reel into Channel 3.'}
                 </p>
@@ -3809,6 +3821,28 @@ function App() {
                   </summary>
 
                   <div className="details-card__body">
+                    <div className="context-column">
+                      <p className="memory-title">Live stream context (last ~10s)</p>
+                      <div className="context-fact-item">
+                        <strong>{liveStreamContext.teams.home} vs {liveStreamContext.teams.away}</strong>
+                        <p>{liveStreamContext.summary}</p>
+                        <span>
+                          {liveStreamContext.scoreState.clock} · {liveStreamContext.scoreState.home}-{liveStreamContext.scoreState.away}
+                        </span>
+                      </div>
+                      {liveStreamContext.recentEvents.length > 0 ? (
+                        <div className="context-fact-list">
+                          {liveStreamContext.recentEvents.slice(-3).map((event) => (
+                            <div className="context-fact-item" key={`stream-${event.id}`}>
+                              <strong>{event.headline}</strong>
+                              <p>{event.detail}</p>
+                              <span>{Math.round(event.salience * 100)}%</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+
                     {liveContextItems.length > 0 ? (
                       <div className="context-doc-list context-doc-list--compact">
                         {liveContextItems.map((item) => (
@@ -4263,6 +4297,18 @@ function App() {
                 <div className="reason-list">
                   {(worldState.orchestration?.retrievalReasoning ?? []).map((line) => (
                     <p key={`retrieval-${line}`}>{line}</p>
+                  ))}
+                </div>
+              </div>
+
+              <div className="review-section">
+                <p className="memory-title">Agent weights</p>
+                <div className="context-doc-list context-doc-list--compact">
+                  {topAgentWeights.map((agent) => (
+                    <div className="context-doc-item" key={`weight-${agent.agentName}`}>
+                      <strong>{agent.agentName}</strong>
+                      <span>{Math.round(agent.weight * 100)}%</span>
+                    </div>
                   ))}
                 </div>
               </div>

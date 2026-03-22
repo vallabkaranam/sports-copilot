@@ -3,6 +3,8 @@ import {
   ContextBundleItem,
   GameEvent,
   LiveMatchState,
+  LiveStreamContext,
+  LiveStreamContextEvent,
   MemoryTier,
   PreMatchChunkCategory,
   PreMatchState,
@@ -20,6 +22,7 @@ import { buildVisionMemory } from './vision.js';
 const SESSION_EVENT_WINDOW_MS = 30_000;
 const SESSION_TRANSCRIPT_WINDOW_MS = 20_000;
 const LIVE_MEMORY_WINDOW_MS = 45_000;
+const LIVE_STREAM_CONTEXT_WINDOW_MS = 12_000;
 const MAX_SUPPORTING_FACTS = 5;
 const LIVE_TIER_WEIGHT = 0.55;
 const SESSION_TIER_WEIGHT = 0.45;
@@ -99,6 +102,7 @@ export interface RetrievalInput {
   visionCues?: VisionCue[];
   liveMatch?: LiveMatchState;
   preMatch?: PreMatchState;
+  liveStreamContext?: LiveStreamContext;
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -302,6 +306,38 @@ function buildLiveVisionFacts(clockMs: number, visionCues: VisionCue[]): Rankabl
   );
 }
 
+function buildLiveStreamContextFacts(liveStreamContext?: LiveStreamContext): RankableFact[] {
+  if (!liveStreamContext) {
+    return [];
+  }
+
+  const summaryFact = createRankableFact({
+    id: `live-stream-context-summary-${liveStreamContext.windowEndMs}`,
+    tier: 'live',
+    text: liveStreamContext.summary,
+    source: 'live-stream-context:summary',
+    timestamp: liveStreamContext.windowEndMs,
+    tags: [
+      ...tokenize(liveStreamContext.summary),
+      ...tokenize(liveStreamContext.momentumHint),
+      normalizeText(liveStreamContext.scoreState.status),
+    ],
+  });
+
+  const eventFacts = liveStreamContext.recentEvents.map((entry) =>
+    createRankableFact({
+      id: `live-stream-context-${entry.id}`,
+      tier: 'live',
+      text: `${entry.headline}. ${entry.detail}`,
+      source: `live-stream-context:${entry.source}`,
+      timestamp: entry.timestamp,
+      tags: [...tokenize(entry.headline), ...tokenize(entry.detail)],
+    }),
+  );
+
+  return [summaryFact, ...eventFacts];
+}
+
 function buildLiveStatFacts(liveMatch?: LiveMatchState): RankableFact[] {
   if (!liveMatch) {
     return [];
@@ -447,7 +483,7 @@ function buildPreMatchFacts(preMatch?: PreMatchState): RankableFact[] {
     );
   }
 
-  const scoringTrendFacts = [preMatch.homeScoringTrend, preMatch.awayScoringTrend] as const;
+  const scoringTrendFacts = [preMatch.homeScoringTrend, preMatch.awayScoringTrend].filter(Boolean);
   for (const trend of scoringTrendFacts) {
     facts.push(
       createRankableFact({
@@ -467,7 +503,7 @@ function buildPreMatchFacts(preMatch?: PreMatchState): RankableFact[] {
     );
   }
 
-  const firstToScoreFacts = [preMatch.homeFirstToScore, preMatch.awayFirstToScore] as const;
+  const firstToScoreFacts = [preMatch.homeFirstToScore, preMatch.awayFirstToScore].filter(Boolean);
   for (const pattern of firstToScoreFacts) {
     facts.push(
       createRankableFact({
@@ -532,6 +568,107 @@ export function buildRetrievalQuery(clockMs: number, events: GameEvent[], transc
     .sort((a, b) => b.timestamp - a.timestamp)[0];
 
   return latestEvent?.description ?? latestTranscript?.text ?? 'Opening phase context';
+}
+
+function hashTokenSeed(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
+
+function boundedVariation(factId: string, clockMs: number) {
+  const seed = `${factId}:${Math.floor(clockMs / 8_000)}`;
+  return (hashTokenSeed(seed) % 1000) / 1000;
+}
+
+export function buildLiveStreamContext(params: {
+  clockMs: number;
+  events: GameEvent[];
+  transcript: TranscriptEntry[];
+  liveMatch?: LiveMatchState;
+  visionCues?: VisionCue[];
+  score?: { home: number; away: number };
+}): LiveStreamContext {
+  const { clockMs, events, transcript, liveMatch, visionCues = [], score } = params;
+  const windowStartMs = Math.max(0, clockMs - LIVE_STREAM_CONTEXT_WINDOW_MS);
+  const liveWindowEvents = events
+    .filter((event) => event.timestamp >= windowStartMs && event.timestamp <= clockMs)
+    .slice(-3);
+  const liveTranscript = transcript
+    .filter((entry) => entry.timestamp >= windowStartMs && entry.timestamp <= clockMs)
+    .slice(-2);
+  const liveVision = visionCues
+    .filter((cue) => cue.timestamp >= windowStartMs && cue.timestamp <= clockMs)
+    .slice(-2);
+
+  const recentEvents: LiveStreamContextEvent[] = [
+    ...liveWindowEvents.map((event) => ({
+      id: event.id,
+      timestamp: event.timestamp,
+      source: 'event' as const,
+      headline: event.type.replace(/_/g, ' '),
+      detail: event.description,
+      salience: event.highSalience ? 0.96 : 0.74,
+    })),
+    ...liveVision.map((cue, index) => ({
+      id: `vision-${cue.timestamp}-${index}`,
+      timestamp: cue.timestamp,
+      source: 'vision' as const,
+      headline: cue.tag.replace(/-/g, ' '),
+      detail: cue.label,
+      salience: 0.68,
+    })),
+  ]
+    .sort((left, right) => left.timestamp - right.timestamp)
+    .slice(-4);
+
+  const transcriptSnippets = liveTranscript.map((entry) => entry.text.trim()).filter(Boolean);
+  const scoreState = {
+    clock:
+      liveMatch?.minute !== undefined
+        ? `${String(Math.max(0, Math.floor(liveMatch.minute / 60))).padStart(2, '0')}:${String(
+            Math.max(0, liveMatch.minute % 60),
+          ).padStart(2, '0')}`
+        : '00:00',
+    status: liveMatch?.status ?? 'waiting',
+    home: score?.home ?? 0,
+    away: score?.away ?? 0,
+  };
+  const momentumHint =
+    liveWindowEvents.length > 0
+      ? liveWindowEvents[liveWindowEvents.length - 1]?.data?.team
+        ? `${liveWindowEvents[liveWindowEvents.length - 1]?.data?.team} driving the last sequence`
+        : liveWindowEvents[liveWindowEvents.length - 1]?.description ?? 'Momentum is balanced'
+      : liveMatch?.minute
+        ? `${liveMatch.homeTeam.shortCode} ${liveMatch.minute > 45 ? 'and' : 'vs'} ${liveMatch.awayTeam.shortCode} settling`
+        : 'Momentum is balanced';
+  const summary =
+    recentEvents.length > 0
+      ? `${recentEvents[recentEvents.length - 1]?.detail} | ${scoreState.clock} | ${scoreState.home}-${scoreState.away}`
+      : transcriptSnippets[transcriptSnippets.length - 1]
+        ? `${transcriptSnippets[transcriptSnippets.length - 1]} | ${scoreState.clock}`
+        : 'Live stream context is waiting for the next active beat.';
+
+  return {
+    windowStartMs,
+    windowEndMs: clockMs,
+    windowMs: LIVE_STREAM_CONTEXT_WINDOW_MS,
+    summary,
+    teams: {
+      home: liveMatch?.homeTeam.name ?? '',
+      away: liveMatch?.awayTeam.name ?? '',
+    },
+    scoreState,
+    momentumHint,
+    recentEvents,
+    transcriptSnippets,
+    signalSummary: [
+      `${recentEvents.length} live signal${recentEvents.length === 1 ? '' : 's'} in the window`,
+      transcriptSnippets.length > 0 ? `${transcriptSnippets.length} transcript snippet${transcriptSnippets.length === 1 ? '' : 's'}` : 'No transcript spikes',
+    ],
+  };
 }
 
 function buildFocusTokens(clockMs: number, events: GameEvent[], transcript: TranscriptEntry[]) {
@@ -608,6 +745,14 @@ function scoreFact(
     }
   }
 
+  if (fact.source.startsWith('live-stream-context:')) {
+    score += matchPhase === 'general' ? 0.26 : 0.18;
+  }
+
+  if (fact.source.startsWith('pre-match:') && matchPhase === 'general') {
+    score -= 0.06;
+  }
+
   if (fact.timestamp !== null) {
     const ageMs = Math.max(0, clockMs - fact.timestamp);
     const freshnessWindowMs =
@@ -620,6 +765,8 @@ function scoreFact(
     const freshnessScore = Math.max(0, 1 - ageMs / freshnessWindowMs) * freshnessWeight;
     score += freshnessScore;
   }
+
+  score += boundedVariation(fact.id, clockMs) * 0.03;
 
   return roundToHundredths(clamp(score, 0, 1));
 }
@@ -635,6 +782,7 @@ export function buildRetrievalState({
   visionCues = [],
   liveMatch,
   preMatch,
+  liveStreamContext,
 }: RetrievalInput): RetrievalState {
   const query = buildRetrievalQuery(clockMs, events, transcript);
   const focusTokens = buildFocusTokens(clockMs, events, transcript);
@@ -642,7 +790,21 @@ export function buildRetrievalState({
   const latestEvent = [...events]
     .filter((event) => event.timestamp <= clockMs)
     .sort((a, b) => b.timestamp - a.timestamp)[0];
+  const resolvedLiveStreamContext =
+    liveStreamContext ??
+    buildLiveStreamContext({
+      clockMs,
+      events,
+      transcript,
+      liveMatch,
+      visionCues,
+      score: {
+        home: events.filter((event) => event.type === 'GOAL' && event.data?.team === 'home').length,
+        away: events.filter((event) => event.type === 'GOAL' && event.data?.team === 'away').length,
+      },
+    });
   const candidateFacts = [
+    ...buildLiveStreamContextFacts(resolvedLiveStreamContext),
     ...buildLiveVisionFacts(clockMs, visionCues),
     ...buildLiveStatFacts(liveMatch),
     ...buildLiveMemory(clockMs, socialPosts),
@@ -725,6 +887,9 @@ function summarizeFactText(text: string) {
 }
 
 function pickContextLane(fact: RetrievedFact): ContextBundleItem['lane'] {
+  if (fact.source.startsWith('live-stream-context:')) {
+    return 'live-moment';
+  }
   if (fact.tier === 'pre_match') {
     return 'pre-match';
   }
@@ -741,6 +906,9 @@ function pickContextLane(fact: RetrievedFact): ContextBundleItem['lane'] {
 }
 
 function buildContextHeadline(fact: RetrievedFact) {
+  if (fact.source.startsWith('live-stream-context:')) {
+    return 'Live stream context';
+  }
   if (fact.source.startsWith('social:')) {
     return 'Social pulse';
   }
@@ -812,6 +980,7 @@ export function buildContextBundle(clockMs: number, retrieval: RetrievalState): 
     'social-pulse',
     'pre-match',
     'session-thread',
+    'user-context',
   ];
 
   const items = orderedLanes.flatMap((lane) =>

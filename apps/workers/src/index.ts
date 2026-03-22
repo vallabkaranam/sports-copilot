@@ -6,9 +6,11 @@ import { buildAssistCard } from './assist.js';
 import { BlueskyPostCache, ingestBlueskySocialPosts } from './bluesky.js';
 import { analyzeCommentary } from './commentator.js';
 import { buildNarrativeState } from './narrative.js';
+import { buildAgentWeights } from './orchestration.js';
 import { buildPreMatchContext, createDegradedPreMatchState } from './pre-match.js';
 import {
   buildContextBundle,
+  buildLiveStreamContext,
   buildRetrievalQuery,
   buildRetrievalState,
   ingestLiveSocialPosts,
@@ -40,6 +42,7 @@ import {
   createEmptyCommentatorState,
   createEmptyContextBundle,
   createEmptyLiveMatchState,
+  createEmptyLiveStreamContext,
   createEmptyNarrativeState,
   createEmptyPreMatchState,
   createEmptyRetrievalState,
@@ -168,10 +171,22 @@ function buildAgentRuns(params: {
   retrievalReasoning: string[];
   retrievalSources: WorldState['retrieval']['supportingFacts'];
   contextBundle: WorldState['contextBundle'];
+  liveStreamContext: WorldState['liveStreamContext'];
   assist: WorldState['assist'];
   liveMatchResolved: boolean;
+  agentWeights: Array<{ agentName: string; weight: number; reasons: string[] }>;
 }) {
-  const { commentator, retrievalReasoning, retrievalSources, contextBundle, assist, liveMatchResolved } = params;
+  const {
+    commentator,
+    retrievalReasoning,
+    retrievalSources,
+    contextBundle,
+    liveStreamContext,
+    assist,
+    liveMatchResolved,
+    agentWeights,
+  } = params;
+  const getWeight = (agentName: string) => agentWeights.find((agent) => agent.agentName === agentName);
 
   return [
     {
@@ -185,21 +200,39 @@ function buildAgentRuns(params: {
           ? commentator.hesitationReasons
           : ['No strong hesitation trigger is active.'],
       sourcesUsed: [],
-      state: commentator.hesitationScore >= 0.35 ? 'active' : 'quiet',
+      state: (getWeight('signal-agent')?.weight ?? 0) >= 0.42 ? 'active' : 'quiet',
+    },
+    {
+      agentName: 'live-context-agent',
+      output: liveStreamContext.summary,
+      reasoningTrace: getWeight('live-context-agent')?.reasons ?? ['Waiting for fresh live stream signals.'],
+      sourcesUsed: retrievalSources
+        .filter((fact) => fact.source.startsWith('live-stream-context:'))
+        .slice(0, 3)
+        .map((fact) => fact.sourceChip),
+      state: (getWeight('live-context-agent')?.weight ?? 0) >= 0.45 ? 'active' : 'ready',
+    },
+    {
+      agentName: 'pre-match-agent',
+      output:
+        retrievalSources.find((fact) => fact.tier === 'pre_match')?.text ?? 'Pre-match context is not leading this cycle.',
+      reasoningTrace: getWeight('pre-match-agent')?.reasons ?? ['Pre-match context is held in reserve.'],
+      sourcesUsed: retrievalSources.filter((fact) => fact.tier === 'pre_match').slice(0, 2).map((fact) => fact.sourceChip),
+      state: (getWeight('pre-match-agent')?.weight ?? 0) >= 0.36 ? 'ready' : 'quiet',
     },
     {
       agentName: 'context-agent',
       output: liveMatchResolved ? contextBundle.summary : 'Waiting for resolved fixture context',
-      reasoningTrace: retrievalReasoning,
+      reasoningTrace: [...(getWeight('context-agent')?.reasons ?? []), ...retrievalReasoning],
       sourcesUsed: retrievalSources.slice(0, 4).map((fact) => fact.sourceChip),
       state: liveMatchResolved ? 'ready' : 'waiting',
     },
     {
       agentName: 'cue-agent',
       output: assist.type === 'none' ? 'Standing by' : assist.text,
-      reasoningTrace: [assist.whyNow],
+      reasoningTrace: [...(getWeight('cue-agent')?.reasons ?? []), assist.whyNow],
       sourcesUsed: assist.sourceChips,
-      state: assist.type === 'none' ? 'quiet' : 'active',
+      state: assist.type === 'none' ? 'quiet' : (getWeight('cue-agent')?.weight ?? 0) >= 0.4 ? 'active' : 'ready',
     },
     {
       agentName: 'recovery-agent',
@@ -208,6 +241,7 @@ function buildAgentRuns(params: {
           ? 'Delivery has stabilized again'
           : 'Recovery is not established yet',
       reasoningTrace: [
+        ...(getWeight('recovery-agent')?.reasons ?? []),
         commentator.hesitationScore < 0.18
           ? 'Hesitation pressure is low enough that the desk can keep backing off.'
           : 'Hesitation pressure is still too high to treat this as a recovery window.',
@@ -308,6 +342,7 @@ async function run() {
     narrative: createEmptyNarrativeState(),
     retrieval: createEmptyRetrievalState(),
     contextBundle: createEmptyContextBundle(),
+    liveStreamContext: createEmptyLiveStreamContext(),
     assist: createEmptyAssistCard(),
     preMatch: createEmptyPreMatchState(),
     liveMatch: buildDegradedState('Waiting for Sportmonks data.', ''),
@@ -443,6 +478,14 @@ async function run() {
       });
       const roster = buildRosterFromLiveMatch(snapshot.liveMatch);
       const activeVisionCues = getActiveVisionCues(clockMs, visionCues);
+      const liveStreamContext = buildLiveStreamContext({
+        clockMs,
+        events: snapshot.events,
+        transcript,
+        liveMatch: snapshot.liveMatch,
+        visionCues: activeVisionCues,
+        score: snapshot.score,
+      });
       const retrieval = buildRetrievalState({
         clockMs,
         events: snapshot.events,
@@ -454,6 +497,7 @@ async function run() {
         visionCues,
         liveMatch: snapshot.liveMatch,
         preMatch,
+        liveStreamContext,
       });
       const contextBundle = buildContextBundle(clockMs, retrieval);
       const assist = buildAssistCard({
@@ -476,6 +520,7 @@ async function run() {
       const retrievalReasoning = [
         `Query: ${retrieval.query}`,
         `Selected ${retrieval.supportingFacts.length} facts and held ${retrieval.unusedFacts.length} in reserve.`,
+        `Live stream context window: ${Math.round(liveStreamContext.windowMs / 1000)}s with ${liveStreamContext.recentEvents.length} signals.`,
         snapshot.liveMatch.status === 'live'
           ? `Live minute ${snapshot.liveMatch.minute} keeps live and session facts ahead of slower context.`
           : 'The desk is relying on pre-match and static context.',
@@ -483,13 +528,21 @@ async function run() {
           ? `User-uploaded context supplied ${userContextChunks.length} matching chunk${userContextChunks.length === 1 ? '' : 's'}.`
           : 'No uploaded context matched this query window.',
       ];
+      const agentWeights = buildAgentWeights({
+        retrieval,
+        liveStreamContext,
+        liveMatch: snapshot.liveMatch,
+        commentator,
+      });
       const agentRuns = buildAgentRuns({
         commentator,
         retrievalReasoning,
         retrievalSources: retrieval.supportingFacts,
         contextBundle,
+        liveStreamContext,
         assist,
         liveMatchResolved: Boolean(fixtureId),
+        agentWeights,
       });
 
       lastWorldState = {
@@ -509,6 +562,7 @@ async function run() {
         narrative,
         retrieval,
         contextBundle,
+        liveStreamContext,
         assist,
         preMatch,
         liveMatch: snapshot.liveMatch,
@@ -518,16 +572,18 @@ async function run() {
         },
         orchestration: {
           agentRuns,
+          agentWeights,
           retrievalReasoning,
           memoryState: [
             `Recent events: ${recentEvents.length}`,
             `Transcript lines: ${transcript.length}`,
             `Session assists remembered: ${sessionMemoryState.surfacedAssists.length}`,
             `Context bundle items: ${contextBundle.items.length}`,
+            `Live stream context signals: ${liveStreamContext.recentEvents.length}`,
           ],
           lastGeneration: {
             contributingAgents: agentRuns.filter((agent) =>
-              ['context-agent', 'cue-agent'].includes(agent.agentName),
+              ['live-context-agent', 'context-agent', 'cue-agent'].includes(agent.agentName),
             ),
             reasoningTrace: [assist.whyNow, ...retrievalReasoning],
             sourcesUsed: assist.sourceChips,

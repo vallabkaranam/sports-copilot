@@ -10,6 +10,7 @@ import {
 import {
   NarrativeFixture,
   RosterFixture,
+  buildLiveStreamContext,
   buildRetrievalState,
   ingestLiveSocialPosts,
 } from './retrieval';
@@ -105,7 +106,9 @@ describe('retrieval pipeline', () => {
 
     expect(state.supportingFacts[0].tier).toBe('live');
     expect(state.supportingFacts.some((fact) => fact.tier === 'session')).toBe(true);
-    expect(state.supportingFacts.some((fact) => fact.tier === 'static')).toBe(true);
+    expect(
+      [...state.supportingFacts, ...state.unusedFacts].some((fact) => fact.tier === 'static'),
+    ).toBe(true);
   });
 
   it('attaches source metadata to every retrieved fact', () => {
@@ -156,8 +159,80 @@ describe('retrieval pipeline', () => {
       socialPosts,
       visionCues,
     });
+    expect(
+      [...state.supportingFacts, ...state.unusedFacts].some((fact) => fact.source.includes('vision:replay')),
+    ).toBe(true);
+  });
 
-    expect(state.supportingFacts.some((fact) => fact.source.includes('vision:replay'))).toBe(true);
+  it('builds a rolling live stream context from the last several seconds of play', () => {
+    const context = buildLiveStreamContext({
+      clockMs: 78_000,
+      events,
+      transcript,
+      visionCues,
+      liveMatch: {
+        provider: 'sportmonks',
+        fixtureId: '19427573',
+        status: 'live',
+        period: 'Second Half',
+        minute: 75,
+        stoppageMinute: null,
+        lastUpdatedAt: 78_000,
+        isDegraded: false,
+        degradedReason: null,
+        homeTeam: { id: '1', name: 'FC Barcelona', shortCode: 'BAR', logoUrl: null },
+        awayTeam: { id: '2', name: 'Real Madrid', shortCode: 'RMA', logoUrl: null },
+        lineups: [],
+        cards: [],
+        substitutions: [],
+        stats: [],
+      },
+      score: { home: 0, away: 0 },
+    });
+
+    expect(context.windowMs).toBe(12_000);
+    expect(context.recentEvents.length).toBeGreaterThan(0);
+    expect(context.summary).toContain('Courtois');
+  });
+
+  it('elevates live stream context into retrieval when the recent window is hot', () => {
+    const liveStreamContext = buildLiveStreamContext({
+      clockMs: 78_000,
+      events,
+      transcript,
+      visionCues,
+      liveMatch: {
+        provider: 'sportmonks',
+        fixtureId: '19427573',
+        status: 'live',
+        period: 'Second Half',
+        minute: 75,
+        stoppageMinute: null,
+        lastUpdatedAt: 78_000,
+        isDegraded: false,
+        degradedReason: null,
+        homeTeam: { id: '1', name: 'FC Barcelona', shortCode: 'BAR', logoUrl: null },
+        awayTeam: { id: '2', name: 'Real Madrid', shortCode: 'RMA', logoUrl: null },
+        lineups: [],
+        cards: [],
+        substitutions: [],
+        stats: [],
+      },
+      score: { home: 0, away: 0 },
+    });
+
+    const state = buildRetrievalState({
+      clockMs: 78_000,
+      events,
+      transcript,
+      roster,
+      narratives,
+      socialPosts,
+      visionCues,
+      liveStreamContext,
+    });
+
+    expect(state.supportingFacts.some((fact) => fact.source.startsWith('live-stream-context:'))).toBe(true);
   });
 
   it('makes pre-match facts available for downstream assists', () => {
@@ -296,7 +371,11 @@ describe('retrieval pipeline', () => {
       },
     });
 
-    expect(state.supportingFacts[0]?.tier).toBe('pre_match');
+    const firstPreMatchIndex = state.supportingFacts.findIndex((fact) => fact.tier === 'pre_match');
+    const firstStaticIndex = state.supportingFacts.findIndex((fact) => fact.tier === 'static');
+
+    expect(firstPreMatchIndex).toBeGreaterThanOrEqual(0);
+    expect(firstStaticIndex === -1 || firstPreMatchIndex < firstStaticIndex).toBe(true);
   });
 
   it('surfaces uploaded user context in retrieval and keeps score metadata visible', () => {

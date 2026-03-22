@@ -7,6 +7,7 @@ import {
   createEmptyAssistCard,
   GenerateBoothCueResponse,
   LiveMatchState,
+  LiveStreamContext,
   GenerationExplainability,
   PreMatchState,
   RetrievedFact,
@@ -104,6 +105,7 @@ function buildCueExplainability(params: {
   features: BoothFeatureSnapshot;
   interpretation?: BoothInterpretation;
   contextBundle?: ContextBundle;
+  liveStreamContext?: LiveStreamContext;
 }): GenerationExplainability {
   const contextAgent: AgentExplainability = {
     agentName: 'context-agent',
@@ -175,6 +177,7 @@ function buildPrompt(params: {
   recentCueTexts?: string[];
   excludedCueTexts?: string[];
   contextBundle?: ContextBundle;
+  liveStreamContext?: LiveStreamContext;
   liveMatch?: LiveMatchState;
   liveSignals?: {
     social: Array<{ timestamp: number; handle: string; text: string; sentiment: string }>;
@@ -182,6 +185,7 @@ function buildPrompt(params: {
   };
   retrievedFacts: RetrievedFact[];
   recentEvents?: Array<{ matchTime: string; description: string; highSalience: boolean }>;
+  agentWeights?: Array<{ agentName: string; weight: number; reasons: string[] }>;
 }) {
   const {
     features,
@@ -195,10 +199,12 @@ function buildPrompt(params: {
     recentCueTexts = [],
     excludedCueTexts = [],
     contextBundle,
+    liveStreamContext,
     liveMatch,
     liveSignals,
     retrievedFacts,
     recentEvents = [],
+    agentWeights = [],
   } = params;
 
   return [
@@ -206,6 +212,7 @@ function buildPrompt(params: {
     'The hesitation engine has already decided this moment may need help.',
     'Your job is to offer one short, broadcaster-friendly line that gets the speaker moving again without taking over.',
     'Use only the supplied facts and context. Never invent a stat, event, player detail, or narrative.',
+    'Treat liveStreamContext as the freshest rolling summary of the last several seconds of play.',
     'If the facts are thin, generate a generic bridge line that stays grounded in the current moment instead of hallucinating.',
     'Prefer the rolling context bundle first when it has relevant items, because it represents the freshest session rack.',
     'When multiple source families are available, blend them naturally: live moment first, then stat/social/setup support when relevant.',
@@ -230,8 +237,10 @@ function buildPrompt(params: {
       recentCueTexts,
       excludedCueTexts,
       contextBundle,
+      liveStreamContext,
       liveMatch: summarizeLiveMatchForPrompt(liveMatch),
       liveSignals,
+      agentWeights,
       features,
       interpretation,
       recentEvents,
@@ -270,6 +279,7 @@ export async function generateBoothCueWithOpenAI(params: {
   retrievalFacts: RetrievedFact[];
   preMatch?: PreMatchState;
   liveMatch?: LiveMatchState;
+  liveStreamContext?: LiveStreamContext;
   recentEvents?: Array<{ matchTime: string; description: string; highSalience: boolean }>;
   clipName?: string;
   contextSummary?: string;
@@ -278,6 +288,7 @@ export async function generateBoothCueWithOpenAI(params: {
   recentCueTexts?: string[];
   excludedCueTexts?: string[];
   contextBundle?: ContextBundle;
+  agentWeights?: Array<{ agentName: string; weight: number; reasons: string[] }>;
   liveSignals?: {
     social: Array<{ timestamp: number; handle: string; text: string; sentiment: string }>;
     vision: Array<{ timestamp: number; tag: string; label: string }>;
@@ -312,10 +323,12 @@ export async function generateBoothCueWithOpenAI(params: {
         recentCueTexts: params.recentCueTexts,
         excludedCueTexts: params.excludedCueTexts,
         contextBundle: params.contextBundle,
+        liveStreamContext: params.liveStreamContext,
         liveMatch: params.liveMatch,
         liveSignals: params.liveSignals,
         retrievedFacts,
         recentEvents: params.recentEvents,
+        agentWeights: params.agentWeights,
       }),
     }),
   });
@@ -380,6 +393,7 @@ export async function generateBoothCueWithOpenAI(params: {
         features: params.features,
         interpretation: params.interpretation,
         contextBundle: params.contextBundle,
+        liveStreamContext: params.liveStreamContext,
       }),
       source: 'openai',
     };

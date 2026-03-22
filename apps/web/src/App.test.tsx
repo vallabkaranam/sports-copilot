@@ -134,6 +134,35 @@ function createWorldState(overrides: Partial<WorldState> = {}): WorldState {
         },
       ],
     },
+    liveStreamContext: {
+      windowStartMs: 66_000,
+      windowEndMs: 78_000,
+      windowMs: 12_000,
+      summary: 'Courtois stands tall to deny Barcelona. | 01:15 | 0-0',
+      teams: {
+        home: 'Barcelona',
+        away: 'Real Madrid',
+      },
+      scoreState: {
+        clock: '01:15',
+        status: 'live',
+        home: 0,
+        away: 0,
+      },
+      momentumHint: 'RMA driving the last sequence',
+      recentEvents: [
+        {
+          id: 'stream-1',
+          timestamp: 75_000,
+          source: 'event',
+          headline: 'SAVE',
+          detail: 'Courtois stands tall to deny Barcelona.',
+          salience: 0.96,
+        },
+      ],
+      transcriptSnippets: ['Courtois again, somehow keeping that out—'],
+      signalSummary: ['1 live signal in the window', '1 transcript snippet'],
+    },
     assist: {
       type: 'context',
       text: 'Courtois is keeping Madrid alive in this pressure wave.',
@@ -1261,6 +1290,13 @@ describe('App dashboard', () => {
       ...currentWorldState,
       orchestration: {
         agentRuns: [],
+        agentWeights: [
+          {
+            agentName: 'live-context-agent',
+            weight: 0.82,
+            reasons: ['Live save is the dominant signal in the current window.'],
+          },
+        ],
         retrievalReasoning: ['Selected the latest live save and held backup context in reserve.'],
         memoryState: ['Sliding window holds the last live moment and fresh transcript lane.'],
         confidenceReason: 'Confidence dipped because pause and filler signals spiked together.',
@@ -1331,6 +1367,8 @@ describe('App dashboard', () => {
       contextSummary?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
+    expect(container.textContent).toContain('Live stream context (last ~10s)');
+    expect(container.textContent).toContain('Courtois stands tall to deny Barcelona. | 01:15 | 0-0');
     expect(container.textContent).toContain('prep-notes.md');
     expect(container.textContent).toContain('Retrieved but held');
   });
