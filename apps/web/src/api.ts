@@ -125,7 +125,7 @@ export function transcribeBoothAudio(audioBase64: string, mimeType: string) {
   });
 }
 
-export function resolveFixture(screenshotBase64: string, mimeType: string, clipName?: string) {
+export function resolveFixture(screenshotBase64?: string, mimeType?: string, clipName?: string) {
   return requestJson<ResolveFixtureResponse>('/booth/resolve-fixture', {
     method: 'POST',
     body: JSON.stringify({ screenshotBase64, mimeType, clipName }),

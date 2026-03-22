@@ -71,10 +71,32 @@ function extractResponseText(payload: unknown) {
 }
 
 async function extractFixtureHintsWithOpenAI(params: {
-  screenshotBase64: string;
-  mimeType: string;
+  screenshotBase64?: string;
+  mimeType?: string;
   clipName?: string;
 }): Promise<ExtractedFixtureHints> {
+  const content: Array<{ type: 'input_text'; text: string } | { type: 'input_image'; image_url: string }> = [
+    {
+      type: 'input_text',
+      text: [
+        'You are extracting likely football match hints from a broadcast screenshot or clip label.',
+        'Return strict JSON with keys: homeTeam, awayTeam, competition, confidence.',
+        'If the input is uncertain, still return your best guess but lower confidence.',
+        'Use null for competition if you cannot infer it.',
+        params.clipName ? `Clip name hint: ${params.clipName}` : null,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    },
+  ];
+
+  if (params.screenshotBase64 && params.mimeType) {
+    content.push({
+      type: 'input_image',
+      image_url: `data:${params.mimeType};base64,${params.screenshotBase64}`,
+    });
+  }
+
   const response = await fetch(OPENAI_API_URL, {
     method: 'POST',
     headers: {
@@ -87,24 +109,7 @@ async function extractFixtureHintsWithOpenAI(params: {
       input: [
         {
           role: 'user',
-          content: [
-            {
-              type: 'input_text',
-              text: [
-                'You are extracting likely football match hints from a broadcast screenshot.',
-                'Return strict JSON with keys: homeTeam, awayTeam, competition, confidence.',
-                'If the image is uncertain, still return your best guess but lower confidence.',
-                'Use null for competition if you cannot infer it.',
-                params.clipName ? `Clip name hint: ${params.clipName}` : null,
-              ]
-                .filter(Boolean)
-                .join('\n'),
-            },
-            {
-              type: 'input_image',
-              image_url: `data:${params.mimeType};base64,${params.screenshotBase64}`,
-            },
-          ],
+          content,
         },
       ],
     }),
@@ -240,8 +245,8 @@ async function searchSportmonksFixtures(params: {
 }
 
 export async function resolveFixtureFromScreenshot(params: {
-  screenshotBase64: string;
-  mimeType: string;
+  screenshotBase64?: string;
+  mimeType?: string;
   clipName?: string;
   sportmonksApiToken?: string;
 }): Promise<ResolveFixtureResponse> {

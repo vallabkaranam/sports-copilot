@@ -817,9 +817,11 @@ export const GenerateBoothCueResponseSchema = z.object({
 export type GenerateBoothCueResponse = z.infer<typeof GenerateBoothCueResponseSchema>;
 
 export const ResolveFixtureInputSchema = z.object({
-  screenshotBase64: z.string().min(1),
-  mimeType: z.string().min(1),
+  screenshotBase64: z.string().min(1).optional(),
+  mimeType: z.string().min(1).optional(),
   clipName: z.string().optional(),
+}).refine((value) => Boolean(value.clipName || (value.screenshotBase64 && value.mimeType)), {
+  message: 'Fixture resolution requires a screenshot or clip name hint.',
 });
 export type ResolveFixtureInput = z.infer<typeof ResolveFixtureInputSchema>;
 

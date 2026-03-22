@@ -165,25 +165,33 @@ async function captureVideoFrameAsBase64(videoElement: HTMLVideoElement) {
     throw new Error('Video frame capture is unavailable in this browser.');
   }
 
-  context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+  try {
+    context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+  } catch (_error) {
+    throw new Error('The browser blocked frame capture for this feed.');
+  }
 
   return new Promise<{ screenshotBase64: string; mimeType: string }>((resolve, reject) => {
-    canvas.toBlob(async (blob) => {
-      if (!blob) {
-        reject(new Error('The current frame could not be captured.'));
-        return;
-      }
+    try {
+      canvas.toBlob(async (blob) => {
+        if (!blob) {
+          reject(new Error('The current frame could not be captured.'));
+          return;
+        }
 
-      try {
-        const screenshotBase64 = await encodeBlobAsBase64(blob);
-        resolve({
-          screenshotBase64,
-          mimeType: blob.type || 'image/jpeg',
-        });
-      } catch (error) {
-        reject(error);
-      }
-    }, 'image/jpeg', 0.9);
+        try {
+          const screenshotBase64 = await encodeBlobAsBase64(blob);
+          resolve({
+            screenshotBase64,
+            mimeType: blob.type || 'image/jpeg',
+          });
+        } catch (error) {
+          reject(error);
+        }
+      }, 'image/jpeg', 0.9);
+    } catch (_error) {
+      reject(new Error('The browser blocked frame capture for this feed.'));
+    }
   });
 }
 
@@ -873,6 +881,7 @@ function App() {
         .then(({ screenshotBase64, mimeType }) =>
           resolveFixture(screenshotBase64, mimeType, loadedClipName),
         )
+        .catch((_error) => resolveFixture(undefined, undefined, loadedClipName))
         .then(async (resolvedFixture) => {
           lastResolvedFeedKeyRef.current = feedKey;
           setFixtureResolutionLabel(
@@ -2605,6 +2614,7 @@ function App() {
                 ref={videoRef}
                 className="replay-video"
                 src={loadedClipUrl}
+                crossOrigin="anonymous"
                 playsInline
                 loop
                 muted={isClipMuted}
