@@ -3721,7 +3721,6 @@ function App() {
                   </div>
                 </article>
 
-<<<<<<< HEAD
                 <details className="booth-card booth-card--compact details-card" open>
                   <summary className="details-card__summary">
                     <div>
@@ -3905,8 +3904,6 @@ function App() {
                   </div>
                 </details>
 
-=======
->>>>>>> d8bed59 (Move debug drawers off the live page)
                 <div className="inline-actions inline-actions--compact inline-actions--spread">
                   <button
                     type="button"
