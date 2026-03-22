@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildBoothSignal, calculateAudioLevel } from './boothSignal';
+import { buildBoothSignal, calculateAudioLevel, resolveBoothGuidanceScores } from './boothSignal';
 
 describe('booth signal audio activity', () => {
   it('treats recent mic activity as speaking even without transcript text', () => {
@@ -116,6 +116,60 @@ describe('booth signal audio activity', () => {
     expect(signal.fillerWords).toContain('erm');
   });
 
+  it('treats kind-of and basically variants as filler pressure', () => {
+    const signal = buildBoothSignal({
+      boothTranscript: [],
+      interimTranscript: 'kind of basically this is sort of getting away here',
+      isMicListening: true,
+      lastSpeechAtMs: 11_200,
+      lastVoiceActivityAtMs: 11_200,
+      speechStreakStartedAtMs: 10_100,
+      audioLevel: 0.08,
+      nowMs: 11_900,
+    });
+
+    expect(signal.fillerWords).toContain('kind of');
+    expect(signal.fillerWords).toContain('basically');
+    expect(signal.fillerWords).toContain('sort of');
+  });
+
+  it('detects repeated ideas even when the exact opening changes', () => {
+    const signal = buildBoothSignal({
+      boothTranscript: [
+        { timestamp: 0, speaker: 'lead', text: 'Madrid have to survive this pressure now' },
+        { timestamp: 1_300, speaker: 'lead', text: 'Real Madrid are just trying to survive this pressure' },
+      ],
+      interimTranscript: '',
+      isMicListening: true,
+      lastSpeechAtMs: 1_400,
+      lastVoiceActivityAtMs: 1_400,
+      speechStreakStartedAtMs: 0,
+      audioLevel: 0.09,
+      nowMs: 1_900,
+    });
+
+    expect(signal.repeatedIdeaCount).toBeGreaterThan(0);
+    expect(signal.hesitationReasons.join(' ')).toContain('Repeated idea');
+  });
+
+  it('tracks pace pressure when delivery becomes unusually slow', () => {
+    const signal = buildBoothSignal({
+      boothTranscript: [
+        { timestamp: 0, speaker: 'lead', text: 'This is getting tense now' },
+      ],
+      interimTranscript: 'uh this is really getting tense now',
+      isMicListening: true,
+      lastSpeechAtMs: 9_500,
+      lastVoiceActivityAtMs: 9_500,
+      speechStreakStartedAtMs: 2_000,
+      audioLevel: 0.06,
+      nowMs: 10_000,
+    });
+
+    expect(signal.wordsPerMinute).toBeGreaterThan(0);
+    expect(signal.pacePressureScore).toBeGreaterThan(0);
+  });
+
   it('steps in immediately when the wake phrase is spoken', () => {
     const signal = buildBoothSignal({
       boothTranscript: [],
@@ -203,6 +257,32 @@ describe('booth signal audio activity', () => {
     expect(signal.pauseDurationMs).toBe(5_500);
     expect(signal.hesitationScore).toBe(1);
     expect(signal.shouldSurfaceAssist).toBe(true);
+  });
+
+  it('reduces effective hesitation when recovery overtakes the hesitation moment', () => {
+    const resolved = resolveBoothGuidanceScores({
+      localHesitationScore: 0.72,
+      localConfidenceScore: 0.76,
+      interpretedHesitationScore: 0.68,
+      interpretedRecoveryScore: 0.58,
+      interpretationState: 'weaning-off',
+    });
+
+    expect(resolved.effectiveHesitationScore).toBeLessThan(0.3);
+    expect(resolved.effectiveRecoveryScore).toBeGreaterThan(resolved.effectiveHesitationScore);
+  });
+
+  it('preserves rising hesitation when recovery is genuinely absent', () => {
+    const resolved = resolveBoothGuidanceScores({
+      localHesitationScore: 0.72,
+      localConfidenceScore: 0.08,
+      interpretedHesitationScore: 0.7,
+      interpretedRecoveryScore: 0.04,
+      interpretationState: 'step-in',
+    });
+
+    expect(resolved.effectiveHesitationScore).toBeGreaterThan(0.6);
+    expect(resolved.effectiveRecoveryScore).toBeLessThan(0.3);
   });
 
   it('returns a higher level for a louder waveform', () => {

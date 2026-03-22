@@ -2,7 +2,6 @@ import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BoothFeatureSnapshot,
   BoothInterpretation,
-  BoothSessionAnalytics,
   BoothSessionRecord,
   BoothSessionReview,
   BoothSessionSummary,
@@ -42,13 +41,11 @@ import {
   buildBoothSignal,
   calculateAudioLevel,
   deriveBoothActivity,
+  resolveBoothGuidanceScores,
 } from './boothSignal';
 import {
-  TEAM_META,
   createInitialWorldState,
   formatDurationMs,
-  formatEventType,
-  formatMomentum,
   formatPercent,
   parseClock,
 } from './dashboard';
@@ -236,15 +233,6 @@ function isMissingApiRouteError(error: unknown, path: string) {
   return error instanceof Error && error.message.includes(`${path} failed with 404`);
 }
 
-function formatFormRecord(
-  form: {
-    record: { wins: number; draws: number; losses: number };
-    lastFive: Array<unknown>;
-  },
-) {
-  return `${form.record.wins}-${form.record.draws}-${form.record.losses} (${form.lastFive.length})`;
-}
-
 function buildContextSummary(worldState: ReturnType<typeof createInitialWorldState>) {
   const latestEvent = worldState.recentEvents[worldState.recentEvents.length - 1];
   const parts = [
@@ -335,6 +323,15 @@ function derivePostSessionReview(session: BoothSessionRecord | null) {
   const averageStability = average(snapshots.map((snapshot) => snapshot.transcriptStabilityScore || 1));
   const averagePause = average(session.samples.map((sample) => sample.pauseDurationMs));
   const averageFillerDensity = average(snapshots.map((snapshot) => snapshot.fillerDensity || 0));
+  const averageWordsPerMinute = average(snapshots.map((snapshot) => snapshot.wordsPerMinute || 0));
+  const averagePacePressure = average(snapshots.map((snapshot) => snapshot.pacePressureScore || 0));
+  const repeatedIdeaMoments = snapshots.reduce(
+    (total, snapshot) => total + (snapshot.repeatedIdeaCount || 0),
+    0,
+  );
+  const highestPacePressure = [...snapshots].sort(
+    (left, right) => (right.pacePressureScore || 0) - (left.pacePressureScore || 0),
+  )[0];
 
   const learningNotes = [
     topTrigger === 'pause'
@@ -346,6 +343,12 @@ function derivePostSessionReview(session: BoothSessionRecord | null) {
     recoveryMoments > 0
       ? `AndOne detected ${recoveryMoments} recovery moment${recoveryMoments === 1 ? '' : 's'} where it could back off.`
       : 'Recovery never stabilized long enough to trigger a confident back-off moment.',
+    repeatedIdeaMoments > 0
+      ? `Repeated-idea loops showed up ${repeatedIdeaMoments} time${repeatedIdeaMoments === 1 ? '' : 's'}, which is now a tracked hesitation pattern.`
+      : 'The call stayed varied enough that repeated-idea loops were not a major trigger.',
+    averagePacePressure >= 0.18
+      ? `Delivery pace was a meaningful pressure signal in this run${highestPacePressure?.wordsPerMinute ? `, peaking around ${Math.round(highestPacePressure.wordsPerMinute)} WPM.` : '.'}`
+      : 'Pace pressure stayed mostly under control, so the strongest signals came from pause and phrasing instead.',
   ];
 
   return {
@@ -359,6 +362,8 @@ function derivePostSessionReview(session: BoothSessionRecord | null) {
       { label: 'Avg live pause', value: formatDurationMs(Math.round(averagePause)) },
       { label: 'Avg transcript stability', value: formatPercent(averageStability) },
       { label: 'Avg filler density', value: formatPercent(averageFillerDensity) },
+      { label: 'Avg pace', value: averageWordsPerMinute > 0 ? `${Math.round(averageWordsPerMinute)} WPM` : 'No speech' },
+      { label: 'Pace pressure', value: formatPercent(averagePacePressure) },
       { label: 'Recovery moments', value: String(recoveryMoments) },
     ],
     learningNotes,
@@ -460,13 +465,6 @@ function App() {
   const [isHydrated, setIsHydrated] = useState(false);
   const [isUpdatingControls, setIsUpdatingControls] = useState(false);
   const [hasStartedBroadcast, setHasStartedBroadcast] = useState(false);
-  const [boothAnalytics, setBoothAnalytics] = useState<BoothSessionAnalytics>({
-    totalSessions: 0,
-    completedSessions: 0,
-    averageMaxHesitationScore: 0,
-    averageLongestPauseMs: 0,
-    totalAssistCount: 0,
-  });
   const [recentBoothSessions, setRecentBoothSessions] = useState<BoothSessionSummary[]>([]);
   const [latestCompletedSession, setLatestCompletedSession] = useState<BoothSessionRecord | null>(null);
   const [latestCompletedSessionReview, setLatestCompletedSessionReview] =
@@ -486,7 +484,6 @@ function App() {
   const [clipPositionMs, setClipPositionMs] = useState(0);
   const [clipDurationMs, setClipDurationMs] = useState(0);
   const [isClipMuted, setIsClipMuted] = useState(true);
-  const [showDetails, setShowDetails] = useState(false);
   const [boothTranscript, setBoothTranscript] = useState<TranscriptEntry[]>([]);
   const [boothInterimTranscript, setBoothInterimTranscript] = useState('');
   const [boothError, setBoothError] = useState<string | null>(null);
@@ -599,7 +596,6 @@ function App() {
         startTransition(() => {
           setWorldState(nextWorldState);
           setControls(nextControls);
-          setBoothAnalytics(nextBoothSessions.analytics);
           setRecentBoothSessions(nextBoothSessions.sessions);
           setError(null);
           setIsHydrated(true);
@@ -758,7 +754,6 @@ function App() {
   async function refreshBoothSessions() {
     try {
       const nextBoothSessions = await fetchBoothSessions();
-      setBoothAnalytics(nextBoothSessions.analytics);
       setRecentBoothSessions(nextBoothSessions.sessions);
     } catch (_error) {
       setBoothError('Saved sessions could not be loaded from the API.');
@@ -1408,31 +1403,7 @@ function App() {
     await finalizeBoothSession();
   }
 
-  async function resetBroadcast() {
-    await stopBroadcast();
-    await sendControlPatch({ restart: true });
-  }
-
   const assist = worldState.assist;
-  const homeCode = worldState.liveMatch.homeTeam.shortCode || TEAM_META.home.code;
-  const awayCode = worldState.liveMatch.awayTeam.shortCode || TEAM_META.away.code;
-  const homeCards =
-    worldState.liveMatch.cards.find((entry) => entry.teamSide === 'home') ?? {
-      teamSide: 'home',
-      yellow: 0,
-      red: 0,
-    };
-  const awayCards =
-    worldState.liveMatch.cards.find((entry) => entry.teamSide === 'away') ?? {
-      teamSide: 'away',
-      yellow: 0,
-      red: 0,
-    };
-  const substitutions = [...worldState.liveMatch.substitutions].reverse();
-  const lineupSummary = worldState.liveMatch.lineups;
-  const statSummary = worldState.liveMatch.stats.slice(0, 8);
-  const recentEvents = [...worldState.recentEvents].reverse();
-  const surfacedAssists = [...worldState.sessionMemory.surfacedAssists].reverse();
   const isMicSupported =
     microphoneAvailability !== 'unsupported' && supportsAudioMonitoring();
   const isSystemReady = isHydrated && !error;
@@ -1500,7 +1471,7 @@ function App() {
   const currentBoothFeatures = useMemo<BoothFeatureSnapshot>(
     () => ({
       timestamp: boothClockMs,
-      hesitationScore: 0,
+      hesitationScore: boothSignal.hesitationScore,
       confidenceScore: boothSignal.confidenceScore,
       pauseDurationMs: Math.round(boothSignal.pauseDurationMs),
       speechStreakMs: Math.round(boothSignal.speechStreakMs),
@@ -1513,9 +1484,13 @@ function App() {
       fillerWords: boothSignal.fillerWords,
       repeatedOpeningCount: boothSignal.repeatedOpeningCount,
       repeatedPhrases: boothSignal.repeatedPhrases,
+      repeatedIdeaCount: boothSignal.repeatedIdeaCount,
+      repeatedIdeaPhrases: boothSignal.repeatedIdeaPhrases,
       unfinishedPhrase: boothSignal.unfinishedPhrase,
       transcriptWordCount: boothSignal.transcriptWordCount,
       transcriptStabilityScore: boothSignal.transcriptStabilityScore,
+      wordsPerMinute: boothSignal.wordsPerMinute,
+      pacePressureScore: boothSignal.pacePressureScore,
       hesitationReasons: boothSignal.hesitationReasons,
       transcriptWindow: boothTranscript.slice(-LOCAL_TRANSCRIPT_LIMIT),
       interimTranscript: boothInterimTranscript,
@@ -1538,11 +1513,15 @@ function App() {
       boothSignal.pauseDurationMs,
       boothSignal.repeatedOpeningCount,
       boothSignal.repeatedPhrases,
+      boothSignal.repeatedIdeaCount,
+      boothSignal.repeatedIdeaPhrases,
       boothSignal.silenceStreakMs,
       boothSignal.speechStreakMs,
       boothSignal.transcriptStabilityScore,
       boothSignal.transcriptWordCount,
       boothSignal.unfinishedPhrase,
+      boothSignal.wordsPerMinute,
+      boothSignal.pacePressureScore,
       boothSignal.wakePhraseDetected,
       boothTranscript,
       boothInterpretation?.state,
@@ -1551,8 +1530,16 @@ function App() {
   );
   const interpretedHesitationScore = boothInterpretation?.hesitationScore ?? 0;
   const interpretedRecoveryScore = boothInterpretation?.recoveryScore ?? 0;
-  const effectiveHesitationScore = Math.max(boothSignal.hesitationScore, interpretedHesitationScore);
-  const effectiveRecoveryScore = Math.max(boothSignal.confidenceScore, interpretedRecoveryScore);
+  const {
+    effectiveHesitationScore,
+    effectiveRecoveryScore,
+  } = resolveBoothGuidanceScores({
+    localHesitationScore: boothSignal.hesitationScore,
+    localConfidenceScore: boothSignal.confidenceScore,
+    interpretedHesitationScore,
+    interpretedRecoveryScore,
+    interpretationState: boothInterpretation?.state,
+  });
   const liveBoothShouldSurfaceAssist =
     boothSignal.shouldSurfaceAssist || Boolean(boothInterpretation?.shouldSurfaceAssist);
   const workerAssistShouldSurface =
@@ -1571,7 +1558,6 @@ function App() {
   const activeAssist = latchedAssist;
   const shouldSurfaceAssist = activeAssist.type !== 'none' && assistVisibilityPhase !== 'hidden';
   const isAssistWeaning = assistVisibilityPhase === 'weaning';
-  const assistConfidencePercent = formatPercent(shouldSurfaceAssist ? activeAssist.confidence : 0);
   const boothHesitationPercent = formatPercent(effectiveHesitationScore);
   const visibleReasons = [...(boothInterpretation?.reasons ?? []), ...boothSignal.hesitationReasons].filter(
     (reason, index, collection) => collection.indexOf(reason) === index,
@@ -1609,7 +1595,6 @@ function App() {
   ];
   const clipClockLabel = formatDurationMs(clipPositionMs);
   const clipDurationLabel = clipDurationMs > 0 ? formatDurationMs(clipDurationMs) : '--:--';
-  const clipProgress = clipDurationMs > 0 ? Math.min(100, Math.round((clipPositionMs / clipDurationMs) * 100)) : 0;
   const isBroadcastLive =
     hasStartedBroadcast && (controls.playbackStatus === 'playing' || isMicListening);
   const selectedProgramSlot = PROGRAM_FEED_SLOTS.find((slot) => slot.id === selectedProgramFeedId) ?? null;
@@ -1655,6 +1640,14 @@ function App() {
   const activeAssistSupportCopy = isAssistWeaning
     ? 'Confidence is returning. AndOne is backing off.'
     : activeAssist.whyNow;
+  const transcriptWindow = boothTranscript.slice(-4);
+  const railSystemNote = isAssistWeaning
+    ? 'Recovery is strong, so the cue is shrinking and handing the call back to you.'
+    : shouldSurfaceAssist
+      ? 'A cue is live because delivery slipped. Use the prompt card, then keep moving.'
+      : boothHasLiveInput
+        ? 'The system is only monitoring now. No prompt should surface unless hesitation returns.'
+        : 'Feed and microphone are armed. Start speaking when you are ready to call the action.';
   const micBars = Array.from({ length: 14 }, (_, index) => {
     const threshold = (index + 1) / 14;
     return boothSignal.audioLevel >= threshold * 0.18;
@@ -1946,6 +1939,13 @@ function App() {
       return;
     }
 
+    if (boothSignal.confidenceScore >= 0.68 && boothSignal.hesitationScore <= 0.18) {
+      setBoothInterpretation((current) =>
+        current?.state === 'weaning-off' ? current : null,
+      );
+      return;
+    }
+
     const hasTranscriptContext =
       boothTranscript.length > 0 ||
       boothInterimTranscript.trim().length > 0 ||
@@ -1994,8 +1994,8 @@ function App() {
     currentBoothFeatures,
     worldState,
     hasStartedBroadcast,
-      isMicListening,
-      boothInterpretation?.state,
+    isMicListening,
+    boothInterpretation?.state,
   ]);
 
   useEffect(() => {
@@ -2132,14 +2132,6 @@ function App() {
               Session Archive
             </button>
           </div>
-          <button
-            type="button"
-            className="ghost-button ghost-button--subtle"
-            onClick={() => setShowDetails((current) => !current)}
-          >
-            <span className="tab-icon" aria-hidden="true">{showDetails ? '–' : '+'}</span>
-            {showDetails ? 'Hide Context Rack' : 'Show Context Rack'}
-          </button>
         </div>
       </header>
 
@@ -2152,7 +2144,7 @@ function App() {
               <div>
                 <p className="panel-kicker"><span className="panel-kicker__icon" aria-hidden="true">🎛</span>Live desk</p>
                 <h2>{feedHeading}</h2>
-                <p className="panel-copy">Program feed front and center. AndOne only comes up when the call actually needs a line.</p>
+                <p className="panel-copy">Keep the feed in view. The prompt only appears when hesitation shows up.</p>
               </div>
               <div className="panel-chip-row">
                 <span className="panel-tag">{loadedClipUrl ? `${clipClockLabel} / ${clipDurationLabel}` : 'No feed live'}</span>
@@ -2229,24 +2221,19 @@ function App() {
             </div>
             <div className="media-meta">
               <span className="meta-pill">
-                {selectedProgramSlot ? `${selectedProgramSlot.label} selected` : 'Choose a feed'}
+                {selectedProgramSlot ? `${selectedProgramSlot.label}` : 'Choose a feed'}
               </span>
-              <span className="meta-pill">{loadedClipName || 'Channel 1 preset or Channel 2 upload'}</span>
+              <span className="meta-pill">{loadedClipName || 'Preset feed or uploaded reel'}</span>
               {loadedClipUrl ? (
-                <span className="meta-pill">{isClipMuted ? 'Clip audio muted' : 'Clip audio on'}</span>
-              ) : null}
-            </div>
-            {loadedClipUrl ? (
-              <>
                 <button
                   type="button"
-                  className="text-button"
+                  className="ghost-button ghost-button--subtle"
                   onClick={() => setIsClipMuted((current) => !current)}
                 >
-                  {isClipMuted ? 'Monitor clip audio' : 'Mute clip audio'}
+                  {isClipMuted ? 'Clip audio muted' : 'Clip audio on'}
                 </button>
-              </>
-            ) : null}
+              ) : null}
+            </div>
           </div>
 
           <div className="stage-primary-bar">
@@ -2315,37 +2302,6 @@ function App() {
           </div>
 
           <div className="stage-support">
-            <div className="stage-support__status">
-              <div className={`coach-lane coach-lane--${coachingTone.tone}`}>
-                <strong>{isAssistWeaning ? 'Backing off now' : coachingTone.headline}</strong>
-                <p>
-                  {isAssistWeaning
-                    ? 'Momentum is back, so the prompt is stepping out and returning control to you.'
-                    : coachingTone.copy}
-                </p>
-              </div>
-
-              <div className="stage-support__progress">
-                <div className="meter-label-row">
-                  <span>Clip progress</span>
-                  <strong>{clipProgress}%</strong>
-                </div>
-                <div className="progress-track" aria-label="Replay progress">
-                  <span style={{ width: `${clipProgress}%` }} />
-                </div>
-              </div>
-            </div>
-
-            {activeTriggerBadges.length > 0 ? (
-              <div className="replay-tags stage-support__tags">
-                {activeTriggerBadges.map((badge) => (
-                  <span className="scene-chip" key={badge}>
-                    {badge}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-
             {shouldSurfaceAssist ? (
               <article
                 className={`replay-toast replay-toast--below ${
@@ -2358,6 +2314,14 @@ function App() {
                 <p>{activeAssistSupportCopy}</p>
               </article>
             ) : null}
+
+            <p className="stage-footnote">
+              {loadedClipUrl
+                ? isBroadcastLive
+                  ? 'The reel loops while the session is live so the desk behaves like a continuous broadcast feed.'
+                  : 'Load the feed, then go live when you are ready.'
+                : 'Channel 1 uses the Barca preset. Channel 2 can hold your own reel.'}
+            </p>
           </div>
         </section>
 
@@ -2366,26 +2330,26 @@ function App() {
             <div className="panel-header panel-header--compact">
               <div>
                 <p className="panel-kicker">Live session</p>
-                <h2>Booth rail</h2>
-                <p className="panel-copy">One clean operator rail. Monitor delivery, prompt state, and only the cues that matter.</p>
+                <h2>Monitor</h2>
               </div>
             </div>
 
-            <div className="readiness-list">
+            <div className="rail-status-strip" aria-label="Booth readiness">
               {readinessChecks.map((check) => (
-                <div key={check.label} className={`readiness-row ${check.done ? 'readiness-row--done' : ''}`}>
+                <div
+                  key={check.label}
+                  className={`rail-status-chip ${check.done ? 'rail-status-chip--done' : ''}`}
+                  title={check.detail}
+                >
                   <span className={`readiness-dot ${check.done ? 'readiness-dot--done' : ''}`} />
-                  <div className="readiness-copy">
-                    <strong>{check.label}</strong>
-                    <span>{check.detail}</span>
-                  </div>
+                  <strong>{check.label}</strong>
                 </div>
               ))}
             </div>
 
             {boothError ? <p className="inline-warning">{boothError}</p> : null}
 
-            <article className={`booth-card booth-card--${coachingTone.tone}`}>
+            <article className={`booth-card booth-card--compact booth-card--${coachingTone.tone}`}>
               <div className="booth-card__header">
                 <div>
                   <p className="control-label">System note</p>
@@ -2393,11 +2357,7 @@ function App() {
                 </div>
               </div>
 
-              <p className="field-copy field-copy--tight">
-                {isAssistWeaning
-                  ? 'AndOne sees enough recovery to shrink the cue and step away.'
-                  : coachingTone.copy}
-              </p>
+              <p className="field-copy field-copy--tight">{railSystemNote}</p>
 
               <div className="metric-card">
                 <div className="meter-label-row">
@@ -2442,25 +2402,40 @@ function App() {
               </div>
 
               <div className="reason-list">
-                {visibleReasons.slice(0, 2).map((reason) => (
+                {visibleReasons.slice(0, 1).map((reason) => (
                   <p key={reason}>{reason}</p>
                 ))}
               </div>
+            </article>
 
-              <p className="field-copy">
-                The clip stays muted by default so the booth tracks your voice, not the program feed.
-              </p>
+            <article className="booth-card booth-card--compact booth-card--steady booth-card--transcript">
+              <div className="booth-card__header">
+                <div>
+                  <p className="control-label">Live transcript</p>
+                  <strong>{boothHasTranscriptContext ? 'Mic copy is flowing' : 'Waiting for speech'}</strong>
+                </div>
+              </div>
+
+              <div className="transcript-list" aria-live="polite">
+                {transcriptWindow.length > 0 ? (
+                  transcriptWindow.map((entry) => (
+                    <p className="transcript-line" key={`${entry.timestamp}-${entry.text}`}>
+                      {entry.text}
+                    </p>
+                  ))
+                ) : (
+                  <p className="transcript-line transcript-line--muted">
+                    Once the booth mic produces usable text, the latest lines will appear here.
+                  </p>
+                )}
+
+                {boothInterimTranscript.trim() ? (
+                  <p className="transcript-line transcript-line--interim">{boothInterimTranscript.trim()}</p>
+                ) : null}
+              </div>
             </article>
 
             <div className="inline-actions inline-actions--compact">
-              <button
-                type="button"
-                className="text-button"
-                disabled={isFinalizingSession}
-                onClick={() => void resetBroadcast()}
-              >
-                Reset live session
-              </button>
               <button
                 type="button"
                 className="text-button"
@@ -2490,39 +2465,20 @@ function App() {
 
             <div className="commentary-metadata commentary-metadata--review">
               <div>
-                <p className="control-label">Runs</p>
-                <strong>{completedReviewAnalytics.totalSessions}</strong>
-              </div>
-              <div>
                 <p className="control-label">Completed</p>
-                <strong>{completedReviewSessions.length}</strong>
+                <strong>{completedReviewAnalytics.totalSessions}</strong>
               </div>
               <div>
                 <p className="control-label">Avg hesitation</p>
                 <strong>{formatPercent(completedReviewAnalytics.averagePeakHesitation)}</strong>
               </div>
               <div>
-                <p className="control-label">Prompts</p>
-                <strong>{completedReviewAnalytics.totalPrompts}</strong>
-              </div>
-            </div>
-
-            <div className="commentary-metadata commentary-metadata--review">
-              <div>
-                <p className="control-label">Avg peak</p>
-                <strong>{formatPercent(sessionWorkspaceInsights.averagePeakHesitation)}</strong>
-              </div>
-              <div>
                 <p className="control-label">Avg pause</p>
                 <strong>{formatDurationMs(Math.round(sessionWorkspaceInsights.averageLongestPauseMs))}</strong>
               </div>
               <div>
-                <p className="control-label">Avg prompts/run</p>
+                <p className="control-label">Prompts / run</p>
                 <strong>{sessionWorkspaceInsights.averageAssistRate.toFixed(1)}</strong>
-              </div>
-              <div>
-                <p className="control-label">Highest-pressure clip</p>
-                <strong>{sessionWorkspaceInsights.hottestSession?.clipName ?? 'None yet'}</strong>
               </div>
             </div>
 
@@ -2543,18 +2499,20 @@ function App() {
                       <span>{session.clipName}</span>
                       <small>{session.status}</small>
                     </div>
-                    <p>
-                      Peak {formatPercent(session.maxHesitationScore)} · longest pause{' '}
-                      {formatDurationMs(session.longestPauseMs)} · {session.assistCount} prompt
-                      {session.assistCount === 1 ? '' : 's'}
-                    </p>
-                    <button
-                      type="button"
-                      className="text-button"
-                      onClick={() => void loadSessionReview(session.id)}
-                    >
-                      {selectedReviewSessionId === session.id ? 'Reload review' : 'Open session'}
-                    </button>
+                    <div className="timeline-item__body">
+                      <p>
+                        Peak {formatPercent(session.maxHesitationScore)} · longest pause{' '}
+                        {formatDurationMs(session.longestPauseMs)} · {session.assistCount} prompt
+                        {session.assistCount === 1 ? '' : 's'}
+                      </p>
+                      <button
+                        type="button"
+                        className="text-button"
+                        onClick={() => void loadSessionReview(session.id)}
+                      >
+                        {selectedReviewSessionId === session.id ? 'Reload review' : 'Open session'}
+                      </button>
+                    </div>
                   </article>
                 ))
               ) : (
@@ -2730,301 +2688,6 @@ function App() {
         </div>
       )}
 
-      {showDetails ? (
-        <div className="bottom-grid">
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker"><span className="panel-kicker__icon" aria-hidden="true">🛰</span>Context Rack</p>
-              <h2>Prematch and retrieval context</h2>
-            </div>
-            <span className="panel-tag">{worldState.preMatch.loadStatus}</span>
-          </div>
-
-          <div className="narrative-focus">
-            <p className="narrative-label">Opening read</p>
-            <h3>{worldState.preMatch.aiOpener ?? worldState.preMatch.deterministicOpener}</h3>
-            <p>Kept here for grounding and later prompt generation, not on the live surface.</p>
-          </div>
-
-          <div className="narrative-stack">
-            <span className="stack-chip">
-              {worldState.liveMatch.homeTeam.shortCode || 'HOME'} form {formatFormRecord(worldState.preMatch.homeRecentForm)}
-            </span>
-            <span className="stack-chip">
-              {worldState.liveMatch.awayTeam.shortCode || 'AWAY'} form {formatFormRecord(worldState.preMatch.awayRecentForm)}
-            </span>
-            <span className="stack-chip">{worldState.preMatch.venue.name}</span>
-            <span className="stack-chip">
-              {worldState.preMatch.weather?.summary ?? 'Weather unavailable'}
-            </span>
-          </div>
-
-          <div className="memory-strip">
-            <p className="memory-title">Stored context</p>
-            <div className="session-context-grid">
-              <article className="context-card context-card--wide">
-                <p className="context-label">Head to head</p>
-                <p className="context-value">{worldState.preMatch.headToHead.summary}</p>
-              </article>
-              <article className="context-card">
-                <p className="context-label">Venue</p>
-                <p className="context-value">
-                  {[
-                    worldState.preMatch.venue.name,
-                    worldState.preMatch.venue.city,
-                    worldState.preMatch.venue.country,
-                  ]
-                    .filter(Boolean)
-                    .join(', ')}
-                </p>
-              </article>
-              <article className="context-card">
-                <p className="context-label">Weather</p>
-                <p className="context-value">
-                  {worldState.preMatch.weather
-                    ? `${worldState.preMatch.weather.summary}${
-                        worldState.preMatch.weather.temperatureC !== null
-                          ? ` · ${Math.round(worldState.preMatch.weather.temperatureC)}C`
-                          : ''
-                      }`
-                    : 'Unavailable'}
-                </p>
-              </article>
-            </div>
-          </div>
-        </section>
-
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker">Live Trace</p>
-              <h2>Live trace</h2>
-            </div>
-            <span className="panel-tag">{boothHesitationPercent}</span>
-          </div>
-
-          <div className="timeline-list">
-            {recentEvents.length > 0 ? (
-              recentEvents.map((event) => (
-                <article
-                  className={`timeline-item ${event.highSalience ? 'timeline-item--hot' : ''}`}
-                  key={event.id}
-                >
-                  <div className="timeline-time">
-                    <span>{event.matchTime}</span>
-                    <small>{formatEventType(event.type)}</small>
-                  </div>
-                  <p>{event.description}</p>
-                </article>
-              ))
-            ) : (
-              <p className="empty-copy">Recent match events will roll in here as the live feed advances.</p>
-            )}
-          </div>
-        </section>
-
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker">Live Match</p>
-              <h2>Cards, substitutions, and lineups</h2>
-            </div>
-            <span className="panel-tag">{worldState.liveMatch.status.replace(/_/g, ' ')}</span>
-          </div>
-
-          <div className="narrative-focus">
-            <p className="narrative-label">Cards</p>
-            <h3>
-              {homeCode} {homeCards.yellow}Y/{homeCards.red}R · {awayCode} {awayCards.yellow}Y/{awayCards.red}R
-            </h3>
-            <p>{substitutions.length} substitutions tracked</p>
-          </div>
-
-          <div className="narrative-stack">
-            {substitutions.length > 0 ? (
-              substitutions.slice(0, 4).map((substitution) => (
-                <span className="stack-chip" key={substitution.id}>
-                  {substitution.matchTime} {substitution.playerOn} for {substitution.playerOff}
-                </span>
-              ))
-            ) : (
-              <span className="stack-chip stack-chip--muted">Substitutions will appear here.</span>
-            )}
-          </div>
-
-          <div className="memory-strip">
-            <p className="memory-title">Projected starters</p>
-            {lineupSummary.length > 0 ? (
-              lineupSummary.map((lineup) => (
-                <p className="memory-line" key={lineup.teamSide}>
-                  {lineup.teamName}: {lineup.formation ?? 'formation TBD'} · {lineup.startingXI.length} starters
-                </p>
-              ))
-            ) : (
-              <p className="memory-line">Lineups will populate once Sportmonks returns them.</p>
-            )}
-          </div>
-        </section>
-
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker">Story Stack</p>
-              <h2>Storylines and stats</h2>
-            </div>
-            <span className="panel-tag">{formatMomentum(worldState.narrative.momentum)}</span>
-          </div>
-
-          <div className="narrative-focus">
-            <p className="narrative-label">Top narrative</p>
-            <h3>{worldState.narrative.topNarrative ?? 'No dominant thread yet.'}</h3>
-            <p>{worldState.narrative.currentSentiment}</p>
-          </div>
-
-          <div className="narrative-stack">
-            {worldState.narrative.activeNarratives.length > 0 ? (
-              worldState.narrative.activeNarratives.map((narrative) => (
-                <span className="stack-chip" key={narrative}>
-                  {narrative}
-                </span>
-              ))
-            ) : (
-              <span className="stack-chip stack-chip--muted">Narratives will stack here.</span>
-            )}
-          </div>
-
-          <div className="memory-strip">
-            <p className="memory-title">Live team stats</p>
-            {statSummary.length > 0 ? (
-              statSummary.map((stat, index) => (
-                <p className="memory-line" key={`${stat.teamSide}-${stat.label}-${index}`}>
-                  {(stat.teamSide === 'home' ? homeCode : awayCode).toUpperCase()} {stat.label}: {stat.value}
-                </p>
-              ))
-            ) : surfacedAssists.length > 0 ? (
-              surfacedAssists.slice(0, 3).map((savedAssist) => (
-                <p className="memory-line" key={`${savedAssist.type}:${savedAssist.text}`}>
-                  {savedAssist.text}
-                </p>
-              ))
-            ) : (
-              <p className="memory-line">Stats will populate once the live feed returns them.</p>
-            )}
-          </div>
-        </section>
-
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker">Session Metrics</p>
-              <h2>Session analytics</h2>
-            </div>
-            <span className="panel-tag">{assistConfidencePercent}</span>
-          </div>
-
-          <div className="commentary-metadata">
-            <div>
-              <p className="control-label">Runs</p>
-              <strong>{boothAnalytics.totalSessions}</strong>
-            </div>
-            <div>
-              <p className="control-label">Avg hesitation</p>
-              <strong>{formatPercent(boothAnalytics.averageMaxHesitationScore)}</strong>
-            </div>
-            <div>
-              <p className="control-label">Longest pause</p>
-              <strong>{formatDurationMs(boothAnalytics.averageLongestPauseMs)}</strong>
-            </div>
-            <div>
-              <p className="control-label">Prompts</p>
-              <strong>{boothAnalytics.totalAssistCount}</strong>
-            </div>
-          </div>
-
-          <div className="meter-cluster">
-            <div>
-              <div className="meter-label-row">
-                <span>Hesitation</span>
-                <strong>{boothHesitationPercent}</strong>
-              </div>
-              <div className="meter-track">
-                <span style={{ width: boothHesitationPercent }} />
-              </div>
-            </div>
-          </div>
-
-          <div className="reason-list">
-            {visibleReasons.map((reason) => (
-              <p key={reason}>{reason}</p>
-            ))}
-          </div>
-
-          {boothInterpretation?.signals && boothInterpretation.signals.length > 0 ? (
-            <div className="commentary-metadata">
-              {boothInterpretation.signals.map((signal) => (
-                <div key={signal.key}>
-                  <p className="control-label">{signal.label}</p>
-                  <strong>{signal.detail}</strong>
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          <div className="commentary-metadata">
-            <div>
-              <p className="control-label">Speaker</p>
-              <strong>{boothSignal.activeSpeaker}</strong>
-            </div>
-            <div>
-              <p className="control-label">Pause</p>
-              <strong>
-                {Math.round(
-                  ((boothHasLiveInput ? boothSignal.pauseDurationMs : worldState.commentator.pauseDurationMs) /
-                    100) *
-                    10,
-                ) / 10}
-                s
-              </strong>
-            </div>
-            <div>
-              <p className="control-label">Filler words</p>
-              <strong>{boothSignal.fillerWords.join(', ') || 'Clean'}</strong>
-            </div>
-            <div>
-              <p className="control-label">Repeated opens</p>
-              <strong>{boothSignal.repeatedPhrases[0] ?? 'None'}</strong>
-            </div>
-          </div>
-
-          <div className="memory-strip">
-            <p className="memory-title">Transcript</p>
-            <div className="transcript-list">
-              {boothTranscript.length > 0 ? (
-                boothTranscript.slice(-5).map((entry) => (
-                  <p className="transcript-line" key={`${entry.timestamp}-${entry.text}`}>
-                    {entry.text}
-                  </p>
-                ))
-              ) : (
-                <p className="transcript-line transcript-line--muted">
-                  {!loadedClipUrl
-                    ? 'Load a feed first, then go live.'
-                    : !hasStartedBroadcast
-                      ? 'Go live to begin live mic tracking.'
-                      : isMicSupported
-                        ? 'Live transcript will appear here once you start speaking.'
-                        : 'This browser does not expose usable mic APIs, so live hesitation is unavailable here.'}
-                </p>
-              )}
-              {boothInterimTranscript ? (
-                <p className="transcript-line transcript-line--interim">{boothInterimTranscript}</p>
-              ) : null}
-            </div>
-          </div>
-          </section>
-        </div>
-      ) : null}
     </div>
   );
 }

@@ -10,7 +10,8 @@ import {
 } from '@sports-copilot/shared-types';
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/responses';
-const OPENAI_ASSIST_MODEL = 'gpt-5.4-mini';
+const OPENAI_ASSIST_MODEL_LIGHT = 'gpt-5.4-mini';
+const OPENAI_ASSIST_MODEL_HEAVY = 'gpt-5.4';
 
 function clamp(value: number, minimum = 0, maximum = 1) {
   return Math.min(maximum, Math.max(minimum, value));
@@ -112,6 +113,22 @@ function buildPrompt(params: {
   ].join('\n');
 }
 
+function selectAssistModel(params: {
+  features: BoothFeatureSnapshot;
+  interpretation?: BoothInterpretation;
+}) {
+  if (
+    params.interpretation?.state === 'step-in' ||
+    params.features.hesitationScore >= 0.72 ||
+    params.features.wakePhraseDetected ||
+    (params.features.pacePressureScore ?? 0) >= 0.34
+  ) {
+    return OPENAI_ASSIST_MODEL_HEAVY;
+  }
+
+  return OPENAI_ASSIST_MODEL_LIGHT;
+}
+
 export async function generateBoothCueWithOpenAI(params: {
   features: BoothFeatureSnapshot;
   interpretation?: BoothInterpretation;
@@ -125,6 +142,10 @@ export async function generateBoothCueWithOpenAI(params: {
   contextBundle?: ContextBundle;
 }): Promise<GenerateBoothCueResponse> {
   const retrievedFacts = params.retrievalFacts.slice(0, 8);
+  const model = selectAssistModel({
+    features: params.features,
+    interpretation: params.interpretation,
+  });
 
   const response = await fetch(OPENAI_API_URL, {
     method: 'POST',
@@ -133,7 +154,7 @@ export async function generateBoothCueWithOpenAI(params: {
       Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
     },
     body: JSON.stringify({
-      model: OPENAI_ASSIST_MODEL,
+      model,
       reasoning: {
         effort: 'low',
       },

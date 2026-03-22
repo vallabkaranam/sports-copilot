@@ -762,17 +762,6 @@ describe('App dashboard', () => {
     });
   }
 
-  async function showDetailsPanel() {
-    const showDetailsButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Show Context Rack'),
-    );
-
-    await act(async () => {
-      showDetailsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-  }
-
   it('renders the live AndOne booth surface', async () => {
     await renderApp();
 
@@ -780,9 +769,8 @@ describe('App dashboard', () => {
     expect(container.textContent).toContain('AndOne');
     expect(container.textContent).toContain('Channel 1');
     expect(container.textContent).toContain('Channel 2');
-    expect(container.textContent).toContain('Booth rail');
-    expect(container.textContent).toContain('Show Context Rack');
-    expect(container.textContent).toContain('Channel 1 selected');
+    expect(container.textContent).toContain('Monitor');
+    expect(container.textContent).toContain('Preset match feed');
     expect(container.textContent).toContain('Barca preset');
     expect(container.textContent).not.toContain('Pre-match brief');
   });
@@ -796,7 +784,7 @@ describe('App dashboard', () => {
     expect(playButton?.textContent).toBe('Go live');
     expect(playButton?.hasAttribute('disabled')).toBe(false);
     expect(container.textContent).toContain('Channel 1 · Barca preset');
-    expect(container.textContent).toContain('AndOne will request access when you go live.');
+    expect(container.textContent).toContain('Feed and microphone are armed. Start speaking when you are ready to call the action.');
   });
 
   it('commits buffered transcription into the transcript rail', async () => {
@@ -806,8 +794,6 @@ describe('App dashboard', () => {
     });
 
     await startLiveSession();
-    await showDetailsPanel();
-
     await act(async () => {
       mediaRecorders[0]?.ondataavailable?.({
         data: new Blob(['audio'], { type: 'audio/webm' }),
@@ -831,8 +817,6 @@ describe('App dashboard', () => {
     );
 
     await startLiveSession();
-    await showDetailsPanel();
-
     await act(async () => {
       mediaRecorders[0]?.ondataavailable?.({
         data: new Blob(['audio-1'], { type: 'audio/webm' }),
@@ -906,15 +890,6 @@ describe('App dashboard', () => {
       await Promise.resolve();
     });
 
-    const resetButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Reset live session'),
-    );
-
-    await act(async () => {
-      resetButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
     const postBodies = fetchMock.mock.calls
       .filter(
         ([, init]) =>
@@ -929,7 +904,6 @@ describe('App dashboard', () => {
       expect.arrayContaining([
         expect.objectContaining({ clipName: 'test.mp4' }),
         expect.objectContaining({ playbackStatus: 'playing' }),
-        expect.objectContaining({ restart: true }),
       ]),
     );
     expect(createObjectUrl).toHaveBeenCalled();
@@ -1139,7 +1113,6 @@ describe('App dashboard', () => {
     });
 
     expect(container.textContent).not.toContain('Courtois keeps Madrid alive with an enormous reflex stop.');
-    expect(container.textContent).toContain('Show Context Rack');
   });
 
 });

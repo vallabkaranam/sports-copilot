@@ -44,6 +44,10 @@ function buildSignals(
       : features.fillerDensity > 0
         ? 1
         : 0;
+  const paceVsBaseline =
+    profile && typeof profile.averageWordsPerMinute === 'number' && profile.averageWordsPerMinute > 0
+      ? (features.wordsPerMinute ?? 0) / Math.max(1, profile.averageWordsPerMinute)
+      : 1;
   const wakePhraseDetected = detectWakePhrase(features, profile);
 
   return [
@@ -108,6 +112,12 @@ function buildSignals(
       detail: `${features.repeatedOpeningCount}`,
     },
     {
+      key: 'repeatedIdeaCount',
+      label: 'Repeated ideas',
+      value: features.repeatedIdeaCount ?? 0,
+      detail: `${features.repeatedIdeaCount ?? 0}`,
+    },
+    {
       key: 'unfinishedPhrase',
       label: 'Unfinished thought',
       value: features.unfinishedPhrase,
@@ -118,6 +128,33 @@ function buildSignals(
       label: 'Transcript stability',
       value: features.transcriptStabilityScore,
       detail: `${Math.round(features.transcriptStabilityScore * 100)}%`,
+    },
+    {
+      key: 'wordsPerMinute',
+      label: 'Delivery pace',
+      value: features.wordsPerMinute ?? 0,
+      detail:
+        features.wordsPerMinute && features.wordsPerMinute > 0
+          ? `${Math.round(features.wordsPerMinute)} WPM`
+          : 'not enough speech yet',
+    },
+    {
+      key: 'pacePressureScore',
+      label: 'Pace pressure',
+      value: features.pacePressureScore ?? 0,
+      detail:
+        features.pacePressureScore && features.pacePressureScore > 0
+          ? `${Math.round(features.pacePressureScore * 100)}% pressure`
+          : 'steady pace',
+    },
+    {
+      key: 'paceVsBaseline',
+      label: 'Pace vs baseline',
+      value: paceVsBaseline,
+      detail:
+        profile && typeof profile.averageWordsPerMinute === 'number' && profile.averageWordsPerMinute > 0
+          ? `${paceVsBaseline.toFixed(2)}x your usual pace`
+          : 'No pace baseline yet',
     },
     {
       key: 'wakePhraseDetected',
@@ -159,9 +196,9 @@ export async function interpretBoothWithOpenAI(
     'Return strict JSON with keys: state, hesitationScore, recoveryScore, shouldSurfaceAssist, summary, reasons, signals.',
     'Valid state values: standby, monitoring, step-in, weaning-off.',
     'Interpret hesitation as loss of delivery momentum. Interpret recovery as regained stable speaking.',
-    'Use pause after active speech, filler density, repeated ideas, repeated openings, unfinished thought, wake phrase, and context drift as possible signals.',
-    'Do not reduce every moment to pause alone. If filler count, repeated openings, unfinished thought, wake phrase, or transcript instability are active, mention those active signals explicitly in reasons.',
-    'A cluster of filler, restart, unfinished-thought, or transcript-instability signals can justify step-in even before a long pause is present.',
+    'Use pause after active speech, filler density, repeated ideas, repeated openings, unfinished thought, wake phrase, pace pressure, and context drift as possible signals.',
+    'Do not reduce every moment to pause alone. If filler count, repeated openings, repeated ideas, unfinished thought, wake phrase, pace pressure, or transcript instability are active, mention those active signals explicitly in reasons.',
+    'A cluster of filler, restart, repeated-idea, pace-pressure, unfinished-thought, or transcript-instability signals can justify step-in even before a long pause is present.',
     'When multiple signals are active at once, reflect that mix in the summary and reasons instead of naming only one cause.',
     'Compare the current moment against the historical speaker profile when deciding whether this behavior is actually unusual for this commentator.',
     'Be conservative. Only choose step-in when help is clearly needed now. Prefer monitoring or weaning-off when the user is recovering.',
