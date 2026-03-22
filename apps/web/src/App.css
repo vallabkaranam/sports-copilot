@@ -689,6 +689,7 @@
 
 .replay-stage {
   position: relative;
+  align-self: start;
   overflow: hidden;
   min-height: 520px;
   border-radius: 14px;
