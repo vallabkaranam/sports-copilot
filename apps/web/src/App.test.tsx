@@ -781,7 +781,7 @@ describe('App dashboard', () => {
   it('renders the live AndOne booth surface', async () => {
     await renderApp();
 
-    expect(container.textContent).toContain('Live commentary sidekick');
+    expect(container.textContent).toContain('Commentary sidekick');
     expect(container.textContent).toContain('AndOne');
     expect(container.textContent).toContain('Channel 1');
     expect(container.textContent).toContain('Channel 2');
@@ -1081,7 +1081,7 @@ describe('App dashboard', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('Saved 3 live samples and 2 assist moments for this run.');
+    expect(container.textContent).toContain('Saved 3 live samples and 2 prompts for this run.');
     expect(container.textContent).toContain('Your most common filler was "um".');
     expect(container.textContent).not.toContain('could not be finalized in the saved session store');
   });

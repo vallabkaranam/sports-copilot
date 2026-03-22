@@ -335,7 +335,7 @@ function derivePostSessionReview(session: BoothSessionRecord | null) {
 
   return {
     headline: 'Session review is ready.',
-    summary: `Saved ${session.sampleCount} live samples and ${session.assistCount} assist moment${
+    summary: `Saved ${session.sampleCount} live samples and ${session.assistCount} prompt${
       session.assistCount === 1 ? '' : 's'
     } for this run.`,
     metrics: [
@@ -393,17 +393,17 @@ function getCoachingTone({
     return {
       tone: 'standby' as CoachingTone,
       label: 'Standby',
-      headline: 'System standing by.',
-      copy: 'Nothing appears on the feed until the session is live.',
+      headline: 'AndOne is standing by.',
+      copy: 'Prompts stay off-screen until you go live.',
     };
   }
 
   if (shouldSurfaceAssist) {
     return {
       tone: 'step-in' as CoachingTone,
-      label: 'Stepping in',
-      headline: 'Assist live on this beat.',
-      copy: 'The pause has gone long enough to justify a prompt.',
+      label: 'Prompt live',
+      headline: 'A prompt is live.',
+      copy: 'AndOne is stepping in because your delivery slipped.',
     };
   }
 
@@ -411,8 +411,8 @@ function getCoachingTone({
     return {
       tone: 'standby' as CoachingTone,
       label: 'Listening',
-      headline: 'Waiting for your first line.',
-      copy: 'Start calling the action and AndOne will listen for a real pause.',
+      headline: 'Waiting for your first call.',
+      copy: 'Start the commentary and AndOne will listen for hesitation.',
     };
   }
 
@@ -421,15 +421,15 @@ function getCoachingTone({
       tone: 'steady' as CoachingTone,
       label: 'Backing off',
       headline: 'You are back in rhythm.',
-      copy: 'The cue fades while your delivery is stable again.',
+      copy: 'The prompt is fading because your delivery is stable again.',
     };
   }
 
   return {
     tone: 'supporting' as CoachingTone,
-    label: 'Hovering',
-    headline: 'AndOne is tracking the beat.',
-    copy: 'The booth is active, but the pause is not strong enough to step in yet.',
+    label: 'Monitoring',
+    headline: 'AndOne is following your delivery.',
+    copy: 'The live feed is active, but the hesitation signal is not strong enough to prompt yet.',
   };
 }
 
@@ -2200,7 +2200,7 @@ function App() {
                   }`}
                   key={replayToastSignature}
                 >
-                  <p className="assist-type">Assist</p>
+                  <p className="assist-type">Prompt</p>
                   <h3>{activeAssist.text}</h3>
                   <p>{activeAssistSupportCopy}</p>
                 </article>
@@ -2286,7 +2286,7 @@ function App() {
                   </div>
                 </div>
                 <div className="signal-meta__item">
-                  <span>Assist state</span>
+                  <span>Prompt state</span>
                   <strong>{assistStateLabel}</strong>
                 </div>
               </div>
@@ -2339,7 +2339,7 @@ function App() {
                 <strong>{formatPercent(boothAnalytics.averageMaxHesitationScore)}</strong>
               </div>
               <div>
-                <p className="control-label">Assists</p>
+                <p className="control-label">Prompts</p>
                 <strong>{boothAnalytics.totalAssistCount}</strong>
               </div>
             </div>
@@ -2354,7 +2354,7 @@ function App() {
                 <strong>{formatDurationMs(Math.round(sessionWorkspaceInsights.averageLongestPauseMs))}</strong>
               </div>
               <div>
-                <p className="control-label">Avg assists/run</p>
+                <p className="control-label">Avg prompts/run</p>
                 <strong>{sessionWorkspaceInsights.averageAssistRate.toFixed(1)}</strong>
               </div>
               <div>
@@ -2376,7 +2376,7 @@ function App() {
                     </div>
                     <p>
                       Peak {formatPercent(session.maxHesitationScore)} · longest pause{' '}
-                      {formatDurationMs(session.longestPauseMs)} · {session.assistCount} assist
+                      {formatDurationMs(session.longestPauseMs)} · {session.assistCount} prompt
                       {session.assistCount === 1 ? '' : 's'}
                     </p>
                     <button
@@ -2390,7 +2390,7 @@ function App() {
                 ))
               ) : (
                 <p className="transcript-line transcript-line--muted">
-                  End a live session to save the booth trace and open its review here.
+                  End a live session to save the session trace and open its review here.
                 </p>
               )}
             </div>
@@ -2421,7 +2421,7 @@ function App() {
                     <strong>{latestCompletedSession.sampleCount}</strong>
                   </div>
                   <div>
-                    <p className="control-label">Assists</p>
+                    <p className="control-label">Prompts</p>
                     <strong>{latestCompletedSession.assistCount}</strong>
                   </div>
                 </div>
@@ -2469,8 +2469,8 @@ function App() {
                   <div className="reason-list">
                     <p>
                       {isLoadingReview
-                        ? 'AndOne is generating the AI review from the saved booth trace.'
-                        : 'The saved booth trace is ready. Reload this session to retry the AI review.'}
+                        ? 'AndOne is generating the AI review from the saved session trace.'
+                        : 'The saved session trace is ready. Reload this session to retry the AI review.'}
                     </p>
                   </div>
                 )}
@@ -2489,7 +2489,7 @@ function App() {
         <section className="panel">
           <div className="panel-header">
             <div>
-              <p className="panel-kicker">Context stash</p>
+              <p className="panel-kicker">Context Rack</p>
               <h2>Prematch and retrieval context</h2>
             </div>
             <span className="panel-tag">{worldState.preMatch.loadStatus}</span>
@@ -2498,7 +2498,7 @@ function App() {
           <div className="narrative-focus">
             <p className="narrative-label">Opening read</p>
             <h3>{worldState.preMatch.aiOpener ?? worldState.preMatch.deterministicOpener}</h3>
-            <p>Kept here for context and later hint generation, not on the live operator surface.</p>
+            <p>Kept here for grounding and later prompt generation, not on the live surface.</p>
           </div>
 
           <div className="narrative-stack">
@@ -2552,7 +2552,7 @@ function App() {
         <section className="panel">
           <div className="panel-header">
             <div>
-              <p className="panel-kicker">Details</p>
+              <p className="panel-kicker">Live Trace</p>
               <h2>Live trace</h2>
             </div>
             <span className="panel-tag">{boothHesitationPercent}</span>
@@ -2624,7 +2624,7 @@ function App() {
         <section className="panel">
           <div className="panel-header">
             <div>
-              <p className="panel-kicker">Narrative Stack</p>
+              <p className="panel-kicker">Story Stack</p>
               <h2>Storylines and stats</h2>
             </div>
             <span className="panel-tag">{formatMomentum(worldState.narrative.momentum)}</span>
@@ -2671,7 +2671,7 @@ function App() {
         <section className="panel">
           <div className="panel-header">
             <div>
-              <p className="panel-kicker">Booth Metrics</p>
+              <p className="panel-kicker">Session Metrics</p>
               <h2>Session analytics</h2>
             </div>
             <span className="panel-tag">{assistConfidencePercent}</span>
@@ -2691,7 +2691,7 @@ function App() {
               <strong>{formatDurationMs(boothAnalytics.averageLongestPauseMs)}</strong>
             </div>
             <div>
-              <p className="control-label">Assists</p>
+              <p className="control-label">Prompts</p>
               <strong>{boothAnalytics.totalAssistCount}</strong>
             </div>
           </div>
@@ -2727,7 +2727,7 @@ function App() {
 
           <div className="commentary-metadata">
             <div>
-              <p className="control-label">Speaker state</p>
+              <p className="control-label">Speaker</p>
               <strong>{boothSignal.activeSpeaker}</strong>
             </div>
             <div>
@@ -2742,7 +2742,7 @@ function App() {
               </strong>
             </div>
             <div>
-              <p className="control-label">Filler cues</p>
+              <p className="control-label">Filler words</p>
               <strong>{boothSignal.fillerWords.join(', ') || 'Clean'}</strong>
             </div>
             <div>
@@ -2763,9 +2763,9 @@ function App() {
               ) : (
                 <p className="transcript-line transcript-line--muted">
                   {!loadedClipUrl
-                    ? 'Attach a video first, then start the session.'
+                    ? 'Load a feed first, then go live.'
                     : !hasStartedBroadcast
-                      ? 'Start the session to begin live mic tracking.'
+                      ? 'Go live to begin live mic tracking.'
                       : isMicSupported
                         ? 'Live transcript will appear here once you start speaking.'
                         : 'This browser does not expose usable mic APIs, so live hesitation is unavailable here.'}
