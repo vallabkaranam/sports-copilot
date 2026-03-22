@@ -13,7 +13,9 @@ import {
   ResolveFixtureResponse,
   ListUserContextResponse,
   StartBoothSessionResponse,
+  TranscriptEntry,
   TranscribeBoothAudioResponse,
+  UpdateBoothLiveSignalsResponse,
   UploadUserContextResponse,
   WorldState,
 } from '@sports-copilot/shared-types';
@@ -132,6 +134,19 @@ export function resolveFixture(screenshotBase64?: string, mimeType?: string, cli
   return requestJson<ResolveFixtureResponse>('/booth/resolve-fixture', {
     method: 'POST',
     body: JSON.stringify({ screenshotBase64, mimeType, clipName }),
+  });
+}
+
+export function publishBoothLiveSignals(input: {
+  transcriptWindow?: TranscriptEntry[];
+  screenshotBase64?: string;
+  mimeType?: string;
+  clipName?: string;
+  clockMs?: number;
+}) {
+  return requestJson<UpdateBoothLiveSignalsResponse>('/booth/live-signals', {
+    method: 'POST',
+    body: JSON.stringify(input),
   });
 }
 

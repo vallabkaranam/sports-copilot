@@ -346,7 +346,7 @@ async function run() {
     assist: createEmptyAssistCard(),
     preMatch: createEmptyPreMatchState(),
     liveMatch: buildDegradedState('Waiting for Sportmonks data.', ''),
-    liveSignals: { social: [], vision: [] },
+    liveSignals: { social: [], vision: [], commentary: [] } as WorldState['liveSignals'],
   };
 
   console.log('Live Match Worker started.');
@@ -569,7 +569,8 @@ async function run() {
         liveSignals: {
           social: ingestedSocialPosts,
           vision: activeVisionCues,
-        },
+          commentary: transcript,
+        } as WorldState['liveSignals'],
         orchestration: {
           agentRuns,
           agentWeights,

@@ -25,6 +25,7 @@ import {
   generateBoothCue,
   interpretBooth,
   listUserContextDocuments,
+  publishBoothLiveSignals,
   resolveFixture,
   startBoothSession,
   transcribeBoothAudio,
@@ -87,6 +88,8 @@ const BUFFERED_TRANSCRIPTION_WARNING =
   'Live transcription is not producing usable text yet. Keep speaking or check the OpenAI mic path.';
 const GENERATE_CUE_FAILURE_BACKOFF_MS = 4_000;
 const HANDOFF_COUNTDOWN_START = 3;
+const LIVE_SIGNAL_TRANSCRIPT_DEBOUNCE_MS = 900;
+const LIVE_SIGNAL_FRAME_INTERVAL_MS = 5_000;
 const MIN_STANDBY_SAMPLE_MS = 4_000;
 const STANDBY_SAMPLE_CAPTURE_MS = 6_000;
 const SUBBED_CUE_FLOOR_MS = 3_500;
@@ -870,6 +873,11 @@ function App() {
   const handoffTimerRef = useRef<number | null>(null);
   const syntheticUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const spokenSyntheticCueTextsRef = useRef<string[]>([]);
+  const liveSignalTranscriptKeyRef = useRef('');
+  const liveSignalTranscriptTimerRef = useRef<number | null>(null);
+  const isPublishingLiveTranscriptRef = useRef(false);
+  const liveSignalFrameTimerRef = useRef<number | null>(null);
+  const isPublishingLiveFrameRef = useRef(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -929,6 +937,12 @@ function App() {
       }
       if (standbySampleStopTimerRef.current !== null) {
         window.clearTimeout(standbySampleStopTimerRef.current);
+      }
+      if (liveSignalTranscriptTimerRef.current !== null) {
+        window.clearTimeout(liveSignalTranscriptTimerRef.current);
+      }
+      if (liveSignalFrameTimerRef.current !== null) {
+        window.clearInterval(liveSignalFrameTimerRef.current);
       }
       if (supportsSpeechSynthesis()) {
         window.speechSynthesis.cancel();
@@ -1140,6 +1154,102 @@ function App() {
 
     videoRef.current.pause();
   }, [controls.playbackStatus, hasStartedBroadcast, loadedClipUrl]);
+
+  useEffect(() => {
+    if (!hasStartedBroadcast || controls.playbackStatus !== 'playing') {
+      liveSignalTranscriptKeyRef.current = '';
+      if (liveSignalTranscriptTimerRef.current !== null) {
+        window.clearTimeout(liveSignalTranscriptTimerRef.current);
+        liveSignalTranscriptTimerRef.current = null;
+      }
+      return;
+    }
+
+    const transcriptWindow = boothTranscript.slice(-6);
+    if (transcriptWindow.length === 0) {
+      return;
+    }
+
+    const transcriptKey = transcriptWindow
+      .map((entry) => `${entry.timestamp}:${entry.speaker}:${entry.text}`)
+      .join('|');
+
+    if (transcriptKey === liveSignalTranscriptKeyRef.current || isPublishingLiveTranscriptRef.current) {
+      return;
+    }
+
+    if (liveSignalTranscriptTimerRef.current !== null) {
+      window.clearTimeout(liveSignalTranscriptTimerRef.current);
+    }
+
+    liveSignalTranscriptTimerRef.current = window.setTimeout(() => {
+      isPublishingLiveTranscriptRef.current = true;
+      void publishBoothLiveSignals({
+        transcriptWindow,
+        clipName: loadedClipName || undefined,
+        clockMs: Math.max(0, Math.round((videoRef.current?.currentTime ?? 0) * 1_000)),
+      })
+        .then(() => {
+          liveSignalTranscriptKeyRef.current = transcriptKey;
+        })
+        .catch(() => {
+          // Keep the live desk moving if signal sync fails.
+        })
+        .finally(() => {
+          isPublishingLiveTranscriptRef.current = false;
+        });
+    }, LIVE_SIGNAL_TRANSCRIPT_DEBOUNCE_MS);
+
+    return () => {
+      if (liveSignalTranscriptTimerRef.current !== null) {
+        window.clearTimeout(liveSignalTranscriptTimerRef.current);
+        liveSignalTranscriptTimerRef.current = null;
+      }
+    };
+  }, [boothTranscript, controls.playbackStatus, hasStartedBroadcast, loadedClipName]);
+
+  useEffect(() => {
+    if (!hasStartedBroadcast || controls.playbackStatus !== 'playing' || !loadedClipUrl) {
+      if (liveSignalFrameTimerRef.current !== null) {
+        window.clearInterval(liveSignalFrameTimerRef.current);
+        liveSignalFrameTimerRef.current = null;
+      }
+      return;
+    }
+
+    const publishFrame = () => {
+      if (isPublishingLiveFrameRef.current || !videoRef.current || videoRef.current.readyState < 2) {
+        return;
+      }
+
+      isPublishingLiveFrameRef.current = true;
+      void captureVideoFrameAsBase64(videoRef.current)
+        .then(({ screenshotBase64, mimeType }) =>
+          publishBoothLiveSignals({
+            screenshotBase64,
+            mimeType,
+            clipName: loadedClipName || undefined,
+            clockMs: Math.max(0, Math.round((videoRef.current?.currentTime ?? 0) * 1_000)),
+          }),
+        )
+        .catch(() => {
+          // Ignore frame-analysis hiccups so playback stays smooth.
+        })
+        .finally(() => {
+          isPublishingLiveFrameRef.current = false;
+        });
+    };
+
+    publishFrame();
+    liveSignalFrameTimerRef.current = window.setInterval(publishFrame, LIVE_SIGNAL_FRAME_INTERVAL_MS);
+
+    return () => {
+      if (liveSignalFrameTimerRef.current !== null) {
+        window.clearInterval(liveSignalFrameTimerRef.current);
+        liveSignalFrameTimerRef.current = null;
+      }
+    };
+  }, [controls.playbackStatus, hasStartedBroadcast, loadedClipName, loadedClipUrl]);
 
   useEffect(() => {
     if (controls.restartToken === lastRestartTokenRef.current) {
@@ -2463,6 +2573,8 @@ function App() {
   const heldContextPreviewFacts = unusedContextFacts.slice(0, 2);
   const liveContextItems = worldState.contextBundle.items.slice(0, 4);
   const liveStreamContext = worldState.liveStreamContext;
+  const liveCommentarySignals = (worldState.liveSignals.commentary ?? []).slice(-3);
+  const liveVisionSignals = (worldState.liveSignals.vision ?? []).slice(-3);
   const topAgentWeights = (worldState.orchestration?.agentWeights ?? []).slice(0, 4);
   const coachingTone = getCoachingTone({
     hasStartedBroadcast,
@@ -3818,6 +3930,31 @@ function App() {
                               <strong>{event.headline}</strong>
                               <p>{event.detail}</p>
                               <span>{Math.round(event.salience * 100)}%</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                      {liveVisionSignals.length > 0 ? (
+                        <div className="context-fact-list">
+                          {liveVisionSignals.map((cue) => (
+                            <div className="context-fact-item" key={`vision-live-${cue.timestamp}-${cue.label}`}>
+                              <strong>Frame cue · {cue.tag}</strong>
+                              <p>{cue.label}</p>
+                              <span>{formatDurationMs(cue.timestamp)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                      {liveCommentarySignals.length > 0 ? (
+                        <div className="context-fact-list">
+                          {liveCommentarySignals.map((entry) => (
+                            <div
+                              className="context-fact-item context-fact-item--held"
+                              key={`commentary-live-${entry.timestamp}-${entry.text}`}
+                            >
+                              <strong>Live commentary</strong>
+                              <p>{entry.text}</p>
+                              <span>{formatDurationMs(entry.timestamp)}</span>
                             </div>
                           ))}
                         </div>

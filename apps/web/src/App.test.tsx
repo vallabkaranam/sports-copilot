@@ -317,6 +317,7 @@ function createWorldState(overrides: Partial<WorldState> = {}): WorldState {
           label: 'Replay isolates Courtois stretching to save',
         },
       ],
+      commentary: [],
     },
     ...overrides,
   };
@@ -795,6 +796,14 @@ describe('App dashboard', () => {
         );
       }
 
+      if (url.includes('/booth/live-signals') && init?.method === 'POST') {
+        return jsonResponse({
+          commentaryCount: 1,
+          visionCue: null,
+          source: 'state-only',
+        });
+      }
+
       if (url.includes('/controls') && (!init?.method || init.method === 'GET')) {
         return jsonResponse(currentControls);
       }
@@ -921,7 +930,7 @@ describe('App dashboard', () => {
   it('renders the live AndOne booth surface', async () => {
     await renderApp();
 
-    expect(container.textContent).toContain('Commentary sidekick');
+    expect(container.textContent).toContain('Sidekick Console');
     expect(container.textContent).toContain('AndOne');
     expect(container.textContent).toContain('Channel 1');
     expect(container.textContent).toContain('Channel 2');
@@ -942,7 +951,9 @@ describe('App dashboard', () => {
     expect(playButton?.textContent).toBe('Go live');
     expect(playButton?.hasAttribute('disabled')).toBe(false);
     expect(container.textContent).toContain('Channel 1 · Barca preset');
-    expect(container.textContent).toContain('Feed and microphone are armed. Start speaking when you are ready to call the action.');
+    expect(container.textContent).toContain(
+      'Feed and microphone are ready. The Sidekick starts once you begin calling the action.',
+    );
   });
 
   it('shows the standby voice setup inline on the live desk', async () => {
@@ -1013,7 +1024,7 @@ describe('App dashboard', () => {
     });
 
     expect(speechSynthesisCancelMock).toHaveBeenCalled();
-    expect(container.textContent).toContain('Live mic');
+    expect(container.textContent).toContain('Live Mic');
   });
 
   it('holds a visible assist while the minimum display lock is active', () => {
@@ -1347,7 +1358,7 @@ describe('App dashboard', () => {
     await startLiveSession();
 
     const debugButton = [...container.querySelectorAll('button')].find((node) =>
-      node.textContent?.includes('Debug'),
+      node.textContent?.includes('Sidekick Console'),
     );
     expect(debugButton).toBeTruthy();
 

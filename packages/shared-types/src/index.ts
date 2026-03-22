@@ -746,6 +746,7 @@ export const WorldStateSchema = z.object({
   liveSignals: z.object({
     social: z.array(SocialPostSchema),
     vision: z.array(VisionCueSchema),
+    commentary: z.array(TranscriptEntrySchema),
   }),
   orchestration: z
     .object({
@@ -974,6 +975,7 @@ export const GenerateBoothCueInputSchema = z.object({
     .object({
       social: z.array(SocialPostSchema),
       vision: z.array(VisionCueSchema),
+      commentary: z.array(TranscriptEntrySchema),
     })
     .optional(),
   agentWeights: z

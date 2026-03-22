@@ -139,7 +139,7 @@ let worldState: Partial<WorldState> = {
   liveStreamContext: createEmptyLiveStreamContext(),
   preMatch: createEmptyPreMatchState(),
   liveMatch: createEmptyLiveMatchState(),
-  liveSignals: { social: [], vision: [] },
+  liveSignals: { social: [], vision: [], commentary: [] },
 };
 
 let controlState: ReplayControlState = createDefaultReplayControlState();
