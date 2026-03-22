@@ -6,7 +6,7 @@ const OPENAI_REALTIME_VAD_THRESHOLD = 0.35;
 const OPENAI_REALTIME_VAD_PREFIX_PADDING_MS = 300;
 const OPENAI_REALTIME_VAD_SILENCE_MS = 450;
 const DEFAULT_REALTIME_TRANSCRIBE_PROMPT =
-  'Live sports commentary. Preserve filler words, repetitions, false starts, self-corrections, trailing thoughts, and unfinished phrases exactly as spoken. Do not clean up ums, uhs, repeated openings, or broken phrasing.';
+  'Live sports commentary. Preserve filler words, repetitions, false starts, self-corrections, trailing thoughts, wake phrases like "line", and unfinished phrases exactly as spoken. Do not clean up ums, uhs, repeated openings, broken phrasing, or secret trigger phrases such as "line" or "but um".';
 
 function createRealtimeSessionConfig() {
   return {

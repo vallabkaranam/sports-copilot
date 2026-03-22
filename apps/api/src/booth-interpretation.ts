@@ -13,6 +13,10 @@ function clamp(value: number, minimum = 0, maximum = 1) {
 }
 
 function detectWakePhrase(features: BoothFeatureSnapshot, profile?: BoothSpeakerProfile) {
+  if (features.wakePhraseDetected) {
+    return true;
+  }
+
   const wakePhrase = profile?.wakePhrase?.trim().toLowerCase();
   if (!wakePhrase) {
     return false;

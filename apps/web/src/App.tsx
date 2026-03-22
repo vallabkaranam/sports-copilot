@@ -1360,6 +1360,7 @@ function App() {
       interimTranscript: boothInterimTranscript,
       contextSummary: buildContextSummary(worldState),
       expectedTopics: buildExpectedTopics(worldState),
+      wakePhraseDetected: boothSignal.wakePhraseDetected,
       previousState: boothInterpretation?.state,
     }),
     [
@@ -1381,6 +1382,7 @@ function App() {
       boothSignal.transcriptStabilityScore,
       boothSignal.transcriptWordCount,
       boothSignal.unfinishedPhrase,
+      boothSignal.wakePhraseDetected,
       boothTranscript,
       boothInterpretation?.state,
       worldState,
@@ -1460,6 +1462,7 @@ function App() {
     boothSignal.fillerCount > 0 ? 'filler' : null,
     boothSignal.repeatedOpeningCount > 0 ? 'repeat-start' : null,
     boothSignal.unfinishedPhrase ? 'unfinished' : null,
+    boothSignal.wakePhraseDetected ? 'line' : null,
   ].filter(Boolean) as string[];
   const primaryActionLabel = isBroadcastLive ? 'End live session' : 'Go live';
   const primaryActionDisabled = !isBroadcastLive && (!isBroadcastReady || isUpdatingControls);
