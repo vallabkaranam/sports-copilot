@@ -1,7 +1,7 @@
 import { TranscribeBoothAudioResponse } from '@sports-copilot/shared-types';
 
 const OPENAI_AUDIO_API_URL = 'https://api.openai.com/v1/audio/transcriptions';
-const OPENAI_TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL ?? 'gpt-4o-transcribe';
+const OPENAI_TRANSCRIBE_MODEL = 'gpt-4o-transcribe';
 const DEFAULT_TRANSCRIBE_PROMPT =
   'Live sports commentary. Preserve filler words, repetitions, false starts, self-corrections, trailing thoughts, and unfinished phrases exactly as spoken. Do not clean up ums, uhs, repeated openings, or broken phrasing.';
 
@@ -25,13 +25,6 @@ export async function transcribeBoothAudioWithOpenAI(
   audioBase64: string,
   mimeType: string,
 ): Promise<TranscribeBoothAudioResponse> {
-  if (!process.env.OPENAI_API_KEY) {
-    return {
-      transcript: '',
-      source: 'unavailable',
-    };
-  }
-
   const audioBuffer = Buffer.from(audioBase64, 'base64');
   const fileExtension = inferAudioExtension(mimeType);
   const form = new FormData();
@@ -40,7 +33,7 @@ export async function transcribeBoothAudioWithOpenAI(
   form.set('file', file);
   form.set('model', OPENAI_TRANSCRIBE_MODEL);
   form.set('language', 'en');
-  form.set('prompt', process.env.OPENAI_TRANSCRIBE_PROMPT ?? DEFAULT_TRANSCRIBE_PROMPT);
+  form.set('prompt', DEFAULT_TRANSCRIBE_PROMPT);
 
   const response = await fetch(OPENAI_AUDIO_API_URL, {
     method: 'POST',

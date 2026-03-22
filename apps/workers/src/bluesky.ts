@@ -1,6 +1,6 @@
 import { SocialPost } from '@sports-copilot/shared-types';
 
-const BLUESKY_BASE_URL = process.env.BLUESKY_BASE_URL ?? 'https://public.api.bsky.app';
+const BLUESKY_BASE_URL = 'https://public.api.bsky.app';
 const DEFAULT_QUERY_LIMIT = 6;
 
 interface BlueskySearchConfig {

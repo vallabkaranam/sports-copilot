@@ -14,10 +14,18 @@ import {
   WorldState,
 } from '@sports-copilot/shared-types';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001';
+function getApiBaseUrl() {
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+
+  if (!apiBaseUrl) {
+    throw new Error('Missing required environment variable: VITE_API_BASE_URL');
+  }
+
+  return apiBaseUrl;
+}
 
 async function requestJson<T>(path: string, init?: RequestInit) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
     headers: {
       'Content-Type': 'application/json',
       ...(init?.headers ?? {}),
@@ -106,7 +114,7 @@ export function transcribeBoothAudio(audioBase64: string, mimeType: string) {
 }
 
 export async function connectRealtimeBoothSession(offerSdp: string) {
-  const response = await fetch(`${API_BASE_URL}/booth/realtime-connect`, {
+  const response = await fetch(`${getApiBaseUrl()}/booth/realtime-connect`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/sdp',

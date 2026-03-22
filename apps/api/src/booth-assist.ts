@@ -10,7 +10,7 @@ import {
 } from '@sports-copilot/shared-types';
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/responses';
-const OPENAI_ASSIST_MODEL = process.env.OPENAI_ASSIST_MODEL ?? 'gpt-5.4-mini';
+const OPENAI_ASSIST_MODEL = 'gpt-5.4-mini';
 
 function clamp(value: number, minimum = 0, maximum = 1) {
   return Math.min(maximum, Math.max(minimum, value));
@@ -132,10 +132,6 @@ export async function generateBoothCueWithOpenAI(params: {
   recentCueTexts?: string[];
   contextBundle?: ContextBundle;
 }): Promise<GenerateBoothCueResponse> {
-  if (!process.env.OPENAI_API_KEY) {
-    return buildUnavailableCue();
-  }
-
   const retrievedFacts = [...params.retrievalFacts]
     .sort((left, right) => right.relevance - left.relevance)
     .slice(0, 8);

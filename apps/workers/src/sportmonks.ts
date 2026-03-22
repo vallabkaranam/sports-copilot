@@ -12,8 +12,7 @@ import {
   createEmptyLiveMatchState,
 } from '@sports-copilot/shared-types';
 
-const SPORTMONKS_BASE_URL =
-  process.env.SPORTMONKS_BASE_URL ?? 'https://api.sportmonks.com/v3/football';
+const SPORTMONKS_BASE_URL = 'https://api.sportmonks.com/v3/football';
 
 const CORE_INCLUDES = [
   'state',

@@ -5,7 +5,7 @@ import {
 } from '@sports-copilot/shared-types';
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/responses';
-const OPENAI_REVIEW_MODEL = process.env.OPENAI_REVIEW_MODEL ?? process.env.OPENAI_HESITATION_MODEL ?? 'gpt-5.4';
+const OPENAI_REVIEW_MODEL = 'gpt-5.4';
 
 function buildFallbackReview(session: BoothSessionRecord): BoothSessionReview {
   return {
@@ -42,10 +42,6 @@ export async function reviewBoothSessionWithOpenAI(
   session: BoothSessionRecord,
   profile?: BoothSpeakerProfile,
 ): Promise<BoothSessionReview> {
-  if (!process.env.OPENAI_API_KEY) {
-    return buildFallbackReview(session);
-  }
-
   const prompt = [
     'You are reviewing a saved live-commentary sidekick session.',
     'Use only the saved booth session record and optional speaker profile. Do not invent facts.',

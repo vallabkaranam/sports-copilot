@@ -61,12 +61,11 @@ SUPABASE_URL=https://ivynnjycdyrjbaotjzkx.supabase.co
 DATABASE_URL=postgresql://postgres:your_database_password@db.ivynnjycdyrjbaotjzkx.supabase.co:5432/postgres
 SPORTMONKS_API_TOKEN=your_sportmonks_token
 SPORTMONKS_FIXTURE_ID=your_fixture_id
-BLUESKY_SOCIAL_ENABLED=true
 ```
 
 Notes:
 - [`.env.example`](/Users/vallabkaranam/Desktop/sports-copilot/.env.example) is the source-of-truth template for teammates
-- the full live stack expects OpenAI, Postgres, Sportmonks, and Bluesky to all be configured explicitly
+- the full live stack expects OpenAI, Postgres, and Sportmonks to be configured explicitly
 - the API now fails fast on startup if `OPENAI_API_KEY`, `SUPABASE_URL`, or `DATABASE_URL` are missing
 - the worker now fails fast on startup if `API_BASE_URL`, `SPORTMONKS_API_TOKEN`, or `SPORTMONKS_FIXTURE_ID` are missing
 - the worker now exposes a `/health` endpoint so Render can keep it as a web service
