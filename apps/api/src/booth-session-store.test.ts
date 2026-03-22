@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createBoothSessionStore } from './booth-session-store';
+import { assertResolvableDatabaseHost, createBoothSessionStore } from './booth-session-store';
 
 const tempPaths: string[] = [];
 
@@ -101,5 +101,16 @@ describe('booth session store', () => {
     expect(profile.totalSamples).toBe(2);
     expect(profile.averageFillerDensity).toBeGreaterThan(0);
     await store.close?.();
+  });
+
+  it('fails fast when the configured postgres host cannot be resolved', async () => {
+    await expect(
+      assertResolvableDatabaseHost(
+        'postgresql://postgres:password@db.example.supabase.co:5432/postgres',
+        async () => {
+          throw new Error('getaddrinfo ENOTFOUND db.example.supabase.co');
+        },
+      ),
+    ).rejects.toThrow(/could not be resolved/i);
   });
 });

@@ -45,7 +45,6 @@ function requireEnv(name: string) {
 
 function assertApiEnv() {
   requireEnv('OPENAI_API_KEY');
-  requireEnv('SUPABASE_URL');
   requireEnv('DATABASE_URL');
 }
 

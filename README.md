@@ -46,7 +46,7 @@ Recommended hosted setup:
 2. Create the `sports-copilot-worker` service from [render.yaml](/Users/vallabkaranam/Desktop/sports-copilot/render.yaml)
 3. Set `API_BASE_URL` on the worker to your Render API URL, for example `https://sports-copilot-api.onrender.com`
 4. Deploy the repo to Vercel with `VITE_API_BASE_URL` set to that same Render API URL
-5. Set the Render API env from [`.env.deployment.example`](/Users/vallabkaranam/Desktop/sports-copilot/.env.deployment.example): `OPENAI_API_KEY`, `SUPABASE_URL`, `DATABASE_URL`, and the OpenAI model/runtime vars
+5. Set the Render API env from [`.env.deployment.example`](/Users/vallabkaranam/Desktop/sports-copilot/.env.deployment.example): `OPENAI_API_KEY`, `DATABASE_URL`, and the OpenAI model/runtime vars
 6. Set the Render worker env from [`.env.deployment.example`](/Users/vallabkaranam/Desktop/sports-copilot/.env.deployment.example): `API_BASE_URL`, `SPORTMONKS_API_TOKEN`, `SPORTMONKS_FIXTURE_ID`, and the Bluesky vars
 
 ## Local Env
@@ -57,8 +57,7 @@ Create one repo-root `.env` file:
 VITE_API_BASE_URL=http://localhost:3001
 API_BASE_URL=http://localhost:3001
 OPENAI_API_KEY=your_openai_api_key
-SUPABASE_URL=https://ivynnjycdyrjbaotjzkx.supabase.co
-DATABASE_URL=postgresql://postgres:your_database_password@db.ivynnjycdyrjbaotjzkx.supabase.co:5432/postgres
+DATABASE_URL=postgresql://postgres:your_database_password@your_current_supabase_postgres_host:5432/postgres
 SPORTMONKS_API_TOKEN=your_sportmonks_token
 SPORTMONKS_FIXTURE_ID=your_fixture_id
 ```
@@ -66,17 +65,19 @@ SPORTMONKS_FIXTURE_ID=your_fixture_id
 Notes:
 - [`.env.example`](/Users/vallabkaranam/Desktop/sports-copilot/.env.example) is the source-of-truth template for teammates
 - the full live stack expects OpenAI, Postgres, and Sportmonks to be configured explicitly
-- the API now fails fast on startup if `OPENAI_API_KEY`, `SUPABASE_URL`, or `DATABASE_URL` are missing
+- the API now fails fast on startup if `OPENAI_API_KEY` or `DATABASE_URL` are missing
+- the API now also fails fast if the `DATABASE_URL` hostname does not resolve, with a specific hint when the host looks like a stale Supabase DB hostname
 - the worker now fails fast on startup if `API_BASE_URL`, `SPORTMONKS_API_TOKEN`, or `SPORTMONKS_FIXTURE_ID` are missing
 - the worker now exposes a `/health` endpoint so Render can keep it as a web service
 - the API now respects the host platform `PORT`
 - booth session persistence is expected to use hosted Postgres via `DATABASE_URL` on the live stack
+- use the current Postgres connection string from the Supabase dashboard; do not hardcode old `db.<project-ref>.supabase.co` values unless Supabase explicitly gives you that host for the current project
 
 ## Demo Notes
 - The replay is deterministic and runs from local JSON fixtures in [data/demo_match](/Users/vallabkaranam/Desktop/sports-copilot/data/demo_match).
 - The current landing screen is a practice-first booth for testing hesitation on arbitrary local clips.
 - The browser booth mode is local-first: clip loading is done from your machine, pause detection uses live mic activity, and transcript text now comes from the API-backed OpenAI realtime transcription path over WebRTC.
-- Booth sessions and analytics now persist to hosted Postgres when `DATABASE_URL` is configured, or to local SQLite at `data/app/sports-copilot.sqlite` as a fallback.
+- Booth sessions and analytics on the app path persist to Postgres through `DATABASE_URL`.
 - The live operator surface hides prematch/retrieval context by default; that context now lives in `Show Details` so it can still power later hint generation without crowding the booth.
 - Live booth assists only surface when the interpreted booth state says the commentator actually needs help; stored world/retrieval context is still used to shape the assist itself.
 - Chrome or Edge currently give the best microphone support for the live booth flow.

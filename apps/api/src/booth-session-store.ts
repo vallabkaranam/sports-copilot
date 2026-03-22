@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { lookup } from 'dns/promises';
 import fs from 'fs';
 import path from 'path';
 import {
@@ -167,7 +168,37 @@ function getPoolConfiguration(connectionString: string) {
   };
 }
 
+function getConnectionHostname(connectionString: string) {
+  try {
+    const parsed = new URL(connectionString);
+    return parsed.hostname;
+  } catch (_error) {
+    throw new Error('DATABASE_URL is not a valid Postgres connection string.');
+  }
+}
+
+export async function assertResolvableDatabaseHost(
+  connectionString: string,
+  resolveHostname: typeof lookup = lookup,
+) {
+  const hostname = getConnectionHostname(connectionString);
+
+  try {
+    await resolveHostname(hostname);
+  } catch (error) {
+    const resolutionDetail = error instanceof Error ? error.message : String(error);
+    const supabaseHint = /^db\.[a-z0-9-]+\.supabase\.co$/i.test(hostname)
+      ? ' The host looks like a stale Supabase direct DB host. Replace DATABASE_URL with the current Postgres connection string from the Supabase dashboard.'
+      : '';
+
+    throw new Error(
+      `DATABASE_URL host "${hostname}" could not be resolved.${supabaseHint} DNS error: ${resolutionDetail}`,
+    );
+  }
+}
+
 async function createPostgresBoothSessionStore(connectionString: string): Promise<BoothSessionStore> {
+  await assertResolvableDatabaseHost(connectionString);
   const { Pool } = await import('pg');
   const pool = new Pool(getPoolConfiguration(connectionString));
 
@@ -708,6 +739,10 @@ export async function createBoothSessionStore(
 ): Promise<BoothSessionStore> {
   if (databaseUrl) {
     return createPostgresBoothSessionStore(databaseUrl);
+  }
+
+  if (!databaseFile) {
+    throw new Error('DATABASE_URL is required for the API runtime.');
   }
 
   return createSqliteBoothSessionStore(databaseFile);
