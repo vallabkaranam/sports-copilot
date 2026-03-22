@@ -18,8 +18,13 @@ import {
   TranscribeBoothAudioResponse,
   createEmptyAssistCard,
   ReplayControlState,
+  RetrieveUserContextInputSchema,
+  RetrieveUserContextResponse,
   ResolveFixtureInputSchema,
   ResolveFixtureResponse,
+  ListUserContextResponse,
+  UploadUserContextInputSchema,
+  UploadUserContextResponse,
   WorldState,
   createDefaultReplayControlState,
   createEmptyCommentatorState,
@@ -35,6 +40,7 @@ import { interpretBoothWithOpenAI } from './booth-interpretation.js';
 import { createRealtimeBoothSdpAnswer } from './booth-realtime.js';
 import { reviewBoothSessionWithOpenAI } from './booth-review.js';
 import { createBoothSessionStore } from './booth-session-store.js';
+import { createUserContextStore } from './context-store.js';
 import { transcribeBoothAudioWithOpenAI } from './booth-transcription.js';
 import { resolveFixtureFromScreenshot } from './fixture-resolver.js';
 
@@ -66,6 +72,7 @@ const server = fastify({ logger: true });
 const API_PORT = Number(process.env.PORT ?? 3001);
 const API_HOST = process.env.HOST ?? '0.0.0.0';
 let boothSessionStore: Awaited<ReturnType<typeof createBoothSessionStore>> | null = null;
+let userContextStore: Awaited<ReturnType<typeof createUserContextStore>> | null = null;
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(moduleDir, '../../..');
 const PRESET_FEEDS: Record<string, { filePath: string; contentType: string }> = {
@@ -93,6 +100,14 @@ function requireBoothSessionStore() {
   }
 
   return boothSessionStore;
+}
+
+function requireUserContextStore() {
+  if (!userContextStore) {
+    throw new Error('User context store is not initialized yet.');
+  }
+
+  return userContextStore;
 }
 
 server.addHook('onRequest', async (request, reply) => {
@@ -169,6 +184,37 @@ server.get('/preset-feeds/:feedId', async (request, reply) => {
 
 server.get('/world-state', async () => {
   return worldState;
+});
+
+server.get('/context-documents', async (): Promise<ListUserContextResponse> => {
+  const contextStore = requireUserContextStore();
+  return {
+    documents: await contextStore.listDocuments(),
+  };
+});
+
+server.post('/context-documents', async (request, reply): Promise<UploadUserContextResponse | void> => {
+  const contextStore = requireUserContextStore();
+  const parsed = UploadUserContextInputSchema.safeParse(request.body);
+  if (!parsed.success) {
+    reply.status(400).send({ error: 'Invalid user context payload' });
+    return;
+  }
+
+  return {
+    document: await contextStore.ingestDocument(parsed.data),
+  };
+});
+
+server.post('/context-documents/retrieve', async (request, reply): Promise<RetrieveUserContextResponse | void> => {
+  const contextStore = requireUserContextStore();
+  const parsed = RetrieveUserContextInputSchema.safeParse(request.body);
+  if (!parsed.success) {
+    reply.status(400).send({ error: 'Invalid context retrieval payload' });
+    return;
+  }
+
+  return contextStore.retrieveRelevantChunks(parsed.data.queryText, parsed.data.limit);
 });
 
 // Update state from workers
@@ -381,6 +427,7 @@ server.post('/booth-sessions/:sessionId/finish', async (request, reply) => {
 const start = async () => {
   try {
     boothSessionStore = await createBoothSessionStore();
+    userContextStore = await createUserContextStore();
     await server.listen({ port: API_PORT, host: API_HOST });
     console.log(`API running on http://${API_HOST}:${API_PORT}`);
   } catch (err) {

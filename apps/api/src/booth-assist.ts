@@ -1,4 +1,5 @@
 import {
+  AgentExplainability,
   AssistCard,
   ContextBundle,
   BoothInterpretation,
@@ -6,6 +7,7 @@ import {
   createEmptyAssistCard,
   GenerateBoothCueResponse,
   LiveMatchState,
+  GenerationExplainability,
   RetrievedFact,
   SourceChip,
 } from '@sports-copilot/shared-types';
@@ -70,6 +72,72 @@ function summarizeLiveMatchForPrompt(liveMatch?: LiveMatchState) {
       label: stat.label,
       value: stat.value,
     })),
+  };
+}
+
+function buildCueExplainability(params: {
+  selectedFacts: RetrievedFact[];
+  model: string;
+  assist: AssistCard;
+  features: BoothFeatureSnapshot;
+  interpretation?: BoothInterpretation;
+  contextBundle?: ContextBundle;
+}): GenerationExplainability {
+  const contextAgent: AgentExplainability = {
+    agentName: 'context-agent',
+    output:
+      params.contextBundle?.summary ||
+      (params.selectedFacts[0]?.text ?? 'No context bundle items were selected.'),
+    reasoningTrace: [
+      `Context bundle items available: ${params.contextBundle?.items.length ?? 0}.`,
+      `Retrieved facts considered: ${params.selectedFacts.length}.`,
+    ],
+    sourcesUsed: params.selectedFacts.slice(0, 4).map((fact) => fact.sourceChip),
+    state: params.selectedFacts.length > 0 ? 'ready' : 'waiting',
+  };
+
+  const groundingAgent: AgentExplainability = {
+    agentName: 'grounding-agent',
+    output:
+      params.selectedFacts.length > 0
+        ? params.selectedFacts
+            .slice(0, 2)
+            .map((fact) => fact.text)
+            .join(' | ')
+        : 'No supporting facts were selected.',
+    reasoningTrace: params.selectedFacts.length
+      ? params.selectedFacts.slice(0, 3).map(
+          (fact) =>
+            `${fact.source} scored ${Math.round(fact.relevance * 100)}%${
+              fact.metadata?.userProvided ? ' and comes from uploaded context.' : ''
+            }`,
+        )
+      : ['Grounding fell back to the current booth state because retrieval was thin.'],
+    sourcesUsed: params.selectedFacts.slice(0, 4).map((fact) => fact.sourceChip),
+    state: params.selectedFacts.length > 0 ? 'active' : 'waiting',
+  };
+
+  const cueAgent: AgentExplainability = {
+    agentName: 'cue-agent',
+    output: params.assist.text,
+    reasoningTrace: [
+      params.assist.whyNow,
+      `Cue model: ${params.model}`,
+      `Local hesitation ${Math.round(params.features.hesitationScore * 100)}%${
+        params.interpretation ? ` · interpreted state ${params.interpretation.state}` : ''
+      }`,
+    ],
+    sourcesUsed: params.assist.sourceChips,
+    state: params.assist.type === 'none' ? 'quiet' : 'active',
+  };
+
+  return {
+    contributingAgents: [contextAgent, groundingAgent, cueAgent],
+    reasoningTrace: [
+      params.assist.whyNow,
+      `Model ${params.model} generated the final cue from ${params.selectedFacts.length} selected fact${params.selectedFacts.length === 1 ? '' : 's'}.`,
+    ],
+    sourcesUsed: params.assist.sourceChips,
   };
 }
 
@@ -254,29 +322,38 @@ export async function generateBoothCueWithOpenAI(params: {
     const selectedFacts = retrievedFacts.filter((fact) =>
       parsed.sourceFactIds?.includes(fact.id),
     );
+    const assist: AssistCard = {
+      ...createEmptyAssistCard(),
+      type: parsed.type === 'none' ? 'context' : parsed.type,
+      text: parsed.text.trim(),
+      styleMode: 'analyst',
+      urgency:
+        params.interpretation?.state === 'step-in'
+          ? 'high'
+          : params.interpretation?.state === 'monitoring'
+            ? 'medium'
+            : 'low',
+      confidence: clamp(typeof parsed.confidence === 'number' ? parsed.confidence : 0.64),
+      whyNow: parsed.whyNow.trim(),
+      sourceChips: dedupeSourceChips(selectedFacts),
+    };
 
     return {
-      assist: {
-        ...createEmptyAssistCard(),
-        type: parsed.type === 'none' ? 'context' : parsed.type,
-        text: parsed.text.trim(),
-        styleMode: 'analyst',
-        urgency:
-          params.interpretation?.state === 'step-in'
-            ? 'high'
-            : params.interpretation?.state === 'monitoring'
-              ? 'medium'
-              : 'low',
-        confidence: clamp(typeof parsed.confidence === 'number' ? parsed.confidence : 0.64),
-        whyNow: parsed.whyNow.trim(),
-        sourceChips: dedupeSourceChips(selectedFacts),
-      },
+      assist,
       refreshAfterMs:
         typeof parsed.refreshAfterMs === 'number'
           ? Math.max(1200, Math.min(3600, Math.round(parsed.refreshAfterMs)))
           : params.interpretation?.state === 'step-in'
             ? 1600
             : 2400,
+      explainability: buildCueExplainability({
+        selectedFacts,
+        model,
+        assist,
+        features: params.features,
+        interpretation: params.interpretation,
+        contextBundle: params.contextBundle,
+      }),
       source: 'openai',
     };
   } catch (_error) {

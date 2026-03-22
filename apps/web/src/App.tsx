@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
+import { ChangeEvent, startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BoothFeatureSnapshot,
   BoothInterpretation,
@@ -8,6 +8,7 @@ import {
   GenerateBoothCueResponse,
   ReplayControlState,
   TranscriptEntry,
+  UserContextDocument,
   createEmptyAssistCard,
 } from '@sports-copilot/shared-types';
 import './App.css';
@@ -23,10 +24,12 @@ import {
   finishBoothSession,
   generateBoothCue,
   interpretBooth,
+  listUserContextDocuments,
   resolveFixture,
   startBoothSession,
   transcribeBoothAudio,
   updateControlState,
+  uploadUserContext,
 } from './api';
 import {
   buildBoothAssist,
@@ -198,6 +201,15 @@ async function captureVideoFrameAsBase64(videoElement: HTMLVideoElement) {
 async function flushMicrotasks() {
   await Promise.resolve();
   await Promise.resolve();
+}
+
+async function readFileAsText(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error(`Could not read ${file.name}.`));
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+    reader.readAsText(file);
+  });
 }
 
 function createTranscriptEntry(timestamp: number, text: string): TranscriptEntry {
@@ -653,6 +665,9 @@ function App() {
   const [isClipMuted, setIsClipMuted] = useState(true);
   const [fixtureResolutionLabel, setFixtureResolutionLabel] = useState<string | null>(null);
   const [isResolvingFixture, setIsResolvingFixture] = useState(false);
+  const [contextDocuments, setContextDocuments] = useState<UserContextDocument[]>([]);
+  const [contextUploadText, setContextUploadText] = useState('');
+  const [isUploadingContext, setIsUploadingContext] = useState(false);
   const [boothTranscript, setBoothTranscript] = useState<TranscriptEntry[]>([]);
   const [boothInterimTranscript, setBoothInterimTranscript] = useState('');
   const [boothError, setBoothError] = useState<string | null>(null);
@@ -747,6 +762,27 @@ function App() {
         }
       }
     });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isActive = true;
+
+    void listUserContextDocuments()
+      .then((response) => {
+        if (!isActive) {
+          return;
+        }
+        setContextDocuments(response.documents);
+      })
+      .catch(() => {
+        if (!isActive) {
+          return;
+        }
+      });
 
     return () => {
       isActive = false;
@@ -990,6 +1026,48 @@ function App() {
     setSelectedProgramFeedId(null);
     lastResolvedFeedKeyRef.current = '';
     consecutiveBufferedTranscriptFailuresRef.current = 0;
+  }
+
+  async function handleContextTextUpload() {
+    const text = contextUploadText.trim();
+    if (!text) {
+      return;
+    }
+
+    setIsUploadingContext(true);
+    try {
+      const response = await uploadUserContext('Live notes', text, 'text');
+      setContextDocuments((current) => [response.document, ...current]);
+      setContextUploadText('');
+      setBoothError(null);
+    } catch (_error) {
+      setBoothError('User context could not be uploaded right now.');
+    } finally {
+      setIsUploadingContext(false);
+    }
+  }
+
+  async function handleContextFileUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setIsUploadingContext(true);
+    try {
+      const text = await readFileAsText(file);
+      if (!text.trim()) {
+        throw new Error('empty file');
+      }
+      const response = await uploadUserContext(file.name, text, 'file');
+      setContextDocuments((current) => [response.document, ...current]);
+      setBoothError(null);
+    } catch (_error) {
+      setBoothError('This file could not be ingested as text context.');
+    } finally {
+      setIsUploadingContext(false);
+      event.target.value = '';
+    }
   }
 
   async function refreshBoothSessions() {
@@ -1821,6 +1899,13 @@ function App() {
     interpretedRecoveryScore,
     interpretationState: boothInterpretation?.state,
   });
+  const confidenceReason =
+    boothInterpretation?.confidenceReason ??
+    worldState.orchestration?.confidenceReason ??
+    boothSignal.confidenceReasons[0] ??
+    (effectiveRecoveryScore >= effectiveHesitationScore
+      ? 'Confidence is recovering because the current delivery looks steadier than the hesitation spike.'
+      : 'Confidence is still held down because hesitation signals outweigh the recovery signals.');
   const liveBoothShouldSurfaceAssist =
     boothSignal.shouldSurfaceAssist || Boolean(boothInterpretation?.shouldSurfaceAssist);
   const workerAssistShouldSurface =
@@ -1843,9 +1928,14 @@ function App() {
   const shouldSurfaceAssist = activeAssist.type !== 'none' && assistVisibilityPhase !== 'hidden';
   const isAssistWeaning = assistVisibilityPhase === 'weaning';
   const boothHesitationPercent = formatPercent(effectiveHesitationScore);
+  const boothConfidencePercent = formatPercent(effectiveRecoveryScore);
   const visibleReasons = [...(boothInterpretation?.reasons ?? []), ...boothSignal.hesitationReasons].filter(
     (reason, index, collection) => collection.indexOf(reason) === index,
   );
+  const generationExplainability =
+    generatedCue?.explainability ?? worldState.orchestration?.lastGeneration ?? null;
+  const usedContextFacts = worldState.retrieval.supportingFacts;
+  const unusedContextFacts = worldState.retrieval.unusedFacts ?? [];
   const coachingTone = getCoachingTone({
     hasStartedBroadcast,
     boothHasLiveInput,
@@ -2801,6 +2891,17 @@ function App() {
                 </div>
               </div>
 
+              <div className="metric-card">
+                <div className="meter-label-row">
+                  <span>Confidence</span>
+                  <strong>{boothConfidencePercent}</strong>
+                </div>
+                <div className="meter-track meter-track--steady">
+                  <span style={{ width: boothConfidencePercent }} />
+                </div>
+                <p className="field-copy field-copy--tight">{confidenceReason}</p>
+              </div>
+
               <div className="signal-meta">
                 <div className="signal-meta__item">
                   <span>Mic activity</span>
@@ -2919,6 +3020,163 @@ function App() {
                 </section>
               </div>
             </article>
+
+            <details className="booth-card booth-card--compact details-card" open={Boolean(generationExplainability)}>
+              <summary className="details-card__summary">
+                <div>
+                  <p className="control-label">Generation explainability</p>
+                  <strong>Who made this cue</strong>
+                </div>
+                <span className="panel-tag">
+                  {generationExplainability?.contributingAgents.length ?? 0} agents
+                </span>
+              </summary>
+
+              {generationExplainability ? (
+                <div className="details-card__body">
+                  <div className="reason-list">
+                    {generationExplainability.reasoningTrace.map((line) => (
+                      <p key={line}>{line}</p>
+                    ))}
+                  </div>
+                  <div className="agent-trace-list">
+                    {generationExplainability.contributingAgents.map((agent) => (
+                      <details className={`agent-trace-item agent-trace-item--${agent.state}`} key={agent.agentName}>
+                        <summary className="agent-trace-item__summary">
+                          <div>
+                            <span className="agent-trace-item__label">{agent.agentName}</span>
+                            <p className="agent-trace-item__detail">{agent.output}</p>
+                          </div>
+                          <span className="agent-trace-item__state">{agent.state}</span>
+                        </summary>
+                        <div className="details-card__body">
+                          <div className="reason-list">
+                            {agent.reasoningTrace.map((traceLine) => (
+                              <p key={`${agent.agentName}-${traceLine}`}>{traceLine}</p>
+                            ))}
+                          </div>
+                          {agent.sourcesUsed.length > 0 ? (
+                            <div className="source-chip-row">
+                              {agent.sourcesUsed.map((chip) => (
+                                <span className="source-chip" key={`${agent.agentName}-${chip.id}`}>
+                                  {chip.label}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      </details>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="transcript-line transcript-line--muted">
+                  Cue explainability will appear once a grounded prompt is generated.
+                </p>
+              )}
+            </details>
+
+            <details className="booth-card booth-card--compact details-card">
+              <summary className="details-card__summary">
+                <div>
+                  <p className="control-label">Context drawer</p>
+                  <strong>Live RAG context</strong>
+                </div>
+                <span className="panel-tag">
+                  {usedContextFacts.length} used · {unusedContextFacts.length} held
+                </span>
+              </summary>
+
+              <div className="details-card__body">
+                <div className="context-upload">
+                  <textarea
+                    className="context-textarea"
+                    value={contextUploadText}
+                    onChange={(event) => setContextUploadText(event.target.value)}
+                    placeholder="Paste prep notes or talking points..."
+                  />
+                  <div className="context-upload__actions">
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      disabled={isUploadingContext || !contextUploadText.trim()}
+                      onClick={() => void handleContextTextUpload()}
+                    >
+                      {isUploadingContext ? 'Saving...' : 'Save notes'}
+                    </button>
+                    <label className="file-chip">
+                      <span>Upload file</span>
+                      <input type="file" accept=".txt,.md,.csv,.json,.html,.xml" onChange={(event) => void handleContextFileUpload(event)} />
+                    </label>
+                  </div>
+                </div>
+
+                {contextDocuments.length > 0 ? (
+                  <div className="context-doc-list">
+                    {contextDocuments.map((document) => (
+                      <div className="context-doc-item" key={document.id}>
+                        <strong>{document.fileName}</strong>
+                        <span>{document.chunkCount} chunks</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                <div className="context-columns">
+                  <div className="context-column">
+                    <p className="memory-title">Used now</p>
+                    <div className="context-fact-list">
+                      {usedContextFacts.map((fact) => (
+                        <div className="context-fact-item" key={fact.id}>
+                          <strong>{fact.sourceChip.label}</strong>
+                          <p>{fact.text}</p>
+                          <span>{Math.round(fact.relevance * 100)}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="context-column">
+                    <p className="memory-title">Retrieved but held</p>
+                    <div className="context-fact-list">
+                      {unusedContextFacts.length > 0 ? (
+                        unusedContextFacts.map((fact) => (
+                          <div className="context-fact-item context-fact-item--held" key={fact.id}>
+                            <strong>{fact.sourceChip.label}</strong>
+                            <p>{fact.text}</p>
+                            <span>{Math.round(fact.relevance * 100)}%</span>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="transcript-line transcript-line--muted">No reserve context is waiting right now.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </details>
+
+            <details className="booth-card booth-card--compact details-card">
+              <summary className="details-card__summary">
+                <div>
+                  <p className="control-label">State drawer</p>
+                  <strong>Live memory and debug</strong>
+                </div>
+                <span className="panel-tag">{worldState.orchestration?.agentRuns.length ?? 0} runs</span>
+              </summary>
+
+              <div className="details-card__body">
+                <div className="reason-list">
+                  {(worldState.orchestration?.memoryState ?? []).map((line) => (
+                    <p key={`memory-${line}`}>{line}</p>
+                  ))}
+                </div>
+                <div className="reason-list">
+                  {(worldState.orchestration?.retrievalReasoning ?? []).map((line) => (
+                    <p key={`retrieval-${line}`}>{line}</p>
+                  ))}
+                </div>
+              </div>
+            </details>
 
             <div className="inline-actions inline-actions--compact">
               <button

@@ -130,6 +130,12 @@ describe('booth cue generation', () => {
     expect(result.assist.text).toContain('save');
     expect(result.refreshAfterMs).toBe(1800);
     expect(result.assist.sourceChips[0]?.id).toBe('fact-1');
+    expect(result.explainability.contributingAgents.map((agent) => agent.agentName)).toEqual([
+      'context-agent',
+      'grounding-agent',
+      'cue-agent',
+    ]);
+    expect(result.explainability.sourcesUsed[0]?.id).toBe('fact-1');
   });
 
   it('preserves the incoming fact order in the OpenAI prompt payload', async () => {

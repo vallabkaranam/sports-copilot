@@ -3,6 +3,7 @@ import {
   GameEvent,
   SocialPost,
   TranscriptEntry,
+  UserContextChunk,
   VisionCue,
   createEmptyPreMatchState,
 } from '@sports-copilot/shared-types';
@@ -78,6 +79,17 @@ describe('retrieval pipeline', () => {
       timestamp: 76_000,
       tag: 'replay',
       label: 'Replay isolates Courtois stretching full length',
+    },
+  ];
+
+  const userContextChunks: UserContextChunk[] = [
+    {
+      id: 'chunk-1',
+      documentId: 'doc-1',
+      documentName: 'prep-notes.md',
+      chunkIndex: 0,
+      text: 'Mention that Rangers are defending a compact low block after halftime.',
+      score: 0.92,
     },
   ];
 
@@ -281,5 +293,23 @@ describe('retrieval pipeline', () => {
     });
 
     expect(state.supportingFacts[0]?.tier).toBe('pre_match');
+  });
+
+  it('surfaces uploaded user context in retrieval and keeps score metadata visible', () => {
+    const state = buildRetrievalState({
+      clockMs: 46_000,
+      events,
+      transcript,
+      roster,
+      narratives,
+      socialPosts: [],
+      userContextChunks,
+    });
+
+    const userFact = state.supportingFacts.find((fact) => fact.tier === 'user');
+    expect(userFact).toBeTruthy();
+    expect(userFact?.metadata?.userProvided).toBe(true);
+    expect(userFact?.metadata?.documentId).toBe('doc-1');
+    expect(userFact?.scoreBreakdown?.semantic ?? 0).toBeGreaterThan(0);
   });
 });

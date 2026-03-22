@@ -58,7 +58,7 @@ export const CoHostTossUpCueSchema = z.object({
 });
 export type CoHostTossUpCue = z.infer<typeof CoHostTossUpCueSchema>;
 
-export const MemoryTierSchema = z.enum(['static', 'session', 'live', 'pre_match']);
+export const MemoryTierSchema = z.enum(['static', 'session', 'live', 'pre_match', 'user']);
 export type MemoryTier = z.infer<typeof MemoryTierSchema>;
 
 export const PreMatchChunkCategorySchema = z.enum([
@@ -125,11 +125,41 @@ export const SourceChipSchema = z.object({
       chunkCategory: PreMatchChunkCategorySchema.optional(),
       teamSide: TeamSideSchema.optional(),
       fixtureId: z.string().optional(),
+      documentId: z.string().optional(),
+      userProvided: z.boolean().optional(),
       phaseHints: z.array(RetrievalPhaseHintSchema).optional(),
     })
     .optional(),
 });
 export type SourceChip = z.infer<typeof SourceChipSchema>;
+
+export const AgentExecutionStateSchema = z.enum(['quiet', 'ready', 'active', 'waiting']);
+export type AgentExecutionState = z.infer<typeof AgentExecutionStateSchema>;
+
+export const AgentExplainabilitySchema = z.object({
+  agentName: z.string(),
+  output: z.string(),
+  reasoningTrace: z.array(z.string()),
+  sourcesUsed: z.array(SourceChipSchema),
+  state: AgentExecutionStateSchema,
+});
+export type AgentExplainability = z.infer<typeof AgentExplainabilitySchema>;
+
+export const GenerationExplainabilitySchema = z.object({
+  contributingAgents: z.array(AgentExplainabilitySchema),
+  reasoningTrace: z.array(z.string()),
+  sourcesUsed: z.array(SourceChipSchema),
+});
+export type GenerationExplainability = z.infer<typeof GenerationExplainabilitySchema>;
+
+export const RetrievalScoreBreakdownSchema = z.object({
+  lexical: z.number().min(0).max(1),
+  semantic: z.number().min(0).max(1),
+  freshness: z.number().min(0).max(1),
+  tier: z.number().min(0).max(1),
+  total: z.number().min(0).max(1),
+});
+export type RetrievalScoreBreakdown = z.infer<typeof RetrievalScoreBreakdownSchema>;
 
 export const RetrievedFactSchema = z.object({
   id: z.string(),
@@ -143,9 +173,13 @@ export const RetrievedFactSchema = z.object({
       chunkCategory: PreMatchChunkCategorySchema.optional(),
       teamSide: TeamSideSchema.optional(),
       fixtureId: z.string().optional(),
+      documentId: z.string().optional(),
+      userProvided: z.boolean().optional(),
       phaseHints: z.array(RetrievalPhaseHintSchema).optional(),
     })
     .optional(),
+  scoreBreakdown: RetrievalScoreBreakdownSchema.optional(),
+  usedByAgents: z.array(z.string()).optional(),
   sourceChip: SourceChipSchema,
 });
 export type RetrievedFact = z.infer<typeof RetrievedFactSchema>;
@@ -153,6 +187,7 @@ export type RetrievedFact = z.infer<typeof RetrievedFactSchema>;
 export const RetrievalStateSchema = z.object({
   query: z.string(),
   supportingFacts: z.array(RetrievedFactSchema),
+  unusedFacts: z.array(RetrievedFactSchema).default([]),
 });
 export type RetrievalState = z.infer<typeof RetrievalStateSchema>;
 
@@ -161,6 +196,7 @@ export const ContextBundleLaneSchema = z.enum([
   'social-pulse',
   'pre-match',
   'session-thread',
+  'user-context',
 ]);
 export type ContextBundleLane = z.infer<typeof ContextBundleLaneSchema>;
 
@@ -524,6 +560,7 @@ export function createEmptyRetrievalState(): RetrievalState {
   return {
     query: '',
     supportingFacts: [],
+    unusedFacts: [],
   };
 }
 
@@ -592,6 +629,15 @@ export const WorldStateSchema = z.object({
     social: z.array(SocialPostSchema),
     vision: z.array(VisionCueSchema),
   }),
+  orchestration: z
+    .object({
+      agentRuns: z.array(AgentExplainabilitySchema),
+      retrievalReasoning: z.array(z.string()),
+      memoryState: z.array(z.string()),
+      lastGeneration: GenerationExplainabilitySchema.nullable(),
+      confidenceReason: z.string().nullable(),
+    })
+    .optional(),
 });
 export type WorldState = z.infer<typeof WorldStateSchema>;
 
@@ -766,6 +812,8 @@ export const BoothInterpretationSchema = z.object({
   summary: z.string(),
   reasons: z.array(z.string()),
   signals: z.array(BoothInterpretationSignalSchema),
+  confidenceReason: z.string().optional(),
+  explainability: GenerationExplainabilitySchema.optional(),
   source: z.enum(['openai', 'unavailable']),
 });
 export type BoothInterpretation = z.infer<typeof BoothInterpretationSchema>;
@@ -813,9 +861,57 @@ export type GenerateBoothCueInput = z.infer<typeof GenerateBoothCueInputSchema>;
 export const GenerateBoothCueResponseSchema = z.object({
   assist: AssistCardSchema,
   refreshAfterMs: z.number().int().positive(),
+  explainability: GenerationExplainabilitySchema,
   source: z.enum(['openai', 'unavailable']),
 });
 export type GenerateBoothCueResponse = z.infer<typeof GenerateBoothCueResponseSchema>;
+
+export const UserContextDocumentSchema = z.object({
+  id: z.string(),
+  fileName: z.string(),
+  sourceType: z.enum(['text', 'file']),
+  createdAt: z.string(),
+  chunkCount: z.number().int().nonnegative(),
+});
+export type UserContextDocument = z.infer<typeof UserContextDocumentSchema>;
+
+export const UserContextChunkSchema = z.object({
+  id: z.string(),
+  documentId: z.string(),
+  documentName: z.string(),
+  chunkIndex: z.number().int().nonnegative(),
+  text: z.string(),
+  score: z.number().min(0).max(1),
+});
+export type UserContextChunk = z.infer<typeof UserContextChunkSchema>;
+
+export const UploadUserContextInputSchema = z.object({
+  fileName: z.string().min(1),
+  text: z.string().min(1),
+  sourceType: z.enum(['text', 'file']).default('file'),
+});
+export type UploadUserContextInput = z.infer<typeof UploadUserContextInputSchema>;
+
+export const UploadUserContextResponseSchema = z.object({
+  document: UserContextDocumentSchema,
+});
+export type UploadUserContextResponse = z.infer<typeof UploadUserContextResponseSchema>;
+
+export const ListUserContextResponseSchema = z.object({
+  documents: z.array(UserContextDocumentSchema),
+});
+export type ListUserContextResponse = z.infer<typeof ListUserContextResponseSchema>;
+
+export const RetrieveUserContextInputSchema = z.object({
+  queryText: z.string().min(1),
+  limit: z.number().int().positive().max(20).optional(),
+});
+export type RetrieveUserContextInput = z.infer<typeof RetrieveUserContextInputSchema>;
+
+export const RetrieveUserContextResponseSchema = z.object({
+  chunks: z.array(UserContextChunkSchema),
+});
+export type RetrieveUserContextResponse = z.infer<typeof RetrieveUserContextResponseSchema>;
 
 export const ResolveFixtureInputSchema = z.object({
   screenshotBase64: z.string().min(1).optional(),

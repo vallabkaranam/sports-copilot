@@ -7,6 +7,7 @@ import {
   BoothSessionRecord,
   BoothSessionsResponse,
   ReplayControlState,
+  UserContextDocument,
   WorldState,
   createEmptyAssistCard,
   createEmptyCommentatorState,
@@ -456,9 +457,11 @@ describe('App dashboard', () => {
     shouldSurfaceAssist: boolean;
     summary: string;
     reasons: string[];
-    signals?: string[];
+    signals?: Array<{ key: string; label: string; value: number | boolean; detail: string }>;
+    confidenceReason?: string;
     source: string;
   };
+  let currentContextDocuments: UserContextDocument[];
   let queuedTranscriptResponses: Array<{ transcript: string; source: 'openai' | 'unavailable' }>;
 
   beforeEach(() => {
@@ -482,8 +485,18 @@ describe('App dashboard', () => {
       summary: 'Tracking the booth without stepping in.',
       reasons: ['No strong hesitation cue is active in the current booth window.'],
       signals: [],
+      confidenceReason: 'Confidence is holding because the booth is still coherent.',
       source: 'openai',
     };
+    currentContextDocuments = [
+      {
+        id: 'doc-1',
+        fileName: 'prep-notes.md',
+        sourceType: 'file',
+        createdAt: '2026-03-22T10:00:00.000Z',
+        chunkCount: 3,
+      },
+    ];
     queuedTranscriptResponses = [];
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
@@ -584,6 +597,23 @@ describe('App dashboard', () => {
         return jsonResponse(currentWorldState);
       }
 
+      if (url.includes('/context-documents') && (!init?.method || init.method === 'GET')) {
+        return jsonResponse({ documents: currentContextDocuments });
+      }
+
+      if (url.includes('/context-documents') && init?.method === 'POST') {
+        const payload = JSON.parse(String(init.body ?? '{}')) as { fileName?: string; sourceType?: 'text' | 'file' };
+        const nextDocument: UserContextDocument = {
+          id: `doc-${currentContextDocuments.length + 1}`,
+          fileName: payload.fileName ?? 'uploaded.txt',
+          sourceType: payload.sourceType ?? 'text',
+          createdAt: '2026-03-22T10:05:00.000Z',
+          chunkCount: 1,
+        };
+        currentContextDocuments = [nextDocument, ...currentContextDocuments];
+        return jsonResponse({ document: nextDocument });
+      }
+
       if (url.includes('/booth-sessions') && (!init?.method || init.method === 'GET')) {
         if (url.includes('/booth-sessions/session-1/review')) {
           return jsonResponse({
@@ -625,6 +655,47 @@ describe('App dashboard', () => {
             ],
           },
           refreshAfterMs: 1800,
+          explainability: {
+            reasoningTrace: ['The live save fact and recent booth pause aligned.'],
+            sourcesUsed: [
+              {
+                id: 'fact-1',
+                label: 'Courtois save',
+                source: 'live:event-feed:save',
+                relevance: 0.96,
+              },
+            ],
+            contributingAgents: [
+              {
+                agentName: 'context-agent',
+                output: 'Courtois save in the live moment.',
+                reasoningTrace: ['Fresh live event selected first.'],
+                sourcesUsed: [
+                  {
+                    id: 'fact-1',
+                    label: 'Courtois save',
+                    source: 'live:event-feed:save',
+                    relevance: 0.96,
+                  },
+                ],
+                state: 'ready',
+              },
+              {
+                agentName: 'cue-agent',
+                output: 'Stay with the save, then bridge to the transition.',
+                reasoningTrace: ['The booth paused after the save.'],
+                sourcesUsed: [
+                  {
+                    id: 'fact-1',
+                    label: 'Courtois save',
+                    source: 'live:event-feed:save',
+                    relevance: 0.96,
+                  },
+                ],
+                state: 'active',
+              },
+            ],
+          },
           source: 'openai',
         });
       }
@@ -1051,6 +1122,94 @@ describe('App dashboard', () => {
     expect(container.textContent).toContain(
       'that rangers goal right after the break changes the match',
     );
+  });
+
+  it('shows explainability and context drawer data from live responses', async () => {
+    currentBoothInterpretation = {
+      ...currentBoothInterpretation,
+      shouldSurfaceAssist: true,
+      hesitationScore: 0.72,
+      recoveryScore: 0.18,
+      state: 'step-in',
+      summary: 'The booth slipped and help is needed now.',
+      reasons: ['Pause and filler signals clustered around the last live moment.'],
+    };
+    currentWorldState = {
+      ...currentWorldState,
+      orchestration: {
+        agentRuns: [],
+        retrievalReasoning: ['Selected the latest live save and held backup context in reserve.'],
+        memoryState: ['Sliding window holds the last live moment and fresh transcript lane.'],
+        confidenceReason: 'Confidence dipped because pause and filler signals spiked together.',
+        lastGeneration: {
+          reasoningTrace: ['The live save fact and recent booth pause aligned.'],
+          sourcesUsed: [
+            {
+              id: 'fact-1',
+              label: 'Courtois save',
+              source: 'live:event-feed:save',
+              relevance: 0.96,
+            },
+          ],
+          contributingAgents: [
+            {
+              agentName: 'context-agent',
+              output: 'Courtois save in the live moment.',
+              reasoningTrace: ['Fresh live event selected first.'],
+              sourcesUsed: [
+                {
+                  id: 'fact-1',
+                  label: 'Courtois save',
+                  source: 'live:event-feed:save',
+                  relevance: 0.96,
+                },
+              ],
+              state: 'ready',
+            },
+            {
+              agentName: 'cue-agent',
+              output: 'Stay with the save, then bridge to the transition.',
+              reasoningTrace: ['The booth paused after the save.'],
+              sourcesUsed: [
+                {
+                  id: 'fact-1',
+                  label: 'Courtois save',
+                  source: 'live:event-feed:save',
+                  relevance: 0.96,
+                },
+              ],
+              state: 'active',
+            },
+          ],
+        },
+      },
+    };
+
+    await startLiveSession();
+
+    const explainabilitySummary = [...container.querySelectorAll('summary')].find((node) =>
+      node.textContent?.includes('Generation explainability'),
+    );
+    expect(explainabilitySummary).toBeTruthy();
+
+    await act(async () => {
+      explainabilitySummary?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain('context-agent');
+    expect(container.textContent).toContain('The live save fact and recent booth pause aligned.');
+
+    const contextSummary = [...container.querySelectorAll('summary')].find((node) =>
+      node.textContent?.includes('Context drawer'),
+    );
+    expect(contextSummary).toBeTruthy();
+
+    await act(async () => {
+      contextSummary?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain('prep-notes.md');
+    expect(container.textContent).toContain('Retrieved but held');
   });
 
   it('requests mic access when going live and still posts control updates', async () => {

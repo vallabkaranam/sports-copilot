@@ -9,6 +9,7 @@ import { buildNarrativeState } from './narrative.js';
 import { buildPreMatchContext, createDegradedPreMatchState } from './pre-match.js';
 import {
   buildContextBundle,
+  buildRetrievalQuery,
   buildRetrievalState,
   ingestLiveSocialPosts,
   NarrativeFixture,
@@ -23,11 +24,14 @@ import {
 } from './sportmonks.js';
 import { getActiveVisionCues, ingestVisionFrames } from './vision.js';
 import {
+  AgentExplainability,
   CommentatorState,
   GameEvent,
   ReplayControlState,
+  RetrieveUserContextResponse,
   SocialPost,
   TranscriptEntry,
+  UserContextChunk,
   VisionCue,
   VisionFrame,
   WorldState,
@@ -124,6 +128,94 @@ async function getControls() {
       res.on('end', () => resolve(JSON.parse(data) as ReplayControlState));
     }).on('error', reject);
   });
+}
+
+async function retrieveUserContext(queryText: string) {
+  return new Promise<RetrieveUserContextResponse>((resolve, reject) => {
+    const data = JSON.stringify({ queryText, limit: 4 });
+    const req = http.request(
+      new URL(`${API_URL.pathname.replace(/\/$/, '')}/context-documents/retrieve`, API_BASE_URL),
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(data),
+        },
+      },
+      (res) => {
+        let body = '';
+        res.on('data', (chunk) => {
+          body += chunk;
+        });
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 400) {
+            reject(new Error(body || `context retrieval failed with ${res.statusCode}`));
+            return;
+          }
+          resolve(JSON.parse(body) as RetrieveUserContextResponse);
+        });
+      },
+    );
+
+    req.on('error', reject);
+    req.write(data);
+    req.end();
+  });
+}
+
+function buildAgentRuns(params: {
+  commentator: CommentatorState;
+  retrievalReasoning: string[];
+  retrievalSources: WorldState['retrieval']['supportingFacts'];
+  contextBundle: WorldState['contextBundle'];
+  assist: WorldState['assist'];
+  liveMatchResolved: boolean;
+}) {
+  const { commentator, retrievalReasoning, retrievalSources, contextBundle, assist, liveMatchResolved } = params;
+
+  return [
+    {
+      agentName: 'signal-agent',
+      output:
+        commentator.hesitationScore > 0
+          ? `Hesitation ${Math.round(commentator.hesitationScore * 100)}%`
+          : 'Monitoring only',
+      reasoningTrace:
+        commentator.hesitationReasons.length > 0
+          ? commentator.hesitationReasons
+          : ['No strong hesitation trigger is active.'],
+      sourcesUsed: [],
+      state: commentator.hesitationScore >= 0.35 ? 'active' : 'quiet',
+    },
+    {
+      agentName: 'context-agent',
+      output: liveMatchResolved ? contextBundle.summary : 'Waiting for resolved fixture context',
+      reasoningTrace: retrievalReasoning,
+      sourcesUsed: retrievalSources.slice(0, 4).map((fact) => fact.sourceChip),
+      state: liveMatchResolved ? 'ready' : 'waiting',
+    },
+    {
+      agentName: 'cue-agent',
+      output: assist.type === 'none' ? 'Standing by' : assist.text,
+      reasoningTrace: [assist.whyNow],
+      sourcesUsed: assist.sourceChips,
+      state: assist.type === 'none' ? 'quiet' : 'active',
+    },
+    {
+      agentName: 'recovery-agent',
+      output:
+        commentator.hesitationScore < 0.18
+          ? 'Delivery has stabilized again'
+          : 'Recovery is not established yet',
+      reasoningTrace: [
+        commentator.hesitationScore < 0.18
+          ? 'Hesitation pressure is low enough that the desk can keep backing off.'
+          : 'Hesitation pressure is still too high to treat this as a recovery window.',
+      ],
+      sourcesUsed: [],
+      state: commentator.hesitationScore < 0.18 ? 'ready' : 'quiet',
+    },
+  ] satisfies AgentExplainability[];
 }
 
 function startHealthServer() {
@@ -300,6 +392,13 @@ async function run() {
       });
       const snapshot = normalizeSportmonksFixture(payload, fixtureId);
       const clockMs = snapshot.liveMatch.minute * 60_000;
+      const retrievalQuery = buildRetrievalQuery(clockMs, snapshot.events, transcript);
+      let userContextChunks: UserContextChunk[] = [];
+      try {
+        userContextChunks = (await retrieveUserContext(retrievalQuery)).chunks;
+      } catch (_error) {
+        userContextChunks = [];
+      }
       let resolvedSocialPosts = socialPosts;
 
       if (ENABLE_BLUESKY_SOCIAL) {
@@ -351,6 +450,7 @@ async function run() {
         roster,
         narratives,
         socialPosts: resolvedSocialPosts,
+        userContextChunks,
         visionCues,
         liveMatch: snapshot.liveMatch,
         preMatch,
@@ -373,6 +473,24 @@ async function run() {
       const highSalienceMoments = snapshot.events.filter((event) => event.highSalience).slice(-4);
       const possession = buildPossessionLabel(snapshot.liveMatch, snapshot.liveMatch.stats);
       const sessionMemoryState = sessionMemory.getState(recentEvents, commentator.recentTranscript);
+      const retrievalReasoning = [
+        `Query: ${retrieval.query}`,
+        `Selected ${retrieval.supportingFacts.length} facts and held ${retrieval.unusedFacts.length} in reserve.`,
+        snapshot.liveMatch.status === 'live'
+          ? `Live minute ${snapshot.liveMatch.minute} keeps live and session facts ahead of slower context.`
+          : 'The desk is relying on pre-match and static context.',
+        userContextChunks.length > 0
+          ? `User-uploaded context supplied ${userContextChunks.length} matching chunk${userContextChunks.length === 1 ? '' : 's'}.`
+          : 'No uploaded context matched this query window.',
+      ];
+      const agentRuns = buildAgentRuns({
+        commentator,
+        retrievalReasoning,
+        retrievalSources: retrieval.supportingFacts,
+        contextBundle,
+        assist,
+        liveMatchResolved: Boolean(fixtureId),
+      });
 
       lastWorldState = {
         matchId: `sportmonks-${fixtureId}`,
@@ -397,6 +515,27 @@ async function run() {
         liveSignals: {
           social: ingestedSocialPosts,
           vision: activeVisionCues,
+        },
+        orchestration: {
+          agentRuns,
+          retrievalReasoning,
+          memoryState: [
+            `Recent events: ${recentEvents.length}`,
+            `Transcript lines: ${transcript.length}`,
+            `Session assists remembered: ${sessionMemoryState.surfacedAssists.length}`,
+            `Context bundle items: ${contextBundle.items.length}`,
+          ],
+          lastGeneration: {
+            contributingAgents: agentRuns.filter((agent) =>
+              ['context-agent', 'cue-agent'].includes(agent.agentName),
+            ),
+            reasoningTrace: [assist.whyNow, ...retrievalReasoning],
+            sourcesUsed: assist.sourceChips,
+          },
+          confidenceReason:
+            commentator.hesitationScore < 0.18
+              ? 'Recovery is building because hesitation pressure has fallen back into the steady range.'
+              : 'Confidence has not rebuilt yet because hesitation pressure is still elevated.',
         },
       };
 
