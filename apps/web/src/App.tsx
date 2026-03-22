@@ -13,7 +13,6 @@ import {
   createEmptyAssistCard,
 } from '@sports-copilot/shared-types';
 import './App.css';
-import { BRAND } from './brand';
 import {
   appendBoothSessionSample,
   connectRealtimeBoothSession,
@@ -827,7 +826,6 @@ function App() {
   const [standbyVoiceEnabled, setStandbyVoiceEnabled] = useState(false);
   const [standbyVoiceStatus, setStandbyVoiceStatus] = useState<StandbyVoiceStatus>('disabled');
   const [standbyVoiceSampleDurationMs, setStandbyVoiceSampleDurationMs] = useState(0);
-  const [standbyVoiceReadyAt, setStandbyVoiceReadyAt] = useState<string | null>(null);
   const [activeDeliverySource, setActiveDeliverySource] = useState<DeliverySource>('live-mic');
   const [handoffState, setHandoffState] = useState<HandoffState>('idle');
   const [handoffCountdown, setHandoffCountdown] = useState<number | null>(null);
@@ -918,7 +916,6 @@ function App() {
         setStandbyVoiceEnabled(true);
         setStandbyVoiceStatus('ready');
         setStandbyVoiceSampleDurationMs(parsed.sampleDurationMs ?? 0);
-        setStandbyVoiceReadyAt(parsed.readyAt ?? null);
       }
     } catch (_error) {
       window.localStorage.removeItem(STANDBY_VOICE_STORAGE_KEY);
@@ -1992,7 +1989,6 @@ function App() {
           if (sampleDurationMs < MIN_STANDBY_SAMPLE_MS || sampleBytes === 0) {
             setStandbyVoiceStatus('failed');
             setStandbyVoiceSampleDurationMs(0);
-            setStandbyVoiceReadyAt(null);
             persistStandbyVoiceProfile({
               enabled: false,
               status: 'failed',
@@ -2006,7 +2002,6 @@ function App() {
           const readyAt = new Date().toISOString();
           setStandbyVoiceStatus('ready');
           setStandbyVoiceSampleDurationMs(sampleDurationMs);
-          setStandbyVoiceReadyAt(readyAt);
           persistStandbyVoiceProfile({
             enabled: true,
             status: 'ready',
@@ -2033,7 +2028,6 @@ function App() {
     setStandbyVoiceEnabled(false);
     setStandbyVoiceStatus('disabled');
     setStandbyVoiceSampleDurationMs(0);
-    setStandbyVoiceReadyAt(null);
     persistStandbyVoiceProfile({
       enabled: false,
       status: 'disabled',
@@ -2422,8 +2416,8 @@ function App() {
   const activeAssist = latchedAssist;
   const shouldSurfaceAssist = activeAssist.type !== 'none' && assistVisibilityPhase !== 'hidden';
   const isAssistWeaning = assistVisibilityPhase === 'weaning';
-  const boothHesitationPercent = formatPercent(effectiveHesitationScore);
-  const boothConfidencePercent = formatPercent(effectiveRecoveryScore);
+  const rhythmScore = Math.max(0, 1 - effectiveHesitationScore);
+  const boothRhythmPercent = formatPercent(rhythmScore);
   const visibleReasons = [...(boothInterpretation?.reasons ?? []), ...boothSignal.hesitationReasons].filter(
     (reason, index, collection) => collection.indexOf(reason) === index,
   );
@@ -2552,6 +2546,12 @@ function App() {
       emphasis: boothSignal.wakePhraseDetected ? 'step-in' : 'standby',
       value: formatSignalIndicatorValue('Wake phrase', boothSignal),
     },
+    {
+      label: 'Rhythm',
+      value: boothRhythmPercent,
+      active: effectiveHesitationScore < 0.2,
+      emphasis: coachingTone.tone,
+    },
   ];
   const activeAssistSupportCopy = isAssistWeaning
     ? 'Confidence is returning. AndOne is backing off.'
@@ -2562,7 +2562,7 @@ function App() {
     .map((chip) => chip.source.replace(/^[^:]+:/, ''))
     .join(' · ');
   const assistTraceLines = [
-    `Hesitation ${boothHesitationPercent}${boothSignal.wordsPerMinute > 0 ? ` · ${Math.round(boothSignal.wordsPerMinute)} WPM` : ''}`,
+    `Rhythm ${boothRhythmPercent}${boothSignal.wordsPerMinute > 0 ? ` · ${Math.round(boothSignal.wordsPerMinute)} WPM` : ''}`,
     worldState.recentEvents[worldState.recentEvents.length - 1]
       ? `Live event · ${worldState.recentEvents[worldState.recentEvents.length - 1]?.description}`
       : null,
@@ -2591,7 +2591,7 @@ function App() {
       ? 'Anticipating hesitation. Use the grounded assist to unblock your delivery rhythm.'
       : boothHasLiveInput
         ? 'The Sidekick is watching silently. No assist needed while you are in flow.'
-        : 'Feed and microphone are armed. The Sidekick starts once you begin calling the action.';
+        : 'Feed and microphone are ready. The Sidekick starts once you begin calling the action.';
   const micBars = Array.from({ length: 14 }, (_, index) => {
     const threshold = (index + 1) / 14;
     return boothSignal.audioLevel >= threshold * 0.18;
@@ -3238,20 +3238,15 @@ function App() {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <div className="brand-lockup">
-          <div className="brand-mark" aria-hidden="true">
+        <div className="app-header__brand">
+          <div className="brand-mark" aria-hidden="true" onClick={() => navigateToRoute('live')}>
             <span className="brand-mark__dot" />
-            <span className="brand-mark__text">AO</span>
-          </div>
-          <div className="brand-copy">
-            <p className="eyebrow">{BRAND.eyebrow}</p>
-            <h1>{BRAND.heroTitle}</h1>
-            <p className="hero-copy">{BRAND.heroCopy}</p>
+            <span className="brand-mark__text">AndOne</span>
           </div>
         </div>
 
-        <div className="header-actions">
-          <div className="view-switcher" role="tablist" aria-label="AndOne views">
+        <nav className="header-actions">
+          <div className="view-switcher" role="tablist" aria-label="App navigation">
             <button
               type="button"
               role="tab"
@@ -3259,7 +3254,7 @@ function App() {
               className={appRoute === 'live' ? 'ghost-button ghost-button--active' : 'ghost-button'}
               onClick={() => navigateToRoute('live')}
             >
-              Live
+              Live Desk
             </button>
             <button
               type="button"
@@ -3277,10 +3272,10 @@ function App() {
               className={appRoute === 'debug' ? 'ghost-button ghost-button--active' : 'ghost-button'}
               onClick={() => navigateToRoute('debug')}
             >
-              Debug
+              Sidekick Console
             </button>
           </div>
-        </div>
+        </nav>
       </header>
 
       {error ? <div className="warning-banner">{error}</div> : null}
@@ -3389,10 +3384,9 @@ function App() {
                 <div>
                   <p className="panel-kicker">Live desk</p>
                   <h2>{feedHeading}</h2>
-                  <p className="panel-copy">Adaptive intelligence for Track 3. AndOne anticipates hesitation, unblocks with enriched context, and recedes to protect the art of your flow.</p>
                 </div>
                 <div className="panel-chip-row">
-                  <span className="panel-tag">{loadedClipUrl ? 'Feed armed' : 'No feed live'}</span>
+                  <span className="panel-tag">{loadedClipUrl ? 'Feed active' : 'No feed live'}</span>
                   <span className="panel-tag">{cueSource === 'none' ? 'Monitoring only' : `Cue via ${cueSource}`}</span>
                 </div>
               </div>
@@ -3576,51 +3570,46 @@ function App() {
                     ) : null}
                   </div>
 
-                  <div className="handoff-strip">
-                    <div className="handoff-strip__meta">
-                      <span>On-air source</span>
-                      <strong>{activeDeliverySourceLabel}</strong>
-                    </div>
-                    <div className="handoff-strip__meta">
-                      <span>Handoff</span>
-                      <strong>{handoffCountdown ? `${handoffNote} ${handoffCountdown}` : handoffNote ?? 'Ready'}</strong>
-                    </div>
-                  </div>
-
-                  <div className="standby-voice-actions standby-voice-actions--split">
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      disabled={
-                        !isBroadcastLive ||
-                        !isStandbyVoiceAvailable ||
-                        handoffState !== 'idle' ||
-                        activeDeliverySource !== 'live-mic'
-                      }
-                      onClick={() => beginHandoff('sub_in')}
-                    >
-                      Sub Me In
-                    </button>
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      disabled={
-                        !isBroadcastLive ||
-                        (handoffState !== 'subbed_in' && handoffState !== 'preparing_sub_back') ||
-                        activeDeliverySource !== 'synthetic-standby'
-                      }
-                      onClick={() => beginHandoff('sub_back')}
-                    >
-                      Sub Me Back In
-                    </button>
-                  </div>
-
-                  {standbyVoiceReadyAt ? (
-                    <p className="field-copy field-copy--tight">
-                      Ready since {new Date(standbyVoiceReadyAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.
-                    </p>
-                  ) : null}
                 </article>
+
+                <details className="booth-card booth-card--compact details-card">
+                  <summary className="details-card__summary">
+                    <div>
+                      <p className="control-label">Advanced</p>
+                      <strong>Handoff & Standby</strong>
+                    </div>
+                  </summary>
+                  <div className="details-card__body">
+                    <div className="handoff-strip">
+                      <div className="handoff-strip__meta">
+                        <span>Delivery Source</span>
+                        <strong>{activeDeliverySource === 'live-mic' ? 'Live Mic' : 'Synthetic'}</strong>
+                      </div>
+                      <div className="handoff-strip__meta">
+                        <span>Handoff</span>
+                        <strong>{handoffCountdown ? `${handoffNote} ${handoffCountdown}` : handoffNote ?? 'Ready'}</strong>
+                      </div>
+                    </div>
+                    <div className="standby-voice-actions standby-voice-actions--split">
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        disabled={!isBroadcastLive || activeDeliverySource !== 'live-mic'}
+                        onClick={() => beginHandoff('sub_in')}
+                      >
+                        Sub Me In
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        disabled={!isBroadcastLive || activeDeliverySource !== 'synthetic-standby'}
+                        onClick={() => beginHandoff('sub_back')}
+                      >
+                        Sub Me Back
+                      </button>
+                    </div>
+                  </div>
+                </details>
 
                 {boothError ? <p className="inline-warning">{boothError}</p> : null}
 
@@ -3636,23 +3625,15 @@ function App() {
 
                   <div className="metric-card">
                     <div className="meter-label-row">
-                      <span>Hesitation</span>
-                      <strong>{boothHesitationPercent}</strong>
+                      <span>Broadcast Rhythm</span>
+                      <strong>{boothRhythmPercent}</strong>
                     </div>
                     <div className={`meter-track meter-track--${coachingTone.tone}`}>
-                      <span style={{ width: boothHesitationPercent }} />
+                      <span style={{ width: boothRhythmPercent }} />
                     </div>
-                  </div>
-
-                  <div className="metric-card">
-                    <div className="meter-label-row">
-                      <span>Confidence</span>
-                      <strong>{boothConfidencePercent}</strong>
-                    </div>
-                    <div className="meter-track meter-track--steady">
-                      <span style={{ width: boothConfidencePercent }} />
-                    </div>
-                    <p className="field-copy field-copy--tight">{confidenceReason}</p>
+                    <p className="field-copy field-copy--tight">
+                      {effectiveHesitationScore > 0.4 ? 'Sensing significant hesitation.' : confidenceReason}
+                    </p>
                   </div>
 
                   <div className="signal-meta">
