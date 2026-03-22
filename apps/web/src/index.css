@@ -2,33 +2,33 @@
   font-family: 'Sora', 'Avenir Next', 'Trebuchet MS', sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color: #1d1a17;
+  color: #1a1815;
   background:
-    linear-gradient(180deg, #f8f5f0 0%, #f4efe8 100%);
+    linear-gradient(180deg, #f6f2eb 0%, #f1ebe2 100%);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
-  --bg-panel: rgba(255, 252, 247, 0.9);
-  --bg-panel-strong: rgba(255, 253, 250, 0.98);
-  --bg-panel-soft: rgba(244, 238, 230, 0.76);
-  --border: rgba(45, 35, 29, 0.1);
-  --border-strong: rgba(45, 35, 29, 0.16);
-  --copy-strong: #1d1a17;
-  --copy-muted: rgba(29, 26, 23, 0.7);
-  --copy-soft: rgba(29, 26, 23, 0.46);
-  --ink: #181411;
-  --accent: #6b5548;
-  --accent-deep: #392d27;
-  --accent-soft: rgba(107, 85, 72, 0.08);
-  --signal-green: #526b58;
-  --signal-green-soft: rgba(82, 107, 88, 0.1);
-  --signal-yellow: #8c7343;
-  --signal-yellow-soft: rgba(140, 115, 67, 0.11);
-  --signal-red: #8b5b4b;
-  --signal-red-soft: rgba(139, 91, 75, 0.11);
-  --shadow: 0 10px 24px rgba(39, 30, 23, 0.035);
+  --bg-panel: rgba(255, 252, 248, 0.94);
+  --bg-panel-strong: rgba(255, 253, 250, 0.985);
+  --bg-panel-soft: rgba(245, 239, 232, 0.74);
+  --border: rgba(44, 36, 29, 0.09);
+  --border-strong: rgba(44, 36, 29, 0.14);
+  --copy-strong: #1a1815;
+  --copy-muted: rgba(26, 24, 21, 0.68);
+  --copy-soft: rgba(26, 24, 21, 0.42);
+  --ink: #15120f;
+  --accent: #625348;
+  --accent-deep: #342a25;
+  --accent-soft: rgba(98, 83, 72, 0.08);
+  --signal-green: #4e6a58;
+  --signal-green-soft: rgba(78, 106, 88, 0.1);
+  --signal-yellow: #866c3c;
+  --signal-yellow-soft: rgba(134, 108, 60, 0.1);
+  --signal-red: #855548;
+  --signal-red-soft: rgba(133, 85, 72, 0.1);
+  --shadow: 0 12px 32px rgba(39, 30, 23, 0.04);
 }
 
 * {
@@ -45,7 +45,7 @@ body {
   min-height: 100vh;
   color: var(--copy-strong);
   background-attachment: fixed;
-  background-color: #f8f5f0;
+  background-color: #f6f2eb;
 }
 
 button,

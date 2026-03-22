@@ -1,10 +1,19 @@
 import type { BoothSignal } from './boothSignal';
 
 export type SidekickTraceState = 'quiet' | 'ready' | 'active' | 'waiting';
+export type SidekickTraceLane = 'sensing' | 'content';
 
 export type SidekickTraceItem = {
-  id: 'signal' | 'context' | 'cue' | 'recovery';
+  id:
+    | 'signal'
+    | 'fillers'
+    | 'pace'
+    | 'context'
+    | 'grounding'
+    | 'cue'
+    | 'recovery';
   label: string;
+  lane: SidekickTraceLane;
   state: SidekickTraceState;
   detail: string;
 };
@@ -82,6 +91,37 @@ export function buildSidekickTrace(params: {
       ? `${fixtureResolutionLabel} · confirming fixture`
       : 'Waiting for match resolution';
 
+  const fillerDetail =
+    boothSignal.fillerCount > 0
+      ? `${boothSignal.fillerWords.slice(0, 3).join(' · ')}${boothSignal.wakePhraseDetected ? ' · wake phrase' : ''}`
+      : boothSignal.wakePhraseDetected
+        ? 'Wake phrase detected'
+        : 'No filler or wake-word trigger';
+
+  const paceDetail =
+    boothSignal.pauseDurationMs >= 1_200
+      ? `Pause at ${Math.round(boothSignal.pauseDurationMs / 100) / 10}s`
+      : boothSignal.pacePressureScore >= 0.18
+        ? `${Math.round(boothSignal.wordsPerMinute)} WPM · pace pressure rising`
+        : boothSignal.wordsPerMinute > 0
+          ? `${Math.round(boothSignal.wordsPerMinute)} WPM · cadence stable`
+          : 'Waiting for enough speech';
+
+  const groundingSignalCount = recentEventCount + socialCount + visionCount + supportingFactCount + transcriptLineCount;
+  const groundingDetail =
+    groundingSignalCount > 0
+      ? [
+          recentEventCount > 0 ? `${recentEventCount} event${recentEventCount === 1 ? '' : 's'}` : null,
+          socialCount > 0 ? `${socialCount} social` : null,
+          visionCount > 0 ? `${visionCount} vision` : null,
+          supportingFactCount > 0 ? `${supportingFactCount} facts` : null,
+          transcriptLineCount > 0 ? `${transcriptLineCount} transcript` : null,
+        ]
+          .filter(Boolean)
+          .slice(0, 3)
+          .join(' · ')
+      : 'No grounding inputs yet';
+
   let cueDetail = 'Standing by';
   if (shouldSurfaceAssist) {
     cueDetail =
@@ -107,24 +147,54 @@ export function buildSidekickTrace(params: {
     {
       id: 'signal',
       label: 'Signal agent',
+      lane: 'sensing',
       state: boothSignal.shouldSurfaceAssist ? 'active' : 'quiet',
       detail: signalDetail,
     },
     {
+      id: 'fillers',
+      label: 'Filler agent',
+      lane: 'sensing',
+      state: boothSignal.fillerCount > 0 || boothSignal.wakePhraseDetected ? 'active' : 'quiet',
+      detail: fillerDetail,
+    },
+    {
+      id: 'pace',
+      label: 'Pace agent',
+      lane: 'sensing',
+      state:
+        boothSignal.pauseDurationMs >= 1_200 || boothSignal.pacePressureScore >= 0.18
+          ? 'active'
+          : boothSignal.wordsPerMinute > 0
+            ? 'ready'
+            : 'waiting',
+      detail: paceDetail,
+    },
+    {
       id: 'context',
       label: 'Context agent',
+      lane: 'content',
       state: activeFixtureId ? 'ready' : fixtureResolutionLabel ? 'active' : 'waiting',
       detail: contextDetail,
     },
     {
+      id: 'grounding',
+      label: 'Grounding agent',
+      lane: 'content',
+      state: groundingSignalCount > 0 ? 'ready' : 'waiting',
+      detail: groundingDetail,
+    },
+    {
       id: 'cue',
       label: 'Cue agent',
+      lane: 'content',
       state: shouldSurfaceAssist ? 'active' : isAssistWeaning ? 'ready' : 'quiet',
       detail: cueDetail,
     },
     {
       id: 'recovery',
       label: 'Recovery agent',
+      lane: 'sensing',
       state: effectiveRecoveryScore >= 0.5 ? 'ready' : 'quiet',
       detail: recoveryDetail,
     },

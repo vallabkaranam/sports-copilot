@@ -1950,6 +1950,8 @@ function App() {
     supportingFactCount: boothAssistFacts.length,
     transcriptLineCount: transcriptWindow.length + (boothInterimTranscript.trim() ? 1 : 0),
   });
+  const deliveryTrace = sidekickTrace.filter((item) => item.lane === 'sensing');
+  const contentTrace = sidekickTrace.filter((item) => item.lane === 'content');
   const railSystemNote = isAssistWeaning
     ? 'Recovery is strong, so the cue is shrinking and handing the call back to you.'
     : shouldSurfaceAssist
@@ -2857,19 +2859,48 @@ function App() {
                 </div>
               </div>
 
-              <div className="agent-trace-list" aria-label="AndOne orchestration trace">
-                {sidekickTrace.map((item) => (
-                  <div
-                    className={`agent-trace-item agent-trace-item--${item.state}`}
-                    key={item.id}
-                  >
-                    <div>
-                      <span className="agent-trace-item__label">{item.label}</span>
-                      <p className="agent-trace-item__detail">{item.detail}</p>
-                    </div>
-                    <span className="agent-trace-item__state">{item.state}</span>
+              <div className="agent-trace-groups" aria-label="AndOne orchestration trace">
+                <section className="agent-trace-group">
+                  <div className="agent-trace-group__header">
+                    <p className="memory-title">Delivery sensing</p>
+                    <span className="agent-trace-group__hint">Hesitation system</span>
                   </div>
-                ))}
+                  <div className="agent-trace-list">
+                    {deliveryTrace.map((item) => (
+                      <div
+                        className={`agent-trace-item agent-trace-item--${item.state}`}
+                        key={item.id}
+                      >
+                        <div>
+                          <span className="agent-trace-item__label">{item.label}</span>
+                          <p className="agent-trace-item__detail">{item.detail}</p>
+                        </div>
+                        <span className="agent-trace-item__state">{item.state}</span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="agent-trace-group">
+                  <div className="agent-trace-group__header">
+                    <p className="memory-title">Cue grounding</p>
+                    <span className="agent-trace-group__hint">Content system</span>
+                  </div>
+                  <div className="agent-trace-list">
+                    {contentTrace.map((item) => (
+                      <div
+                        className={`agent-trace-item agent-trace-item--${item.state}`}
+                        key={item.id}
+                      >
+                        <div>
+                          <span className="agent-trace-item__label">{item.label}</span>
+                          <p className="agent-trace-item__detail">{item.detail}</p>
+                        </div>
+                        <span className="agent-trace-item__state">{item.state}</span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
               </div>
             </article>
 
