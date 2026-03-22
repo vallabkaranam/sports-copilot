@@ -218,7 +218,7 @@ async function run() {
     contextBundle: createEmptyContextBundle(),
     assist: createEmptyAssistCard(),
     preMatch: createEmptyPreMatchState(),
-    liveMatch: buildDegradedState('Waiting for Sportmonks data.', process.env.SPORTMONKS_FIXTURE_ID ?? ''),
+    liveMatch: buildDegradedState('Waiting for Sportmonks data.', ''),
     liveSignals: { social: [], vision: [] },
   };
 
@@ -239,7 +239,7 @@ async function run() {
         return;
       }
 
-      const fixtureId = controls.activeFixtureId ?? process.env.SPORTMONKS_FIXTURE_ID ?? '';
+      const fixtureId = controls.activeFixtureId ?? '';
       const apiToken = process.env.SPORTMONKS_API_TOKEN ?? '';
 
       if (fixtureId && fixtureId !== lastPreMatchFixtureId) {
@@ -252,11 +252,15 @@ async function run() {
 
       if (!fixtureId || !apiToken) {
         const degradedLiveMatch = buildDegradedState(
-          'Sportmonks credentials or fixture ID are missing.',
+          !apiToken
+            ? 'Sportmonks credentials are missing.'
+            : 'Waiting for the live feed to resolve the current fixture.',
           fixtureId,
         );
         const degradedPreMatch = createDegradedPreMatchState(
-          'Sportmonks credentials or fixture ID are missing.',
+          !apiToken
+            ? 'Sportmonks credentials are missing.'
+            : 'Waiting for the live feed to resolve the current fixture.',
         );
 
         lastWorldState = {
