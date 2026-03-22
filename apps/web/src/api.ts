@@ -34,7 +34,18 @@ async function requestJson<T>(path: string, init?: RequestInit) {
   });
 
   if (!response.ok) {
-    throw new Error(`${init?.method ?? 'GET'} ${path} failed with ${response.status}`);
+    let detail = '';
+
+    try {
+      const payload = (await response.json()) as { error?: string; message?: string };
+      detail = payload.message ?? payload.error ?? '';
+    } catch (_error) {
+      detail = '';
+    }
+
+    throw new Error(
+      `${init?.method ?? 'GET'} ${path} failed with ${response.status}${detail ? `: ${detail}` : ''}`,
+    );
   }
 
   return (await response.json()) as T;

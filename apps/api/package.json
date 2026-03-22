@@ -7,7 +7,7 @@
     "test": "vitest run --passWithNoTests",
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "tsx src/index.ts"
+    "start": "node dist/index.js"
   },
   "dependencies": {
     "@sports-copilot/shared-types": "*",

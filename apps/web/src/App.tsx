@@ -217,6 +217,10 @@ function safelyPlayVideo(videoElement: HTMLVideoElement, onBlocked: () => void) 
   }
 }
 
+function isMissingApiRouteError(error: unknown, path: string) {
+  return error instanceof Error && error.message.includes(`${path} failed with 404`);
+}
+
 function formatFormRecord(
   form: {
     record: { wins: number; draws: number; losses: number };
@@ -476,6 +480,7 @@ function App() {
   const [isMicListening, setIsMicListening] = useState(false);
   const [isMicPrepared, setIsMicPrepared] = useState(false);
   const [isMicPreparing, setIsMicPreparing] = useState(false);
+  const [isCueEndpointAvailable, setIsCueEndpointAvailable] = useState(true);
   const [lastSpeechAtMs, setLastSpeechAtMs] = useState(-1);
   const [lastVoiceActivityAtMs, setLastVoiceActivityAtMs] = useState(-1);
   const [speechStreakStartedAtMs, setSpeechStreakStartedAtMs] = useState(-1);
@@ -494,6 +499,7 @@ function App() {
   const realtimePeerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const realtimeDataChannelRef = useRef<RTCDataChannel | null>(null);
   const bufferedRecorderRef = useRef<MediaRecorder | null>(null);
+  const transcribeEndpointAvailableRef = useRef(true);
   const bufferedTranscriptionQueueRef = useRef(Promise.resolve());
   const consecutiveBufferedTranscriptFailuresRef = useRef(0);
   const realtimeTranscriptItemRef = useRef<{ itemId: string | null; text: string }>({
@@ -917,7 +923,7 @@ function App() {
     bufferedRecorderRef.current = recorder;
 
     recorder.ondataavailable = (event) => {
-      if (!event.data || event.data.size === 0) {
+      if (!event.data || event.data.size === 0 || !transcribeEndpointAvailableRef.current) {
         return;
       }
 
@@ -973,7 +979,13 @@ function App() {
             });
           }
         })
-        .catch(() => {
+        .catch((error) => {
+          if (isMissingApiRouteError(error, '/booth/transcribe')) {
+            transcribeEndpointAvailableRef.current = false;
+            setBoothError('Render is missing the /booth/transcribe route. Redeploy the API service.');
+            return;
+          }
+
           consecutiveBufferedTranscriptFailuresRef.current += 1;
           if (import.meta.env.DEV) {
             console.debug('booth-transcription', {
@@ -1211,6 +1223,8 @@ function App() {
     }
 
     shouldKeepMicLiveRef.current = true;
+    transcribeEndpointAvailableRef.current = true;
+    setIsCueEndpointAvailable(true);
     setBoothError(null);
     setIsMicListening(true);
     setBoothClockMs(Date.now());
@@ -1891,6 +1905,7 @@ function App() {
     if (
       !hasStartedBroadcast ||
       !boothHasLiveInput ||
+      !isCueEndpointAvailable ||
       !liveBoothShouldSurfaceAssist ||
       boothInterpretation?.state === 'weaning-off'
     ) {
@@ -1941,7 +1956,12 @@ function App() {
             setGeneratedCue(nextCue);
           }
         })
-        .catch(() => undefined);
+        .catch((error) => {
+          if (isMissingApiRouteError(error, '/booth/generate-cue')) {
+            setIsCueEndpointAvailable(false);
+            setBoothError('Render is missing the /booth/generate-cue route. Redeploy the API service.');
+          }
+        });
     }, waitMs);
 
     return () => {
@@ -1955,6 +1975,7 @@ function App() {
     generatedCue,
     generatedCueRequestedAt,
     hasStartedBroadcast,
+    isCueEndpointAvailable,
     latchedAssist.text,
     latchedAssist.type,
     liveBoothShouldSurfaceAssist,
