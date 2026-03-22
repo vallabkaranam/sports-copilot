@@ -1346,29 +1346,29 @@ describe('App dashboard', () => {
 
     await startLiveSession();
 
-    const explainabilitySummary = [...container.querySelectorAll('summary')].find((node) =>
-      node.textContent?.includes('Generation explainability'),
+    const debugButton = [...container.querySelectorAll('button')].find((node) =>
+      node.textContent?.includes('Debug'),
     );
-    expect(explainabilitySummary).toBeTruthy();
+    expect(debugButton).toBeTruthy();
 
     await act(async () => {
+      debugButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain('System debug');
+    expect(container.textContent).toContain('Generation explainability');
+
+    await act(async () => {
+      // open the first debug details block if the browser keeps it collapsed in jsdom
+      const explainabilitySummary = [...container.querySelectorAll('summary')].find((node) =>
+        node.textContent?.includes('Generation explainability'),
+      );
       explainabilitySummary?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
     expect(container.textContent).toContain('context-agent');
     expect(container.textContent).toContain('The live save fact and recent booth pause aligned.');
 
-    const contextSummary = [...container.querySelectorAll('summary')].find((node) =>
-      node.textContent?.includes('Context drawer'),
-    );
-    expect(contextSummary).toBeTruthy();
-
-    await act(async () => {
-      contextSummary?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(container.textContent).toContain('Live stream context (last ~10s)');
-    expect(container.textContent).toContain('Courtois stands tall to deny Barcelona. | 01:15 | 0-0');
     expect(container.textContent).toContain('prep-notes.md');
     expect(container.textContent).toContain('Retrieved but held');
   });

@@ -3894,9 +3894,6 @@ function App() {
                   >
                     Clear transcript
                   </button>
-                  <button type="button" className="text-button" onClick={() => navigateToRoute('debug')}>
-                    Open debug view
-                  </button>
                 </div>
               </section>
             </aside>
@@ -4270,6 +4267,136 @@ function App() {
                   ) : (
                     <p className="transcript-line transcript-line--muted">No agent runs have been recorded for the current state yet.</p>
                   )}
+                </div>
+              </div>
+
+              <div className="review-section">
+                <p className="memory-title">Agent activity</p>
+                <div className="agent-trace-list">
+                  {liveAgents.length > 0 ? (
+                    liveAgents.map((agent) => (
+                      <details
+                        className={`agent-trace-item agent-trace-item--${agent.displayState}`}
+                        key={`${agent.origin}-${agent.agentName}`}
+                      >
+                        <summary className="agent-trace-item__summary">
+                          <div>
+                            <span className="agent-trace-item__label">{agent.agentName}</span>
+                            <p className="agent-trace-item__detail">{agent.output}</p>
+                          </div>
+                          <span className="agent-trace-item__state">{agent.displayState}</span>
+                        </summary>
+                        <div className="details-card__body">
+                          <div className="reason-list">
+                            {agent.reasoningTrace.map((traceLine) => (
+                              <p key={`${agent.agentName}-${traceLine}`}>{traceLine}</p>
+                            ))}
+                          </div>
+                          {agent.sourcesUsed.length > 0 ? (
+                            <div className="source-chip-row">
+                              {agent.sourcesUsed.map((chip) => (
+                                <span className="source-chip" key={`${agent.agentName}-${chip.id}`}>
+                                  {chip.label}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      </details>
+                    ))
+                  ) : (
+                    <p className="transcript-line transcript-line--muted">
+                      The sidebar only shows specialist agents that actually ran for the current moment.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="review-section">
+                <p className="memory-title">Generation explainability</p>
+                {generationExplainability ? (
+                  <>
+                    <div className="reason-list">
+                      {generationExplainability.reasoningTrace.map((line) => (
+                        <p key={line}>{line}</p>
+                      ))}
+                    </div>
+                    {generationExplainability.sourcesUsed.length > 0 ? (
+                      <div className="source-chip-row">
+                        {generationExplainability.sourcesUsed.map((chip) => (
+                          <span className="source-chip" key={`generation-${chip.id}`}>
+                            {chip.label}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="transcript-line transcript-line--muted">
+                    Cue explainability will appear once a grounded prompt is generated.
+                  </p>
+                )}
+              </div>
+
+              <div className="review-section">
+                <p className="memory-title">Live retrieval context</p>
+                {liveContextItems.length > 0 ? (
+                  <div className="context-doc-list context-doc-list--compact">
+                    {liveContextItems.map((item) => (
+                      <div className="context-doc-item" key={item.id}>
+                        <strong>{item.headline}</strong>
+                        <span>{Math.round(item.salience * 100)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                {contextDocuments.length > 0 ? (
+                  <div className="context-doc-list context-doc-list--compact">
+                    {contextDocuments.map((document) => (
+                      <div className="context-doc-item" key={`live-doc-${document.id}`}>
+                        <strong>{document.fileName}</strong>
+                        <span>{document.chunkCount} chunks</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                <div className="context-columns">
+                  <div className="context-column">
+                    <p className="memory-title">Used now</p>
+                    <div className="context-fact-list">
+                      {contextPreviewFacts.length > 0 ? (
+                        contextPreviewFacts.map((fact) => (
+                          <div className="context-fact-item" key={fact.id}>
+                            <strong>{fact.sourceChip.label}</strong>
+                            <p>{fact.text}</p>
+                            <span>{Math.round(fact.relevance * 100)}%</span>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="transcript-line transcript-line--muted">
+                          Retrieval context will appear once the sidekick has enough live signal.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="context-column">
+                    <p className="memory-title">Retrieved but held</p>
+                    <div className="context-fact-list">
+                      {heldContextPreviewFacts.length > 0 ? (
+                        heldContextPreviewFacts.map((fact) => (
+                          <div className="context-fact-item context-fact-item--held" key={fact.id}>
+                            <strong>{fact.sourceChip.label}</strong>
+                            <p>{fact.text}</p>
+                            <span>{Math.round(fact.relevance * 100)}%</span>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="transcript-line transcript-line--muted">No reserve context is waiting right now.</p>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 
