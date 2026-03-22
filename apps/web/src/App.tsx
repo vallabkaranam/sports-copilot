@@ -45,6 +45,7 @@ import {
   deriveBoothActivity,
   resolveBoothGuidanceScores,
 } from './boothSignal';
+import { buildSidekickTrace } from './sidekickTrace';
 import {
   createInitialWorldState,
   formatDurationMs,
@@ -1877,6 +1878,30 @@ function App() {
       ? `Vision cue · ${worldState.liveSignals.vision[worldState.liveSignals.vision.length - 1]?.label}`
       : null,
   ].filter((value): value is string => Boolean(value));
+  const cueSource =
+    shouldSurfaceAssist
+      ? generatedCue
+        ? generatedCue.source === 'openai'
+          ? 'openai'
+          : 'local'
+        : workerAssistShouldSurface
+          ? 'worker'
+          : 'local'
+      : 'none';
+  const sidekickTrace = buildSidekickTrace({
+    boothSignal,
+    effectiveRecoveryScore,
+    shouldSurfaceAssist,
+    isAssistWeaning,
+    activeFixtureId: controls.activeFixtureId,
+    fixtureResolutionLabel,
+    cueSource,
+    recentEventCount: worldState.recentEvents.length,
+    socialCount: worldState.liveSignals.social.length,
+    visionCount: worldState.liveSignals.vision.length,
+    supportingFactCount: boothAssistFacts.length,
+    transcriptLineCount: transcriptWindow.length + (boothInterimTranscript.trim() ? 1 : 0),
+  });
   const railSystemNote = isAssistWeaning
     ? 'Recovery is strong, so the cue is shrinking and handing the call back to you.'
     : shouldSurfaceAssist
@@ -2772,6 +2797,30 @@ function App() {
                 {boothInterimTranscript.trim() ? (
                   <p className="transcript-line transcript-line--interim">{boothInterimTranscript.trim()}</p>
                 ) : null}
+              </div>
+            </article>
+
+            <article className="booth-card booth-card--compact booth-card--trace">
+              <div className="booth-card__header">
+                <div>
+                  <p className="control-label">Engine trace</p>
+                  <strong>Specialist agents</strong>
+                </div>
+              </div>
+
+              <div className="agent-trace-list" aria-label="AndOne orchestration trace">
+                {sidekickTrace.map((item) => (
+                  <div
+                    className={`agent-trace-item agent-trace-item--${item.state}`}
+                    key={item.id}
+                  >
+                    <div>
+                      <span className="agent-trace-item__label">{item.label}</span>
+                      <p className="agent-trace-item__detail">{item.detail}</p>
+                    </div>
+                    <span className="agent-trace-item__state">{item.state}</span>
+                  </div>
+                ))}
               </div>
             </article>
 
