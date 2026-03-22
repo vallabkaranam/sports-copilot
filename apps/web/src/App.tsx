@@ -2407,11 +2407,11 @@ function App() {
     assist.type !== 'none' &&
     (controls.forceHesitation ||
       (!boothHasLiveInput && worldState.commentator.hesitationScore >= LIVE_HESITATION_GATE));
-  const boothAssistShouldSurface =
+  const sidekickShouldSurface =
     boothHasLiveInput &&
     liveBoothShouldSurfaceAssist &&
     ((generatedCue?.assist.type ?? 'none') !== 'none' || boothAssist.type !== 'none');
-  const nextTriggeredAssist = boothAssistShouldSurface
+  const nextTriggeredAssist = sidekickShouldSurface
     ? selectPreferredTriggeredAssist({
         localAssist: boothAssist,
         generatedAssist: generatedCue?.assist,
@@ -2584,25 +2584,25 @@ function App() {
           : 'local'
       : 'none';
   const railSystemNote = isAssistWeaning
-    ? 'Recovery is strong, so the cue is shrinking and handing the call back to you.'
+    ? 'Flow is restored. The Sidekick is receding so you can resume lead of the broadcast.'
     : activeDeliverySource === 'synthetic-standby'
-      ? 'Standby voice is reading grounded cue text while the live mic stays off-air.'
+      ? 'The Sidekick is bridging the gap while your live mic stays off-air.'
     : shouldSurfaceAssist
-      ? 'A cue is live because delivery slipped. Use the prompt card, then keep moving.'
+      ? 'Anticipating hesitation. Use the grounded assist to unblock your delivery rhythm.'
       : boothHasLiveInput
-        ? 'The system is only monitoring now. No prompt should surface unless hesitation returns.'
-        : 'Feed and microphone are armed. Start speaking when you are ready to call the action.';
+        ? 'The Sidekick is watching silently. No assist needed while you are in flow.'
+        : 'Feed and microphone are armed. The Sidekick starts once you begin calling the action.';
   const micBars = Array.from({ length: 14 }, (_, index) => {
     const threshold = (index + 1) / 14;
     return boothSignal.audioLevel >= threshold * 0.18;
   });
   const assistStateLabel = shouldSurfaceAssist
     ? isAssistWeaning
-      ? 'Backing off'
-      : 'Visible'
+      ? 'Receding'
+      : 'Assisting'
     : coachingTone.tone === 'steady'
-      ? 'Standby'
-      : 'Waiting';
+      ? 'Watching'
+      : 'Silent';
   const postSessionReview = derivePostSessionReview(latestCompletedSession);
   const completedReviewSessions = useMemo(
     () =>
@@ -3389,7 +3389,7 @@ function App() {
                 <div>
                   <p className="panel-kicker">Live desk</p>
                   <h2>{feedHeading}</h2>
-                  <p className="panel-copy">Respecting the art of your craft. AndOne follows your flow silently, surfacing a 'line' only when it anticipates hesitation—keeping you in command and on rhythm.</p>
+                  <p className="panel-copy">Adaptive intelligence for Track 3. AndOne anticipates hesitation, unblocks with enriched context, and recedes to protect the art of your flow.</p>
                 </div>
                 <div className="panel-chip-row">
                   <span className="panel-tag">{loadedClipUrl ? 'Feed armed' : 'No feed live'}</span>
@@ -3471,7 +3471,7 @@ function App() {
                     }`}
                     key={replayToastSignature}
                   >
-                    <p className="assist-type">Prompt</p>
+                    <p className="assist-type">{isAssistWeaning ? 'Hand-off' : 'Sidekick Insight'}</p>
                     <h3>{activeAssist.text}</h3>
                     <p>{activeAssistSupportCopy}</p>
                     {activeAssist.sourceChips.length > 0 ? (
@@ -3628,7 +3628,7 @@ function App() {
                   <div className="booth-card__header">
                     <div>
                       <p className="control-label">System note</p>
-                      <strong>{isAssistWeaning ? 'Prompt is fading out' : assistStateLabel}</strong>
+                      <strong>{isAssistWeaning ? 'Sidekick is receding' : assistStateLabel}</strong>
                     </div>
                   </div>
 
@@ -3668,7 +3668,7 @@ function App() {
                       </div>
                     </div>
                     <div className="signal-meta__item">
-                      <span>Prompt state</span>
+                      <span>Sidekick state</span>
                       <strong>{assistStateLabel}</strong>
                     </div>
                   </div>

@@ -1,6 +1,6 @@
 # Sports Copilot
 
-Sports Copilot, branded in-product as AndOne, is a broadcaster-facing AI sidekick for live commentary. It watches the evolving moment, senses hesitation and recovery, keeps a rolling context stack fresh, and surfaces one short grounded prompt only when it is useful.
+Sports Copilot, branded as AndOne, is a human-centered AI sidekick for live commentary. It respects the craft of your delivery, staying quiet while you are in flow and surfacing adaptive, grounded prompts only when it senses hesitant or interrupted momentum.
 
 ## Stability & Runtime Requirements
 - **Node.js**: `v20.x` or later.

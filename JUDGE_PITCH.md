@@ -4,17 +4,18 @@ Sports Copilot, branded in-product as AndOne, is an adaptive sidekick for live c
 
 ## The Problem
 Commentators, hosts, and other live speakers do not need an AI writing every line for them. They need a system that:
-- notices when delivery is slipping
-- understands what is happening right now
-- gives one small nudge at the right moment
+- respects the craft of your delivery rhythm
+- notices when delivery is slipping during key moments
+- understands exactly what is happening in the broadcast
+- provides a grounded, adaptive nudge only when needed
 - gets out of the way as soon as the human is back in rhythm
 
-## Why This Fits Track 3
-This is a Sidekick, not a replacement workflow:
-- it adapts to the speaker's current state
-- it anticipates hesitation before the moment fully falls apart
-- it respects autonomy by staying quiet when the speaker is doing fine
-- it explains why the cue appeared instead of acting like magic
+## Why This Fits Track 3: The Sidekick
+AndOne is a human-centered system that adapts to the broadcaster:
+- **Adaptive Intelligence**: It senses the user's rhythm and delivery flow.
+- **Anticipatory Support**: It identifies hesitation *before* the moment fully falls apart.
+- **Respectful Autonomy**: It stays quiet while the user is in flow and recedes as soon as flow returns.
+- **Transparent Context**: The enriched "cue drawer" provides grounded, timely assists without acting like magic.
 
 ## What Makes This Different
 AndOne runs like a small orchestrated sidekick system with specialist agents/modules:

@@ -1,8 +1,8 @@
 export const BRAND = {
   productName: 'AndOne',
   surfaceName: 'AndOne',
-  eyebrow: 'Commentary sidekick',
+  eyebrow: 'Adaptive Sidekick (Track 3)',
   heroTitle: 'AndOne',
   heroCopy:
-    'A quiet sidekick for live commentary that protects your rhythm without taking over the desk.',
+    'Human-centered intelligence that anticipates your needs. Senses hesitation, unblocks with enriched context, and recedes to protect the art of your flow.',
 } as const;

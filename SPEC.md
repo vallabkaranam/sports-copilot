@@ -40,9 +40,9 @@ As a live sports commentator, I want an AI sidekick that:
 ## Primary Value Proposition
 This is not just “AI that writes commentary.”
 This is a live sidekick that:
-1. fuses multiple messy streams into one evolving world model,
-2. understands when the human needs help,
-3. intervenes minimally and intelligently.
+1. respects the craft of your delivery,
+2. fuses multiple messy streams into one evolving world model,
+3. understands exactly when the human needs a grounded assist, and intervenes only when it senses hesitant or interrupted momentum.
 
 ## Inputs
 The system should be designed to support the following inputs:
