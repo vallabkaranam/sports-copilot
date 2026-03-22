@@ -1575,10 +1575,10 @@ function App() {
       : boothInterpretation?.summary
         ? boothInterpretation.summary
         : coachingTone.tone === 'steady'
-          ? 'Hesitation is falling. AndOne is backing off.'
+          ? 'Confidence is returning. AndOne is backing off.'
           : coachingTone.copy;
   const activeAssistSupportCopy = isAssistWeaning
-    ? 'You are back in rhythm. AndOne is slipping the cue away.'
+    ? 'Confidence is returning. AndOne is slipping the prompt away.'
     : activeAssist.whyNow;
   const micBars = Array.from({ length: 14 }, (_, index) => {
     const threshold = (index + 1) / 14;
