@@ -61,7 +61,6 @@ function requireEnv(name: string) {
 function assertWorkerEnv() {
   requireEnv('API_BASE_URL');
   requireEnv('SPORTMONKS_API_TOKEN');
-  requireEnv('SPORTMONKS_FIXTURE_ID');
 }
 
 assertWorkerEnv();

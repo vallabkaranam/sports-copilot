@@ -70,6 +70,7 @@ Notes:
 - [`.env.example`](/Users/vallabkaranam/Desktop/sports-copilot/.env.example) is the source-of-truth template for teammates
 - the full live stack expects OpenAI, Postgres, and Sportmonks to be configured explicitly
 - `OPENAI_API_KEY` and `DATABASE_URL` belong to the API service
+- `SPORTMONKS_API_TOKEN` should also be available to the API if you want dynamic fixture resolution from the live feed
 - `API_BASE_URL`, `SPORTMONKS_*`, and all `BLUESKY_*` vars belong to the worker service
 - the API now fails fast on startup if `OPENAI_API_KEY` or `DATABASE_URL` are missing
 - the API now also fails fast if the `DATABASE_URL` hostname does not resolve, with a specific hint when the host looks like a stale Supabase DB hostname

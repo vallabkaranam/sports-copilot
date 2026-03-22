@@ -17,6 +17,8 @@ import {
   TranscribeBoothAudioResponse,
   createEmptyAssistCard,
   ReplayControlState,
+  ResolveFixtureInputSchema,
+  ResolveFixtureResponse,
   WorldState,
   createDefaultReplayControlState,
   createEmptyCommentatorState,
@@ -33,6 +35,7 @@ import { createRealtimeBoothSdpAnswer } from './booth-realtime.js';
 import { reviewBoothSessionWithOpenAI } from './booth-review.js';
 import { createBoothSessionStore } from './booth-session-store.js';
 import { transcribeBoothAudioWithOpenAI } from './booth-transcription.js';
+import { resolveFixtureFromScreenshot } from './fixture-resolver.js';
 
 dotenv.config({
   path: [
@@ -260,6 +263,28 @@ server.post('/booth/generate-cue', async (request, reply): Promise<GenerateBooth
     recentCueTexts: parsed.data.recentCueTexts,
     excludedCueTexts: parsed.data.excludedCueTexts,
   });
+});
+
+server.post('/booth/resolve-fixture', async (request, reply): Promise<ResolveFixtureResponse | void> => {
+  const parsed = ResolveFixtureInputSchema.safeParse(request.body);
+  if (!parsed.success) {
+    reply.status(400).send({ error: 'Invalid fixture resolution payload' });
+    return;
+  }
+
+  try {
+    const resolvedFixture = await resolveFixtureFromScreenshot({
+      screenshotBase64: parsed.data.screenshotBase64,
+      mimeType: parsed.data.mimeType,
+      clipName: parsed.data.clipName,
+    });
+    controlState.activeFixtureId = resolvedFixture.fixtureId;
+    return resolvedFixture;
+  } catch (error) {
+    reply.status(500).send({
+      error: error instanceof Error ? error.message : 'Fixture resolution failed',
+    });
+  }
 });
 
 server.post('/booth/transcribe', async (request, reply): Promise<TranscribeBoothAudioResponse | void> => {

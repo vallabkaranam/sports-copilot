@@ -23,6 +23,7 @@ import {
   finishBoothSession,
   generateBoothCue,
   interpretBooth,
+  resolveFixture,
   startBoothSession,
   transcribeBoothAudio,
   updateControlState,
@@ -135,6 +136,38 @@ async function encodeBlobAsBase64(blob: Blob) {
   }
 
   return window.btoa(binary);
+}
+
+async function captureVideoFrameAsBase64(videoElement: HTMLVideoElement) {
+  const canvas = document.createElement('canvas');
+  canvas.width = videoElement.videoWidth || 1280;
+  canvas.height = videoElement.videoHeight || 720;
+  const context = canvas.getContext('2d');
+
+  if (!context) {
+    throw new Error('Video frame capture is unavailable in this browser.');
+  }
+
+  context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+
+  return new Promise<{ screenshotBase64: string; mimeType: string }>((resolve, reject) => {
+    canvas.toBlob(async (blob) => {
+      if (!blob) {
+        reject(new Error('The current frame could not be captured.'));
+        return;
+      }
+
+      try {
+        const screenshotBase64 = await encodeBlobAsBase64(blob);
+        resolve({
+          screenshotBase64,
+          mimeType: blob.type || 'image/jpeg',
+        });
+      } catch (error) {
+        reject(error);
+      }
+    }, 'image/jpeg', 0.9);
+  });
 }
 
 async function flushMicrotasks() {
@@ -545,6 +578,8 @@ function App() {
   const [clipPositionMs, setClipPositionMs] = useState(0);
   const [clipDurationMs, setClipDurationMs] = useState(0);
   const [isClipMuted, setIsClipMuted] = useState(true);
+  const [fixtureResolutionLabel, setFixtureResolutionLabel] = useState<string | null>(null);
+  const [isResolvingFixture, setIsResolvingFixture] = useState(false);
   const [boothTranscript, setBoothTranscript] = useState<TranscriptEntry[]>([]);
   const [boothInterimTranscript, setBoothInterimTranscript] = useState('');
   const [boothError, setBoothError] = useState<string | null>(null);
@@ -592,6 +627,7 @@ function App() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const clipObjectUrlRef = useRef<string | null>(null);
   const lastRestartTokenRef = useRef(controls.restartToken);
+  const lastResolvedFeedKeyRef = useRef('');
 
   useEffect(() => {
     let isActive = true;
@@ -774,6 +810,7 @@ function App() {
       ...(typeof patch.forceHesitation === 'boolean'
         ? { forceHesitation: patch.forceHesitation }
         : {}),
+      ...(patch.activeFixtureId ? { activeFixtureId: patch.activeFixtureId } : {}),
       restartToken: current.restartToken + (patch.restart ? 1 : 0),
     }));
 
@@ -796,6 +833,66 @@ function App() {
     return parseClock(worldState.clock);
   }
 
+  useEffect(() => {
+    if (!loadedClipUrl || !loadedClipName || hasStartedBroadcast) {
+      return;
+    }
+
+    const videoElement = videoRef.current;
+    if (!videoElement || clipDurationMs <= 0 || videoElement.readyState < 2) {
+      return;
+    }
+
+    const feedKey = `${selectedProgramFeedId ?? 'unknown'}:${loadedClipName}:${loadedClipUrl}`;
+    if (lastResolvedFeedKeyRef.current === feedKey || isResolvingFixture) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setIsResolvingFixture(true);
+      setFixtureResolutionLabel('Identifying match');
+
+      void captureVideoFrameAsBase64(videoElement)
+        .then(({ screenshotBase64, mimeType }) =>
+          resolveFixture(screenshotBase64, mimeType, loadedClipName),
+        )
+        .then(async (resolvedFixture) => {
+          lastResolvedFeedKeyRef.current = feedKey;
+          setFixtureResolutionLabel(
+            `${resolvedFixture.homeTeam} vs ${resolvedFixture.awayTeam}`,
+          );
+
+          if (controls.activeFixtureId !== resolvedFixture.fixtureId) {
+            await sendControlPatch({ activeFixtureId: resolvedFixture.fixtureId });
+          }
+
+          setBoothError(null);
+        })
+        .catch((error) => {
+          setFixtureResolutionLabel(null);
+          setBoothError((current) =>
+            current ??
+            `The system could not identify this match yet. ${getErrorMessage(error)}`,
+          );
+        })
+        .finally(() => {
+          setIsResolvingFixture(false);
+        });
+    }, 900);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    clipDurationMs,
+    controls.activeFixtureId,
+    hasStartedBroadcast,
+    isResolvingFixture,
+    loadedClipName,
+    loadedClipUrl,
+    selectedProgramFeedId,
+  ]);
+
   function clearLoadedClip() {
     if (clipObjectUrlRef.current) {
       URL.revokeObjectURL(clipObjectUrlRef.current);
@@ -807,12 +904,15 @@ function App() {
     setClipPositionMs(0);
     setClipDurationMs(0);
     setIsClipMuted(true);
+    setFixtureResolutionLabel(null);
+    setIsResolvingFixture(false);
     setHasStartedBroadcast(false);
     setActiveBoothSessionId(null);
     setIsMicPrepared(false);
     setSpeechStreakStartedAtMs(-1);
     setSilenceStreakStartedAtMs(-1);
     setSelectedProgramFeedId(null);
+    lastResolvedFeedKeyRef.current = '';
     consecutiveBufferedTranscriptFailuresRef.current = 0;
   }
 
@@ -2348,6 +2448,8 @@ function App() {
               </div>
               <div className="panel-chip-row">
                 <span className="panel-tag">{loadedClipUrl ? `${clipClockLabel} / ${clipDurationLabel}` : 'No feed live'}</span>
+                {isResolvingFixture ? <span className="panel-tag">Identifying match</span> : null}
+                {fixtureResolutionLabel ? <span className="panel-tag">{fixtureResolutionLabel}</span> : null}
             </div>
           </div>
 

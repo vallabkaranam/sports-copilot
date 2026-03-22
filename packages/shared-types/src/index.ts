@@ -815,3 +815,21 @@ export const GenerateBoothCueResponseSchema = z.object({
   source: z.enum(['openai', 'unavailable']),
 });
 export type GenerateBoothCueResponse = z.infer<typeof GenerateBoothCueResponseSchema>;
+
+export const ResolveFixtureInputSchema = z.object({
+  screenshotBase64: z.string().min(1),
+  mimeType: z.string().min(1),
+  clipName: z.string().optional(),
+});
+export type ResolveFixtureInput = z.infer<typeof ResolveFixtureInputSchema>;
+
+export const ResolveFixtureResponseSchema = z.object({
+  fixtureId: z.string(),
+  fixtureName: z.string(),
+  homeTeam: z.string(),
+  awayTeam: z.string(),
+  competition: z.string().nullable(),
+  confidence: z.number().min(0).max(1),
+  source: z.enum(['openai+sportsmonks', 'sportsmonks']),
+});
+export type ResolveFixtureResponse = z.infer<typeof ResolveFixtureResponseSchema>;

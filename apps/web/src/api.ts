@@ -9,6 +9,7 @@ import {
   BoothSessionsResponse,
   BoothSessionSummary,
   ReplayControlState,
+  ResolveFixtureResponse,
   StartBoothSessionResponse,
   TranscribeBoothAudioResponse,
   WorldState,
@@ -121,6 +122,13 @@ export function transcribeBoothAudio(audioBase64: string, mimeType: string) {
   return requestJson<TranscribeBoothAudioResponse>('/booth/transcribe', {
     method: 'POST',
     body: JSON.stringify({ audioBase64, mimeType }),
+  });
+}
+
+export function resolveFixture(screenshotBase64: string, mimeType: string, clipName?: string) {
+  return requestJson<ResolveFixtureResponse>('/booth/resolve-fixture', {
+    method: 'POST',
+    body: JSON.stringify({ screenshotBase64, mimeType, clipName }),
   });
 }
 
