@@ -16,7 +16,7 @@ import {
   createEmptyRetrievalState,
   createEmptySessionMemory,
 } from '@sports-copilot/shared-types';
-import App from './App.tsx';
+import App, { hasRecoveredFromAssistEpisode, shouldHoldLockedAssist } from './App.tsx';
 
 function createWorldState(overrides: Partial<WorldState> = {}): WorldState {
   return {
@@ -799,6 +799,97 @@ describe('App dashboard', () => {
     expect(container.textContent).toContain('AndOne will request access when you go live.');
   });
 
+  it('holds a visible assist while the minimum display lock is active', () => {
+    expect(
+      shouldHoldLockedAssist({
+        currentAssist: {
+          type: 'context',
+          text: 'Stay with the save.',
+          whyNow: 'The booth paused on the key moment.',
+        },
+        nextAssist: {
+          type: 'stat',
+          text: 'Use the possession swing.',
+          whyNow: 'A second fact just surfaced.',
+        },
+        assistLockExpiresAt: 2_000,
+        nowMs: 500,
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldHoldLockedAssist({
+        currentAssist: {
+          type: 'context',
+          text: 'Stay with the save.',
+          whyNow: 'The booth paused on the key moment.',
+        },
+        nextAssist: null,
+        assistLockExpiresAt: 2_000,
+        nowMs: 500,
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldHoldLockedAssist({
+        currentAssist: {
+          type: 'context',
+          text: 'Stay with the save.',
+          whyNow: 'The booth paused on the key moment.',
+        },
+        nextAssist: {
+          type: 'context',
+          text: 'Stay with the save.',
+          whyNow: 'The booth paused on the key moment.',
+        },
+        assistLockExpiresAt: 2_000,
+        nowMs: 500,
+      }),
+    ).toBe(false);
+  });
+
+  it('only treats a hesitation as recovered once confidence returns or the interpretation is weaning off', () => {
+    expect(
+      hasRecoveredFromAssistEpisode({
+        isSpeaking: false,
+        speechStreakMs: 0,
+        effectiveRecoveryScore: 0.72,
+        effectiveHesitationScore: 0.12,
+        interpretationState: 'monitoring',
+      }),
+    ).toBe(false);
+
+    expect(
+      hasRecoveredFromAssistEpisode({
+        isSpeaking: true,
+        speechStreakMs: 900,
+        effectiveRecoveryScore: 0.72,
+        effectiveHesitationScore: 0.12,
+        interpretationState: 'monitoring',
+      }),
+    ).toBe(true);
+
+    expect(
+      hasRecoveredFromAssistEpisode({
+        isSpeaking: true,
+        speechStreakMs: 1_400,
+        effectiveRecoveryScore: 0.24,
+        effectiveHesitationScore: 0.2,
+        interpretationState: 'monitoring',
+      }),
+    ).toBe(true);
+
+    expect(
+      hasRecoveredFromAssistEpisode({
+        isSpeaking: false,
+        speechStreakMs: 0,
+        effectiveRecoveryScore: 0.2,
+        effectiveHesitationScore: 0.55,
+        interpretationState: 'weaning-off',
+      }),
+    ).toBe(true);
+  });
+
   it('commits buffered transcription into the transcript rail', async () => {
     queuedTranscriptResponses.push({
       transcript: 'the numbers tell you rangers controlled this one',
@@ -933,6 +1024,214 @@ describe('App dashboard', () => {
       ]),
     );
     expect(createObjectUrl).toHaveBeenCalled();
+  });
+
+  it('keeps the live session running when the saved sessions refresh fails after session start', async () => {
+    let boothSessionsGetCount = 0;
+
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url.includes('/media/barca-preset.mp4') || url.includes('/preset-feeds/barca')) {
+        return Promise.resolve({
+          ok: true,
+          status: 206,
+          json: async () => ({}),
+          text: async () => '',
+        } as Response);
+      }
+
+      if (url.includes('/world-state')) {
+        return jsonResponse(currentWorldState);
+      }
+
+      if (url.includes('/controls') && (!init?.method || init.method === 'GET')) {
+        return jsonResponse(currentControls);
+      }
+
+      if (url.includes('/booth-sessions') && (!init?.method || init.method === 'GET')) {
+        boothSessionsGetCount += 1;
+
+        if (url.includes('/booth-sessions/session-1/review')) {
+          return jsonResponse({
+            review: {
+              headline: 'Review ready.',
+              summary: 'Summary',
+              strengths: [],
+              watchouts: [],
+              coachingNotes: [],
+            },
+          });
+        }
+
+        if (url.includes('/booth-sessions/session-1')) {
+          return jsonResponse({ session: currentBoothSessionRecord });
+        }
+
+        if (boothSessionsGetCount >= 2) {
+          return Promise.resolve({
+            ok: false,
+            status: 503,
+            json: async () => ({ error: 'temporary outage' }),
+          } as Response);
+        }
+
+        return jsonResponse(currentBoothSessions);
+      }
+
+      if (url.includes('/booth/interpret') && init?.method === 'POST') {
+        return jsonResponse(currentBoothInterpretation);
+      }
+
+      if (url.includes('/booth/generate-cue') && init?.method === 'POST') {
+        return jsonResponse({
+          assist: createEmptyAssistCard(),
+          refreshAfterMs: 1800,
+          source: 'openai',
+        });
+      }
+
+      if (url.includes('/booth/realtime-connect') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: false,
+          status: 503,
+          text: async () => '',
+        } as Response);
+      }
+
+      if (url.includes('/booth/transcribe') && init?.method === 'POST') {
+        return jsonResponse({ transcript: '', source: 'unavailable' });
+      }
+
+      if (url.includes('/booth-sessions/start') && init?.method === 'POST') {
+        return jsonResponse({
+          session: {
+            id: 'session-1',
+            clipName: 'Barca preset',
+            startedAt: '2026-03-20T00:00:00.000Z',
+            endedAt: null,
+            status: 'active',
+            sampleCount: 0,
+            maxHesitationScore: 0,
+            maxConfidenceScore: 0,
+            longestPauseMs: 0,
+            assistCount: 0,
+            lastTriggerBadges: [],
+          },
+        });
+      }
+
+      if (url.includes('/controls') && init?.method === 'POST') {
+        return jsonResponse({
+          ...currentControls,
+          playbackStatus: 'playing',
+        });
+      }
+
+      if (url.includes('/booth-sessions/session-1/sample') && init?.method === 'POST') {
+        return jsonResponse({
+          session: {
+            id: 'session-1',
+            clipName: 'Barca preset',
+            startedAt: '2026-03-20T00:00:00.000Z',
+            endedAt: null,
+            status: 'active',
+            sampleCount: 1,
+            maxHesitationScore: 0,
+            maxConfidenceScore: 0,
+            longestPauseMs: 0,
+            assistCount: 0,
+            lastTriggerBadges: [],
+          },
+        });
+      }
+
+      throw new Error(`Unhandled fetch for ${url}`);
+    });
+
+    await renderApp();
+
+    const goLiveButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Go live'),
+    );
+
+    await act(async () => {
+      goLiveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('End live session');
+    expect(container.textContent).not.toContain('The booth session could not be created.');
+  });
+
+  it('shows the actual booth session start error when creation fails', async () => {
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url.includes('/media/barca-preset.mp4') || url.includes('/preset-feeds/barca')) {
+        return Promise.resolve({
+          ok: true,
+          status: 206,
+          json: async () => ({}),
+          text: async () => '',
+        } as Response);
+      }
+
+      if (url.includes('/world-state')) {
+        return jsonResponse(currentWorldState);
+      }
+
+      if (url.includes('/controls') && (!init?.method || init.method === 'GET')) {
+        return jsonResponse(currentControls);
+      }
+
+      if (url.includes('/booth-sessions') && (!init?.method || init.method === 'GET')) {
+        return jsonResponse(currentBoothSessions);
+      }
+
+      if (url.includes('/booth/interpret') && init?.method === 'POST') {
+        return jsonResponse(currentBoothInterpretation);
+      }
+
+      if (url.includes('/booth/realtime-connect') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: false,
+          status: 503,
+          text: async () => '',
+        } as Response);
+      }
+
+      if (url.includes('/booth/transcribe') && init?.method === 'POST') {
+        return jsonResponse({ transcript: '', source: 'unavailable' });
+      }
+
+      if (url.includes('/booth-sessions/start') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+          json: async () => ({ error: 'insert failed' }),
+        } as Response);
+      }
+
+      throw new Error(`Unhandled fetch for ${url}`);
+    });
+
+    await renderApp();
+
+    const goLiveButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Go live'),
+    );
+
+    await act(async () => {
+      goLiveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain(
+      'The booth session could not be created. POST /booth-sessions/start failed with 500: insert failed',
+    );
   });
 
   it('clears the live booth state and shows a saved session review after ending the session', async () => {

@@ -70,6 +70,7 @@ const AUDIO_ACTIVITY_SAMPLE_MS = 120;
 const MIN_AUDIO_ACTIVITY_THRESHOLD = 0.012;
 const MAX_AUDIO_ACTIVITY_THRESHOLD = 0.08;
 const ASSIST_WEAN_OFF_MS = 2600;
+const MIN_ASSIST_DISPLAY_MS = 2400;
 const BUFFERED_TRANSCRIPTION_CHUNK_MS = 2_500;
 const BUFFERED_TRANSCRIPTION_WARNING_THRESHOLD = 3;
 const BUFFERED_TRANSCRIPTION_WARNING =
@@ -195,6 +196,65 @@ function mergeTranscriptEntry(
 
 function shouldClearBufferedTranscriptionWarning(currentWarning: string | null) {
   return currentWarning === BUFFERED_TRANSCRIPTION_WARNING;
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return 'Unknown error';
+}
+
+type ComparableAssistCard = Pick<GenerateBoothCueResponse['assist'], 'type' | 'text' | 'whyNow'>;
+
+export function areAssistCardsEquivalent(
+  left: ComparableAssistCard,
+  right: ComparableAssistCard,
+) {
+  return left.type === right.type && left.text === right.text && left.whyNow === right.whyNow;
+}
+
+export function shouldHoldLockedAssist(params: {
+  currentAssist: ComparableAssistCard;
+  nextAssist: ComparableAssistCard | null;
+  assistLockExpiresAt: number;
+  nowMs: number;
+}) {
+  const { currentAssist, nextAssist, assistLockExpiresAt, nowMs } = params;
+
+  if (currentAssist.type === 'none' || assistLockExpiresAt <= nowMs) {
+    return false;
+  }
+
+  if (!nextAssist) {
+    return true;
+  }
+
+  return !areAssistCardsEquivalent(currentAssist, nextAssist);
+}
+
+export function hasRecoveredFromAssistEpisode(params: {
+  isSpeaking: boolean;
+  speechStreakMs: number;
+  effectiveRecoveryScore: number;
+  effectiveHesitationScore: number;
+  interpretationState?: BoothInterpretation['state'];
+}) {
+  const {
+    isSpeaking,
+    speechStreakMs,
+    effectiveRecoveryScore,
+    effectiveHesitationScore,
+    interpretationState,
+  } = params;
+
+  return (
+    interpretationState === 'weaning-off' ||
+    (isSpeaking &&
+      (speechStreakMs >= 1_200 || effectiveRecoveryScore >= 0.52) &&
+      effectiveHesitationScore < LIVE_HESITATION_GATE)
+  );
 }
 
 function formatSignalIndicatorValue(label: 'Pause' | 'Fillers' | 'Wake phrase', boothSignal: BoothSignal) {
@@ -506,6 +566,10 @@ function App() {
   const [boothInterpretation, setBoothInterpretation] = useState<BoothInterpretation | null>(null);
   const [generatedCue, setGeneratedCue] = useState<GenerateBoothCueResponse | null>(null);
   const [generatedCueRequestedAt, setGeneratedCueRequestedAt] = useState(0);
+  const [assistLockExpiresAt, setAssistLockExpiresAt] = useState(0);
+  const [assistEpisodeId, setAssistEpisodeId] = useState(0);
+  const [isAssistEpisodeActive, setIsAssistEpisodeActive] = useState(false);
+  const [latchedAssistEpisodeId, setLatchedAssistEpisodeId] = useState(0);
   const [microphoneAvailability, setMicrophoneAvailability] =
     useState<MicrophoneAvailability>('supported');
   const shouldKeepMicLiveRef = useRef(false);
@@ -760,8 +824,13 @@ function App() {
       const nextBoothSessions = await fetchBoothSessions();
       setBoothAnalytics(nextBoothSessions.analytics);
       setRecentBoothSessions(nextBoothSessions.sessions);
+      setBoothError((current) =>
+        current === 'Saved sessions could not be loaded from the API.' ? null : current,
+      );
+      return true;
     } catch (_error) {
       setBoothError('Saved sessions could not be loaded from the API.');
+      return false;
     }
   }
 
@@ -1354,6 +1423,8 @@ function App() {
   }
 
   async function startBroadcast() {
+    setBoothError(null);
+
     if (!loadedClipUrl) {
       setBoothError('Load a clip before starting the booth.');
       return;
@@ -1372,10 +1443,16 @@ function App() {
       try {
         const response = await startBoothSession(loadedClipName || 'Untitled clip');
         setActiveBoothSessionId(response.session.id);
-        await refreshBoothSessions();
-      } catch (_error) {
-        setBoothError('The booth session could not be created in the saved session store.');
+        setBoothError(null);
+      } catch (error) {
+        const detail = getErrorMessage(error);
+        setBoothError(`The booth session could not be created. ${detail}`);
         return;
+      }
+
+      const refreshed = await refreshBoothSessions();
+      if (!refreshed && import.meta.env.DEV) {
+        console.debug('booth-session-refresh-failed');
       }
     }
 
@@ -1727,6 +1804,13 @@ function App() {
       : latestCompletedSession
         ? 'Saved trace ready'
         : 'Standby';
+  const speakerHasRecovered = hasRecoveredFromAssistEpisode({
+    isSpeaking: boothSignal.isSpeaking,
+    speechStreakMs: boothSignal.speechStreakMs,
+    effectiveRecoveryScore,
+    effectiveHesitationScore,
+    interpretationState: boothInterpretation?.state,
+  });
 
   useEffect(() => {
     if (!import.meta.env.DEV || !hasStartedBroadcast || !shouldSurfaceAssist) {
@@ -1754,33 +1838,112 @@ function App() {
 
   useEffect(() => {
     if (!hasStartedBroadcast) {
+      if (isAssistEpisodeActive) {
+        setIsAssistEpisodeActive(false);
+      }
+      if (assistEpisodeId !== 0) {
+        setAssistEpisodeId(0);
+      }
+      return;
+    }
+
+    if (!isAssistEpisodeActive && liveBoothShouldSurfaceAssist) {
+      setIsAssistEpisodeActive(true);
+      setAssistEpisodeId((current) => current + 1);
+      return;
+    }
+
+    if (isAssistEpisodeActive && speakerHasRecovered) {
+      setIsAssistEpisodeActive(false);
+    }
+  }, [
+    assistEpisodeId,
+    hasStartedBroadcast,
+    isAssistEpisodeActive,
+    liveBoothShouldSurfaceAssist,
+    speakerHasRecovered,
+  ]);
+
+  useEffect(() => {
+    if (!hasStartedBroadcast) {
       if (latchedAssist.type !== 'none') {
         setLatchedAssist(createEmptyAssistCard());
       }
       if (assistVisibilityPhase !== 'hidden') {
         setAssistVisibilityPhase('hidden');
       }
+      if (assistLockExpiresAt !== 0) {
+        setAssistLockExpiresAt(0);
+      }
+      if (latchedAssistEpisodeId !== 0) {
+        setLatchedAssistEpisodeId(0);
+      }
+      return;
+    }
+
+    const now = Date.now();
+    const hasLatchedAssist = latchedAssist.type !== 'none';
+    const assistIsLocked = shouldHoldLockedAssist({
+      currentAssist: latchedAssist,
+      nextAssist: nextTriggeredAssist,
+      assistLockExpiresAt,
+      nowMs: now,
+    });
+    const assistChanged = nextTriggeredAssist
+      ? !areAssistCardsEquivalent(latchedAssist, nextTriggeredAssist)
+      : false;
+    const enteringNewEpisode =
+      nextTriggeredAssist !== null &&
+      assistEpisodeId > 0 &&
+      latchedAssistEpisodeId !== assistEpisodeId;
+
+    if (nextTriggeredAssist && !hasLatchedAssist) {
+      setLatchedAssist(nextTriggeredAssist);
+      setLatchedAssistEpisodeId(assistEpisodeId);
+      setAssistVisibilityPhase('live');
+      setAssistLockExpiresAt(now + MIN_ASSIST_DISPLAY_MS);
       return;
     }
 
     if (
-      nextTriggeredAssist &&
-      (latchedAssist.type === 'none' ||
-        latchedAssist.text !== nextTriggeredAssist.text ||
-        latchedAssist.whyNow !== nextTriggeredAssist.whyNow)
+      nextTriggeredAssist !== null &&
+      hasLatchedAssist &&
+      enteringNewEpisode &&
+      !assistIsLocked
     ) {
       setLatchedAssist(nextTriggeredAssist);
+      setLatchedAssistEpisodeId(assistEpisodeId);
+      setAssistVisibilityPhase('live');
+      setAssistLockExpiresAt(now + MIN_ASSIST_DISPLAY_MS);
+      return;
+    }
+
+    if (
+      nextTriggeredAssist !== null &&
+      hasLatchedAssist &&
+      !assistChanged &&
+      assistVisibilityPhase !== 'live'
+    ) {
       setAssistVisibilityPhase('live');
       return;
     }
 
-    if (!nextTriggeredAssist && latchedAssist.type !== 'none') {
+    if (
+      !nextTriggeredAssist &&
+      hasLatchedAssist &&
+      !assistIsLocked &&
+      !isAssistEpisodeActive
+    ) {
       setAssistVisibilityPhase((current) => (current === 'hidden' ? 'hidden' : 'weaning'));
     }
   }, [
+    assistLockExpiresAt,
+    assistEpisodeId,
     assistVisibilityPhase,
     hasStartedBroadcast,
+    isAssistEpisodeActive,
     latchedAssist.text,
+    latchedAssistEpisodeId,
     latchedAssist.type,
     latchedAssist.whyNow,
     nextTriggeredAssist,
