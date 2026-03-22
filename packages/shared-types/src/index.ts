@@ -1060,6 +1060,22 @@ export const ResolveFixtureInputSchema = z.object({
 });
 export type ResolveFixtureInput = z.infer<typeof ResolveFixtureInputSchema>;
 
+export const UpdateBoothLiveSignalsInputSchema = z.object({
+  transcriptWindow: z.array(TranscriptEntrySchema).max(12).optional(),
+  screenshotBase64: z.string().min(1).optional(),
+  mimeType: z.string().min(1).optional(),
+  clipName: z.string().optional(),
+  clockMs: z.number().int().nonnegative().optional(),
+});
+export type UpdateBoothLiveSignalsInput = z.infer<typeof UpdateBoothLiveSignalsInputSchema>;
+
+export const UpdateBoothLiveSignalsResponseSchema = z.object({
+  commentaryCount: z.number().int().nonnegative(),
+  visionCue: VisionCueSchema.nullable(),
+  source: z.enum(['openai', 'unavailable', 'state-only']),
+});
+export type UpdateBoothLiveSignalsResponse = z.infer<typeof UpdateBoothLiveSignalsResponseSchema>;
+
 export const ResolveFixtureResponseSchema = z.object({
   fixtureId: z.string(),
   fixtureName: z.string(),

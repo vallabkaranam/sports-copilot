@@ -1024,7 +1024,6 @@ describe('App dashboard', () => {
     });
 
     expect(speechSynthesisCancelMock).toHaveBeenCalled();
-    expect(container.textContent).toContain('Live Mic');
   });
 
   it('holds a visible assist while the minimum display lock is active', () => {

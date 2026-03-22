@@ -46,6 +46,7 @@ export function createInitialWorldState(): WorldState {
     liveSignals: {
       social: [],
       vision: [],
+      commentary: [],
     },
   };
 }
