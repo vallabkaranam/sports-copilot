@@ -34,25 +34,29 @@ describe('booth interpretation', () => {
     delete process.env.OPENAI_API_KEY;
   });
 
-  it('returns an unavailable interpretation when no key is present', async () => {
-    const interpretation = await interpretBoothWithOpenAI(createFeatures(), {
-      totalSessions: 3,
-      totalSamples: 120,
-      averageMaxHesitationScore: 0.38,
-      averageRecoveryScore: 0.64,
-      averagePauseDurationMs: 1_400,
-      averageSpeechStreakMs: 4_600,
-      averageFillerDensity: 0.06,
-      averageRepeatedOpenings: 0.1,
-      averageTranscriptStability: 0.88,
-      wakePhrase: 'line',
-    });
+  it('fails fast when the interpretation path cannot authenticate', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+      }),
+    );
 
-    expect(interpretation.source).toBe('unavailable');
-    expect(interpretation.state).toBe('standby');
-    expect(interpretation.shouldSurfaceAssist).toBe(false);
-    expect(interpretation.signals.length).toBeGreaterThan(0);
-    expect(interpretation.signals.some((signal) => signal.key === 'pauseVsBaseline')).toBe(true);
+    await expect(
+      interpretBoothWithOpenAI(createFeatures(), {
+        totalSessions: 3,
+        totalSamples: 120,
+        averageMaxHesitationScore: 0.38,
+        averageRecoveryScore: 0.64,
+        averagePauseDurationMs: 1_400,
+        averageSpeechStreakMs: 4_600,
+        averageFillerDensity: 0.06,
+        averageRepeatedOpenings: 0.1,
+        averageTranscriptStability: 0.88,
+        wakePhrase: 'line',
+      }),
+    ).rejects.toThrow('OpenAI interpretation failed with 401');
   });
 
   it('parses an OpenAI JSON response when available', async () => {

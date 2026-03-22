@@ -619,7 +619,7 @@ function App() {
       return;
     }
 
-    if (controls.playbackStatus === 'playing') {
+    if (hasStartedBroadcast && controls.playbackStatus === 'playing') {
       safelyPlayVideo(videoRef.current, () => {
         setBoothError('Press play on the loaded clip if the browser blocks autoplay.');
       });
@@ -627,7 +627,7 @@ function App() {
     }
 
     videoRef.current.pause();
-  }, [controls.playbackStatus, loadedClipUrl]);
+  }, [controls.playbackStatus, hasStartedBroadcast, loadedClipUrl]);
 
   useEffect(() => {
     if (controls.restartToken === lastRestartTokenRef.current) {
@@ -651,12 +651,12 @@ function App() {
 
     videoRef.current.currentTime = 0;
 
-    if (controls.playbackStatus === 'playing') {
+    if (hasStartedBroadcast && controls.playbackStatus === 'playing') {
       safelyPlayVideo(videoRef.current, () => {
         setBoothError('Press play on the loaded clip if the browser blocks autoplay.');
       });
     }
-  }, [controls.playbackStatus, controls.restartToken]);
+  }, [controls.playbackStatus, controls.restartToken, hasStartedBroadcast]);
 
   useEffect(() => {
     return () => {
@@ -737,7 +737,7 @@ function App() {
       setBoothAnalytics(nextBoothSessions.analytics);
       setRecentBoothSessions(nextBoothSessions.sessions);
     } catch (_error) {
-      // Keep the live booth usable even if session analytics are unavailable.
+      setBoothError('Saved sessions could not be loaded from the API.');
     }
   }
 
@@ -1301,7 +1301,8 @@ function App() {
         setActiveBoothSessionId(response.session.id);
         await refreshBoothSessions();
       } catch (_error) {
-        setBoothError('The booth session could not be saved, but the live session can still run.');
+        setBoothError('The booth session could not be created in the saved session store.');
+        return;
       }
     }
 
@@ -1447,6 +1448,7 @@ function App() {
       interimTranscript: boothInterimTranscript,
       contextSummary: buildContextSummary(worldState),
       expectedTopics: buildExpectedTopics(worldState),
+      wakePhraseDetected: boothSignal.wakePhraseDetected,
       previousState: boothInterpretation?.state,
     }),
     [
@@ -1468,6 +1470,7 @@ function App() {
       boothSignal.transcriptStabilityScore,
       boothSignal.transcriptWordCount,
       boothSignal.unfinishedPhrase,
+      boothSignal.wakePhraseDetected,
       boothTranscript,
       boothInterpretation?.state,
       worldState,
@@ -1547,6 +1550,7 @@ function App() {
     boothSignal.fillerCount > 0 ? 'filler' : null,
     boothSignal.repeatedOpeningCount > 0 ? 'repeat-start' : null,
     boothSignal.unfinishedPhrase ? 'unfinished' : null,
+    boothSignal.wakePhraseDetected ? 'line' : null,
   ].filter(Boolean) as string[];
   const primaryActionLabel = isBroadcastLive ? 'End live session' : 'Go live';
   const primaryActionDisabled = !isBroadcastLive && (!isBroadcastReady || isUpdatingControls);
@@ -1847,7 +1851,8 @@ function App() {
           setBoothError(null);
         })
         .catch(() => {
-          // Keep the local booth flow running even if interpretation is unavailable.
+          setBoothInterpretation(null);
+          setBoothError('Live booth interpretation failed.');
         });
     }, 900);
 
@@ -1936,9 +1941,7 @@ function App() {
             setGeneratedCue(nextCue);
           }
         })
-        .catch(() => {
-          // Keep the current cue latched instead of replacing it with a fake fallback.
-        });
+        .catch(() => undefined);
     }, waitMs);
 
     return () => {
@@ -2117,6 +2120,24 @@ function App() {
             ) : null}
           </div>
 
+          <div className="stage-primary-bar">
+            <button
+              type="button"
+              className={`stage-primary-button ${isBroadcastLive ? 'stage-primary-button--live' : ''}`}
+              disabled={primaryActionDisabled}
+              onClick={() => void (isBroadcastLive ? stopBroadcast() : startBroadcast())}
+            >
+              {primaryActionLabel}
+            </button>
+            <p className="stage-primary-copy">
+              {loadedClipUrl
+                ? isBroadcastLive
+                  ? 'You are live. AndOne will only step in when delivery slips.'
+                  : 'Start the session when you are ready to call the action.'
+                : 'Load a reel first, then go live.'}
+            </p>
+          </div>
+
           <div className={`replay-stage ${loadedClipUrl ? 'replay-stage--video' : ''}`}>
             {loadedClipUrl ? (
               <video
@@ -2143,18 +2164,12 @@ function App() {
             <div className="replay-stage__overlay" />
 
             <div className="replay-stage__content">
-              <div className="replay-copy">
-                <span className="live-chip">{loadedClipUrl ? 'Clip ready' : 'Ready for upload'}</span>
-                <h3>
-                  {loadedClipUrl
-                    ? hasStartedBroadcast
-                      ? coachingTone.headline
-                      : resolvedPostSessionReview
-                        ? 'Session complete. Review it from Sessions.'
-                      : 'Go live and AndOne will request microphone access if needed.'
-                    : 'Load a reel into Channel 1 or Channel 2 to begin.'}
-                </h3>
-              </div>
+              {!loadedClipUrl ? (
+                <div className="replay-copy">
+                  <span className="live-chip">Ready for upload</span>
+                  <h3>Load a reel into Channel 1 or Channel 2 to begin.</h3>
+                </div>
+              ) : null}
 
               {shouldSurfaceAssist ? (
                 <article
@@ -2169,17 +2184,15 @@ function App() {
                 </article>
               ) : null}
 
-              <div className="replay-tags">
-                {activeTriggerBadges.length > 0 ? (
-                  activeTriggerBadges.map((badge) => (
+              {activeTriggerBadges.length > 0 ? (
+                <div className="replay-tags">
+                  {activeTriggerBadges.map((badge) => (
                     <span className="scene-chip" key={badge}>
                       {badge}
                     </span>
-                  ))
-                ) : (
-                  <span className="scene-chip scene-chip--muted">Watching for a real hesitation cue</span>
-                )}
-              </div>
+                  ))}
+                </div>
+              ) : null}
 
               <div className="replay-footer">
                 <div className={`coach-lane coach-lane--${coachingTone.tone}`}>
@@ -2214,17 +2227,6 @@ function App() {
                   </div>
                 </div>
               ))}
-            </div>
-
-            <div className="setup-actions">
-              <button
-                type="button"
-                className={isBroadcastLive ? 'is-active' : ''}
-                disabled={primaryActionDisabled}
-                onClick={() => void (isBroadcastLive ? stopBroadcast() : startBroadcast())}
-              >
-                {primaryActionLabel}
-              </button>
             </div>
 
             {boothError ? <p className="inline-warning">{boothError}</p> : null}

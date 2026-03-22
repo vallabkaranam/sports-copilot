@@ -68,7 +68,7 @@ function createEmptySpeakerProfile(): BoothSpeakerProfile {
     averageFillerDensity: 0,
     averageRepeatedOpenings: 0,
     averageTranscriptStability: 1,
-    wakePhrase: process.env.BOOTH_WAKE_PHRASE ?? null,
+    wakePhrase: 'line',
   };
 }
 
@@ -436,7 +436,7 @@ async function createPostgresBoothSessionStore(connectionString: string): Promis
         averageFillerDensity: toNumber(row.average_filler_density),
         averageRepeatedOpenings: toNumber(row.average_repeated_openings),
         averageTranscriptStability: toNumber(row.average_transcript_stability),
-        wakePhrase: process.env.BOOTH_WAKE_PHRASE ?? null,
+        wakePhrase: 'line',
       };
     },
 
@@ -692,7 +692,7 @@ function createSqliteBoothSessionStore(databaseFile?: string): BoothSessionStore
           sum(numericFeature('repeatedOpeningCount')) / Math.max(1, samples.length),
         averageTranscriptStability:
           sum(numericFeature('transcriptStabilityScore', 1)) / Math.max(1, samples.length),
-        wakePhrase: process.env.BOOTH_WAKE_PHRASE ?? null,
+        wakePhrase: 'line',
       };
     },
 

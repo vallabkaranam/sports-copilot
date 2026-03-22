@@ -10,7 +10,7 @@ import {
 } from '@sports-copilot/shared-types';
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/responses';
-const OPENAI_ASSIST_MODEL = process.env.OPENAI_ASSIST_MODEL ?? 'gpt-5.4-mini';
+const OPENAI_ASSIST_MODEL = 'gpt-5.4-mini';
 
 function clamp(value: number, minimum = 0, maximum = 1) {
   return Math.min(maximum, Math.max(minimum, value));
@@ -49,14 +49,6 @@ function dedupeSourceChips(facts: RetrievedFact[]) {
   }
 
   return chips;
-}
-
-function buildUnavailableCue(): GenerateBoothCueResponse {
-  return {
-    assist: createEmptyAssistCard(),
-    refreshAfterMs: 2200,
-    source: 'unavailable',
-  };
 }
 
 function buildPrompt(params: {
@@ -165,14 +157,15 @@ export async function generateBoothCueWithOpenAI(params: {
   });
 
   if (!response.ok) {
-    return buildUnavailableCue();
+    const errorText = await response.text();
+    throw new Error(`OpenAI cue generation failed: ${response.status} ${errorText}`);
   }
 
   const payload = (await response.json()) as unknown;
   const text = extractResponseText(payload);
 
   if (!text) {
-    return buildUnavailableCue();
+    throw new Error('OpenAI cue generation returned no text');
   }
 
   try {
@@ -186,7 +179,7 @@ export async function generateBoothCueWithOpenAI(params: {
     };
 
     if (!parsed.text || !parsed.whyNow || !parsed.type) {
-      return buildUnavailableCue();
+      throw new Error('OpenAI cue generation returned an invalid JSON shape');
     }
 
     const selectedFacts = retrievedFacts.filter((fact) =>
@@ -218,6 +211,6 @@ export async function generateBoothCueWithOpenAI(params: {
       source: 'openai',
     };
   } catch (_error) {
-    return buildUnavailableCue();
+    throw new Error('OpenAI cue generation returned invalid JSON');
   }
 }

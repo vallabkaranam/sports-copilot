@@ -6,13 +6,17 @@ import {
 } from '@sports-copilot/shared-types';
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/responses';
-const OPENAI_MODEL = process.env.OPENAI_HESITATION_MODEL ?? 'gpt-5.4';
+const OPENAI_MODEL = 'gpt-5.4';
 
 function clamp(value: number, minimum = 0, maximum = 1) {
   return Math.min(maximum, Math.max(minimum, value));
 }
 
 function detectWakePhrase(features: BoothFeatureSnapshot, profile?: BoothSpeakerProfile) {
+  if (features.wakePhraseDetected) {
+    return true;
+  }
+
   const wakePhrase = profile?.wakePhrase?.trim().toLowerCase();
   if (!wakePhrase) {
     return false;
@@ -124,27 +128,6 @@ function buildSignals(
   ];
 }
 
-function buildUnavailableBoothInterpretation(
-  features: BoothFeatureSnapshot,
-  profile?: BoothSpeakerProfile,
-): BoothInterpretation {
-  return {
-    state: features.previousState ?? 'standby',
-    hesitationScore: 0,
-    recoveryScore: 0,
-    shouldSurfaceAssist: false,
-    summary: 'Live booth interpretation is unavailable until the model path responds.',
-    reasons: [
-      'The API transcription or interpretation path is unavailable right now.',
-      profile && profile.totalSamples > 0
-        ? `Historical profile is loaded from ${profile.totalSamples} samples, but live model inference is not available.`
-        : 'No historical booth profile is available yet.',
-    ],
-    signals: buildSignals(features, profile),
-    source: 'unavailable',
-  };
-}
-
 function extractResponseText(payload: unknown) {
   const candidate = payload as {
     output_text?: string;
@@ -168,10 +151,6 @@ export async function interpretBoothWithOpenAI(
   features: BoothFeatureSnapshot,
   profile?: BoothSpeakerProfile,
 ): Promise<BoothInterpretation> {
-  if (!process.env.OPENAI_API_KEY) {
-    return buildUnavailableBoothInterpretation(features, profile);
-  }
-
   const observedSignals = buildSignals(features, profile);
 
   const prompt = [
@@ -203,14 +182,14 @@ export async function interpretBoothWithOpenAI(
   });
 
   if (!response.ok) {
-    return buildUnavailableBoothInterpretation(features, profile);
+    throw new Error(`OpenAI interpretation failed with ${response.status}`);
   }
 
   const payload = (await response.json()) as unknown;
   const text = extractResponseText(payload);
 
   if (!text) {
-    return buildUnavailableBoothInterpretation(features, profile);
+    throw new Error('OpenAI interpretation returned no text');
   }
 
   try {
@@ -246,9 +225,13 @@ export async function interpretBoothWithOpenAI(
             source: 'openai',
           };
     }
-  } catch (_error) {
-    // Fall through to unavailable response.
-  }
 
-  return buildUnavailableBoothInterpretation(features, profile);
+    throw new Error('OpenAI interpretation returned an invalid JSON shape');
+  } catch (error) {
+    throw new Error(
+      `Failed to parse booth interpretation response: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
 }

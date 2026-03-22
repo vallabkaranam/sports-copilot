@@ -1,6 +1,12 @@
 const OPENAI_REALTIME_CALLS_API_URL = 'https://api.openai.com/v1/realtime/calls';
+const OPENAI_REALTIME_TRANSCRIBE_MODEL = 'gpt-4o-mini-transcribe';
+const OPENAI_REALTIME_TRANSCRIBE_LANGUAGE = 'en';
+const OPENAI_REALTIME_NOISE_REDUCTION = 'near_field';
+const OPENAI_REALTIME_VAD_THRESHOLD = 0.35;
+const OPENAI_REALTIME_VAD_PREFIX_PADDING_MS = 300;
+const OPENAI_REALTIME_VAD_SILENCE_MS = 450;
 const DEFAULT_REALTIME_TRANSCRIBE_PROMPT =
-  'Live sports commentary. Preserve filler words, repetitions, false starts, self-corrections, trailing thoughts, and unfinished phrases exactly as spoken. Do not clean up ums, uhs, repeated openings, or broken phrasing.';
+  'Live sports commentary. Preserve filler words, repetitions, false starts, self-corrections, trailing thoughts, wake phrases like "line", and unfinished phrases exactly as spoken. Do not clean up ums, uhs, repeated openings, broken phrasing, or secret trigger phrases such as "line" or "but um".';
 
 function createRealtimeSessionConfig() {
   return {
@@ -8,24 +14,18 @@ function createRealtimeSessionConfig() {
     audio: {
       input: {
         noise_reduction: {
-          type: process.env.OPENAI_REALTIME_NOISE_REDUCTION ?? 'near_field',
+          type: OPENAI_REALTIME_NOISE_REDUCTION,
         },
         transcription: {
-          model:
-            process.env.OPENAI_REALTIME_TRANSCRIBE_MODEL ??
-            process.env.OPENAI_TRANSCRIBE_MODEL ??
-            'gpt-4o-transcribe',
-          language: process.env.OPENAI_REALTIME_TRANSCRIBE_LANGUAGE ?? 'en',
-          prompt:
-            process.env.OPENAI_REALTIME_TRANSCRIBE_PROMPT ??
-            process.env.OPENAI_TRANSCRIBE_PROMPT ??
-            DEFAULT_REALTIME_TRANSCRIBE_PROMPT,
+          model: OPENAI_REALTIME_TRANSCRIBE_MODEL,
+          language: OPENAI_REALTIME_TRANSCRIBE_LANGUAGE,
+          prompt: DEFAULT_REALTIME_TRANSCRIBE_PROMPT,
         },
         turn_detection: {
           type: 'server_vad',
-          threshold: Number(process.env.OPENAI_REALTIME_VAD_THRESHOLD ?? 0.35),
-          prefix_padding_ms: Number(process.env.OPENAI_REALTIME_VAD_PREFIX_PADDING_MS ?? 300),
-          silence_duration_ms: Number(process.env.OPENAI_REALTIME_VAD_SILENCE_MS ?? 450),
+          threshold: OPENAI_REALTIME_VAD_THRESHOLD,
+          prefix_padding_ms: OPENAI_REALTIME_VAD_PREFIX_PADDING_MS,
+          silence_duration_ms: OPENAI_REALTIME_VAD_SILENCE_MS,
           create_response: false,
           interrupt_response: false,
         },
@@ -36,10 +36,6 @@ function createRealtimeSessionConfig() {
 }
 
 export async function createRealtimeBoothSdpAnswer(offerSdp: string) {
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error('OPENAI_API_KEY is not configured.');
-  }
-
   const form = new FormData();
   form.set('sdp', offerSdp);
   form.set('session', JSON.stringify(createRealtimeSessionConfig()));

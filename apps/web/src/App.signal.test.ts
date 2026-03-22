@@ -81,6 +81,42 @@ describe('booth signal audio activity', () => {
     expect(signal.transcriptStabilityScore).toBeLessThan(0.8);
   });
 
+  it('surfaces hesitation from filler bursts even before a long pause lands', () => {
+    const signal = buildBoothSignal({
+      boothTranscript: [],
+      interimTranscript: 'um uh well um this is, uh this is opening up',
+      isMicListening: true,
+      lastSpeechAtMs: 11_200,
+      lastVoiceActivityAtMs: 11_200,
+      speechStreakStartedAtMs: 10_100,
+      audioLevel: 0.08,
+      nowMs: 11_600,
+    });
+
+    expect(signal.fillerCount).toBeGreaterThanOrEqual(4);
+    expect(signal.hesitationScore).toBeGreaterThanOrEqual(0.36);
+    expect(signal.shouldSurfaceAssist).toBe(true);
+    expect(signal.hesitationReasons.join(' ')).toContain('filler words');
+  });
+
+  it('steps in immediately when the wake phrase is spoken', () => {
+    const signal = buildBoothSignal({
+      boothTranscript: [],
+      interimTranscript: 'line line give me the next beat',
+      isMicListening: true,
+      lastSpeechAtMs: 11_100,
+      lastVoiceActivityAtMs: 11_100,
+      speechStreakStartedAtMs: 10_500,
+      audioLevel: 0.09,
+      nowMs: 11_400,
+    });
+
+    expect(signal.wakePhraseDetected).toBe(true);
+    expect(signal.hesitationScore).toBeGreaterThanOrEqual(0.72);
+    expect(signal.shouldSurfaceAssist).toBe(true);
+    expect(signal.hesitationReasons.join(' ')).toContain('wake phrase');
+  });
+
   it('weans hesitation off and restores confidence once speech resumes', () => {
     const pausedSignal = buildBoothSignal({
       boothTranscript: [],

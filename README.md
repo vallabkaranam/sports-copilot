@@ -46,23 +46,31 @@ Recommended hosted setup:
 2. Create the `sports-copilot-worker` service from [render.yaml](/Users/vallabkaranam/Desktop/sports-copilot/render.yaml)
 3. Set `API_BASE_URL` on the worker to your Render API URL, for example `https://sports-copilot-api.onrender.com`
 4. Deploy the repo to Vercel with `VITE_API_BASE_URL` set to that same Render API URL
-5. Set `OPENAI_API_KEY` on the Render API service if you want server-side hesitation interpretation enabled
-6. Set `SUPABASE_URL` and `DATABASE_URL` on the Render API service if you want hosted booth analytics persistence
+5. Set the Render API env from [`.env.deployment.example`](/Users/vallabkaranam/Desktop/sports-copilot/.env.deployment.example): `OPENAI_API_KEY`, `SUPABASE_URL`, `DATABASE_URL`, and the OpenAI model/runtime vars
+6. Set the Render worker env from [`.env.deployment.example`](/Users/vallabkaranam/Desktop/sports-copilot/.env.deployment.example): `API_BASE_URL`, `SPORTMONKS_API_TOKEN`, `SPORTMONKS_FIXTURE_ID`, and the Bluesky vars
 
 ## Local Env
 
-Create `.env.local` in the repo root for server-side secrets:
+Create one repo-root `.env` file:
 
 ```bash
+VITE_API_BASE_URL=http://localhost:3001
+API_BASE_URL=http://localhost:3001
 OPENAI_API_KEY=your_openai_api_key
-SUPABASE_URL=https://your-project-ref.supabase.co
-DATABASE_URL=postgresql://postgres.your-project-ref:your_password@your-supabase-pooler:6543/postgres
+SUPABASE_URL=https://ivynnjycdyrjbaotjzkx.supabase.co
+DATABASE_URL=postgresql://postgres:your_database_password@db.ivynnjycdyrjbaotjzkx.supabase.co:5432/postgres
+SPORTMONKS_API_TOKEN=your_sportmonks_token
+SPORTMONKS_FIXTURE_ID=your_fixture_id
 ```
 
 Notes:
+- [`.env.example`](/Users/vallabkaranam/Desktop/sports-copilot/.env.example) is the source-of-truth template for teammates
+- the full live stack expects OpenAI, Postgres, and Sportmonks to be configured explicitly
+- the API now fails fast on startup if `OPENAI_API_KEY`, `SUPABASE_URL`, or `DATABASE_URL` are missing
+- the worker now fails fast on startup if `API_BASE_URL`, `SPORTMONKS_API_TOKEN`, or `SPORTMONKS_FIXTURE_ID` are missing
 - the worker now exposes a `/health` endpoint so Render can keep it as a web service
 - the API now respects the host platform `PORT`
-- booth session persistence now uses hosted Postgres whenever `DATABASE_URL` is present, and falls back to local SQLite only when no database is configured
+- booth session persistence is expected to use hosted Postgres via `DATABASE_URL` on the live stack
 
 ## Demo Notes
 - The replay is deterministic and runs from local JSON fixtures in [data/demo_match](/Users/vallabkaranam/Desktop/sports-copilot/data/demo_match).

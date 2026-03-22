@@ -29,6 +29,7 @@ function makeSignal(overrides: Partial<BoothSignal> = {}): BoothSignal {
     transcriptWordCount: 0,
     transcriptStabilityScore: 0,
     unfinishedPhrase: false,
+    wakePhraseDetected: false,
     isSpeaking: false,
     audioLevel: 0.02,
     hasVoiceActivity: false,

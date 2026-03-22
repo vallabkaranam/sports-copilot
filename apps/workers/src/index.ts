@@ -1,6 +1,5 @@
 import dotenv from 'dotenv';
 import fs from 'fs/promises';
-import path from 'path';
 import http from 'http';
 import { buildAssistCard } from './assist';
 import { BlueskyPostCache, ingestBlueskySocialPosts } from './bluesky';
@@ -44,11 +43,30 @@ import {
 dotenv.config();
 
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3001';
+function requireEnv(name: string) {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+
+  return value;
+}
+
+function assertWorkerEnv() {
+  requireEnv('API_BASE_URL');
+  requireEnv('SPORTMONKS_API_TOKEN');
+  requireEnv('SPORTMONKS_FIXTURE_ID');
+}
+
+assertWorkerEnv();
+
+const API_BASE_URL = requireEnv('API_BASE_URL');
 const API_URL = new URL(API_BASE_URL);
 const API_HOSTNAME = API_URL.hostname;
 const API_PORT = Number(API_URL.port || (API_URL.protocol === 'https:' ? 443 : 80));
 const HEALTH_PORT = Number(process.env.PORT ?? 0);
 const POLL_INTERVAL_MS = 15_000;
+const ENABLE_BLUESKY_SOCIAL = true;
 
 async function loadFixture<T>(fixturePath: string) {
   const data = await fs.readFile(fixturePath, 'utf8');
@@ -64,14 +82,6 @@ async function loadRequiredFixture<T>(fixturePath: string, label: string) {
         error instanceof Error ? error.message : String(error)
       }`,
     );
-  }
-}
-
-async function loadOptionalFixture<T>(fixturePath: string, fallback: T) {
-  try {
-    return await loadFixture<T>(fixturePath);
-  } catch (_error) {
-    return fallback;
   }
 }
 
@@ -175,13 +185,10 @@ function buildDegradedState(reason: string, fixtureId: string) {
 
 async function run() {
   startHealthServer();
-  const fixturesDir = path.resolve(__dirname, '../../../data/demo_match');
-  const [narratives, socialPosts, transcript, visionFrames] = await Promise.all([
-    loadRequiredFixture<NarrativeFixture[]>(path.join(fixturesDir, 'narratives.json'), 'narratives'),
-    loadOptionalFixture<SocialPost[]>(path.join(fixturesDir, 'fake_social.json'), []),
-    loadOptionalFixture<TranscriptEntry[]>(path.join(fixturesDir, 'transcript_seed.json'), []),
-    loadOptionalFixture<VisionFrame[]>(path.join(fixturesDir, 'vision_frames.json'), []),
-  ]);
+  const narratives: NarrativeFixture[] = [];
+  const socialPosts: SocialPost[] = [];
+  const transcript: TranscriptEntry[] = [];
+  const visionFrames: VisionFrame[] = [];
   const visionCues: VisionCue[] = ingestVisionFrames(visionFrames);
   const sessionMemory = createSessionMemoryTracker();
   let lastKnownControls = createDefaultReplayControlState();
@@ -263,7 +270,7 @@ async function run() {
             apiToken,
             fixtureId,
             openAiApiKey: process.env.OPENAI_API_KEY,
-            openAiModel: process.env.OPENAI_MODEL,
+            openAiModel: undefined,
           });
           lastPreMatchFixtureId = fixtureId;
         } catch (error) {
@@ -283,7 +290,7 @@ async function run() {
       const clockMs = snapshot.liveMatch.minute * 60_000;
       let resolvedSocialPosts = socialPosts;
 
-      if (process.env.BLUESKY_SOCIAL_ENABLED !== 'false') {
+      if (ENABLE_BLUESKY_SOCIAL) {
         try {
           const blueskyPosts = await ingestBlueskySocialPosts(
             {

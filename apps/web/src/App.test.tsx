@@ -460,6 +460,7 @@ describe('App dashboard', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    import.meta.env.VITE_API_BASE_URL = 'http://localhost:3001';
     (
       globalThis as typeof globalThis & {
         IS_REACT_ACT_ENVIRONMENT?: boolean;
@@ -734,6 +735,7 @@ describe('App dashboard', () => {
       root.unmount();
     });
     container.remove();
+    delete import.meta.env.VITE_API_BASE_URL;
     vi.unstubAllGlobals();
     vi.useRealTimers();
     (

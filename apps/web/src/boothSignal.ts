@@ -21,6 +21,7 @@ export type BoothSignal = {
   unfinishedPhrase: boolean;
   transcriptWordCount: number;
   transcriptStabilityScore: number;
+  wakePhraseDetected: boolean;
   isSpeaking: boolean;
   audioLevel: number;
   hasVoiceActivity: boolean;
@@ -28,7 +29,14 @@ export type BoothSignal = {
 };
 
 export type BoothSignalContributor = {
-  key: 'pause' | 'filler' | 'repeat-start' | 'unfinished' | 'speech-recovery' | 'audio-presence';
+  key:
+    | 'pause'
+    | 'filler'
+    | 'repeat-start'
+    | 'unfinished'
+    | 'wake-phrase'
+    | 'speech-recovery'
+    | 'audio-presence';
   label: string;
   score: number;
 };
@@ -57,6 +65,7 @@ const FILLER_PATTERNS = [
   { token: 'you know', pattern: /\byou know\b/gi },
   { token: 'i mean', pattern: /\bi mean\b/gi },
 ] as const;
+const WAKE_PHRASES = ['line', 'but um'] as const;
 
 function clamp(value: number, minimum = 0, maximum = 1) {
   return Math.min(maximum, Math.max(minimum, value));
@@ -88,6 +97,20 @@ function collectFillerWords(texts: string[]) {
   }
 
   return hits;
+}
+
+function detectWakePhrase(texts: string[]) {
+  const normalized = texts.map(normalizeTranscriptText).join(' ');
+
+  return WAKE_PHRASES.find((phrase) =>
+    normalized.includes(normalizeTranscriptText(phrase)),
+  );
+}
+
+function detectFillerBurst(texts: string[]) {
+  const normalized = texts.map(normalizeTranscriptText).join(' ');
+
+  return /\b(?:uh|um|er|ah)\b(?:\s+\w+){0,3}\s+\b(?:uh|um|er|ah)\b/i.test(normalized);
 }
 
 function countTranscriptWords(texts: string[]) {
@@ -200,10 +223,12 @@ export function buildBoothSignal({
     analysisTexts,
   );
   const fillerCount = fillerWords.length;
+  const fillerBurstDetected = detectFillerBurst(analysisTexts);
   const repeatedPhrases = findRepeatedPhrases(analysisTexts);
   const repeatedOpeningCount = repeatedPhrases.length;
   const lastLine = interimText || recentTranscript[recentTranscript.length - 1]?.text.trim() || '';
   const unfinishedPhrase = /(?:\.\.\.|-)\s*$/.test(lastLine);
+  const wakePhrase = detectWakePhrase(analysisTexts);
   const transcriptWordCount = Math.max(1, countTranscriptWords(analysisTexts));
   const fillerDensity = clamp(fillerCount / transcriptWordCount);
   const activity = deriveBoothActivity({
@@ -230,6 +255,7 @@ export function buildBoothSignal({
   let fillerContribution = 0;
   let unfinishedContribution = 0;
   let repeatedContribution = 0;
+  let wakePhraseContribution = 0;
 
   if (silenceStreakMs >= LONG_PAUSE_START_MS) {
     const pauseSeconds = Math.round((silenceStreakMs / 1_000) * 10) / 10;
@@ -248,9 +274,18 @@ export function buildBoothSignal({
 
   if (fillerCount > 0) {
     const uniqueFillers = [...new Set(fillerWords)];
-    fillerContribution = Math.min(0.3, 0.08 * fillerCount + fillerDensity * 0.24);
+    fillerContribution = Math.min(
+      0.46,
+      0.11 * fillerCount +
+        fillerDensity * 0.34 +
+        (fillerBurstDetected ? 0.16 : 0),
+    );
     hesitationScore += fillerContribution;
-    hesitationReasons.push(`Fillers detected: ${uniqueFillers.join(', ')}.`);
+    hesitationReasons.push(
+      fillerBurstDetected
+        ? `You said filler words like ${uniqueFillers.join(', ')}, so AndOne is stepping in.`
+        : `You said filler words like ${uniqueFillers.join(', ')}.`,
+    );
     hesitationContributors.push({
       key: 'filler',
       label: 'Filler language',
@@ -280,10 +315,22 @@ export function buildBoothSignal({
     });
   }
 
+  if (wakePhrase) {
+    wakePhraseContribution = 0.72;
+    hesitationScore = Math.max(hesitationScore, wakePhraseContribution);
+    hesitationReasons.push(`You used the wake phrase "${wakePhrase}", so AndOne is stepping in now.`);
+    hesitationContributors.push({
+      key: 'wake-phrase',
+      label: 'Wake phrase',
+      score: wakePhraseContribution,
+    });
+  }
+
   const transcriptInstabilityPenalty = clamp(
     fillerDensity * 0.45 +
       repeatedOpeningCount * 0.18 +
       (unfinishedPhrase ? 0.2 : 0) +
+      (fillerBurstDetected ? 0.14 : 0) +
       (interimText.length > 0 && !isSpeaking ? 0.12 : 0),
   );
   const transcriptStabilityScore = clamp(1 - transcriptInstabilityPenalty);
@@ -348,6 +395,7 @@ export function buildBoothSignal({
     unfinishedPhrase,
     transcriptWordCount,
     transcriptStabilityScore,
+    wakePhraseDetected: Boolean(wakePhrase),
     isSpeaking,
     audioLevel,
     hasVoiceActivity,

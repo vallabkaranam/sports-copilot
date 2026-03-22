@@ -6,9 +6,9 @@ import {
   createEmptyPreMatchState,
 } from '@sports-copilot/shared-types';
 
-const SPORTMONKS_BASE_URL =
-  process.env.SPORTMONKS_BASE_URL ?? 'https://api.sportmonks.com/v3/football';
-const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1';
+const SPORTMONKS_BASE_URL = 'https://api.sportmonks.com/v3/football';
+const OPENAI_BASE_URL = 'https://api.openai.com/v1';
+const OPENAI_PREMATCH_MODEL = 'gpt-5.4-mini';
 
 const FIXTURE_PREMATCH_INCLUDES = ['participants', 'venue'].join(';');
 const TEAM_FIXTURE_INCLUDES = ['participants', 'scores', 'state'].join(';');
@@ -418,7 +418,7 @@ async function maybeGenerateAiOpener(
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: model ?? 'gpt-5-mini',
+      model: model ?? OPENAI_PREMATCH_MODEL,
       input: [
         {
           role: 'system',

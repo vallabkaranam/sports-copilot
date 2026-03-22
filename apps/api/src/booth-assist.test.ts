@@ -63,14 +63,22 @@ describe('booth cue generation', () => {
     vi.unstubAllGlobals();
   });
 
-  it('returns unavailable when the key is missing', async () => {
-    const result = await generateBoothCueWithOpenAI({
-      features: makeFeatures(),
-      retrievalFacts: [],
-    });
+  it('throws when the cue path cannot authenticate', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        text: async () => 'Unauthorized',
+      }),
+    );
 
-    expect(result.source).toBe('unavailable');
-    expect(result.assist.type).toBe('none');
+    await expect(
+      generateBoothCueWithOpenAI({
+        features: makeFeatures(),
+        retrievalFacts: [],
+      }),
+    ).rejects.toThrow('OpenAI cue generation failed: 401 Unauthorized');
   });
 
   it('parses a generated cue from the OpenAI response path', async () => {
