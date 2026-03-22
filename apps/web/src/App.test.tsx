@@ -983,8 +983,8 @@ describe('App dashboard', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('Past live runs');
-    expect(container.textContent).toContain('Review');
+    expect(container.textContent).toContain('Saved sessions');
+    expect(container.textContent).toContain('Session review');
     expect(container.textContent).toContain('Peak hesitation');
     expect(container.textContent).toContain('The saved booth trace shows a long pause, a quick assist, and a solid recovery.');
     expect(container.textContent).not.toContain('Assist live on this beat.');

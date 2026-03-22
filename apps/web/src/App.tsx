@@ -458,6 +458,7 @@ function App() {
     useState<BoothSessionReview | null>(null);
   const [selectedReviewSessionId, setSelectedReviewSessionId] = useState<string | null>(null);
   const [isLoadingReview, setIsLoadingReview] = useState(false);
+  const [isFinalizingSession, setIsFinalizingSession] = useState(false);
   const [appView, setAppView] = useState<AppView>('live');
   const [activeBoothSessionId, setActiveBoothSessionId] = useState<string | null>(null);
   const [loadedClipName, setLoadedClipName] = useState('');
@@ -775,19 +776,23 @@ function App() {
       return;
     }
 
+    setIsFinalizingSession(true);
+    setBoothError(null);
+
     try {
       const response = await finishBoothSession(activeBoothSessionId);
-      setLatestCompletedSession((previous) => previous);
       setLatestCompletedSessionReview(null);
       setSelectedReviewSessionId(response.session.id);
-      setAppView('reviews');
+      setLatestCompletedSession(null);
 
       try {
         const completedSession = await fetchBoothSession(response.session.id);
         setLatestCompletedSession(completedSession.session);
       } catch (_error) {
-        setBoothError('The live session was saved, but the stored review could not be loaded yet.');
+        setBoothError('The live session was saved, but the saved session detail is not ready yet.');
       }
+
+      setAppView('reviews');
 
       try {
         const review = await fetchBoothSessionReview(response.session.id);
@@ -804,6 +809,7 @@ function App() {
     } catch (_error) {
       setBoothError('The live session could not be finalized in the saved session store.');
     } finally {
+      setIsFinalizingSession(false);
       setActiveBoothSessionId(null);
       lastPersistedSampleAtRef.current = -1;
     }
@@ -1566,8 +1572,13 @@ function App() {
     boothSignal.unfinishedPhrase ? 'unfinished' : null,
     boothSignal.wakePhraseDetected ? 'line' : null,
   ].filter(Boolean) as string[];
-  const primaryActionLabel = isBroadcastLive ? 'End live session' : 'Go live';
-  const primaryActionDisabled = !isBroadcastLive && (!isBroadcastReady || isUpdatingControls);
+  const primaryActionLabel = isFinalizingSession
+    ? 'Saving session...'
+    : isBroadcastLive
+      ? 'End live session'
+      : 'Go live';
+  const primaryActionDisabled =
+    isFinalizingSession || (!isBroadcastLive && (!isBroadcastReady || isUpdatingControls));
   const guidanceSummary = isAssistWeaning
     ? 'You are back in rhythm. The cue is fading out.'
     : shouldSurfaceAssist
@@ -1603,7 +1614,39 @@ function App() {
           coachingNotes: [postSessionReview.learningNotes[2] ?? 'Review the saved session before the next run.'],
         }
       : null);
-  const sessionWorkspaceInsights = deriveSessionWorkspaceInsights(recentBoothSessions);
+  const completedReviewSessions = useMemo(
+    () =>
+      recentBoothSessions
+        .filter((session) => session.status === 'completed')
+        .sort((left, right) => Date.parse(right.startedAt) - Date.parse(left.startedAt)),
+    [recentBoothSessions],
+  );
+  const activeSavedSessions = useMemo(
+    () => recentBoothSessions.filter((session) => session.status === 'active'),
+    [recentBoothSessions],
+  );
+  const completedReviewAnalytics = useMemo(() => {
+    if (completedReviewSessions.length === 0) {
+      return {
+        totalSessions: 0,
+        totalPrompts: 0,
+        averagePeakHesitation: 0,
+        averageLongestPauseMs: 0,
+      };
+    }
+
+    return {
+      totalSessions: completedReviewSessions.length,
+      totalPrompts: completedReviewSessions.reduce((total, session) => total + session.assistCount, 0),
+      averagePeakHesitation:
+        completedReviewSessions.reduce((total, session) => total + session.maxHesitationScore, 0) /
+        completedReviewSessions.length,
+      averageLongestPauseMs:
+        completedReviewSessions.reduce((total, session) => total + session.longestPauseMs, 0) /
+        completedReviewSessions.length,
+    };
+  }, [completedReviewSessions]);
+  const sessionWorkspaceInsights = deriveSessionWorkspaceInsights(completedReviewSessions);
   const reviewStatusLabel = isLoadingReview
     ? 'Analyzing'
     : latestCompletedSessionReview
@@ -2152,7 +2195,9 @@ function App() {
               {primaryActionLabel}
             </button>
             <p className="stage-primary-copy">
-              {loadedClipUrl
+              {isFinalizingSession
+                ? 'Saving the live session and preparing the review workspace.'
+                : loadedClipUrl
                 ? isBroadcastLive
                   ? 'You are live. AndOne will only step in when delivery slips.'
                   : 'Start the session when you are ready to call the action.'
@@ -2303,10 +2348,20 @@ function App() {
             </article>
 
             <div className="inline-actions inline-actions--compact">
-              <button type="button" className="text-button" onClick={() => void resetBroadcast()}>
+              <button
+                type="button"
+                className="text-button"
+                disabled={isFinalizingSession}
+                onClick={() => void resetBroadcast()}
+              >
                 Reset live session
               </button>
-              <button type="button" className="text-button" onClick={clearBoothTranscript}>
+              <button
+                type="button"
+                className="text-button"
+                disabled={isFinalizingSession}
+                onClick={clearBoothTranscript}
+              >
                 Clear transcript
               </button>
             </div>
@@ -2319,28 +2374,31 @@ function App() {
           <section className="panel">
             <div className="panel-header">
               <div>
-                <p className="panel-kicker">Session archive</p>
-                <h2>Past live runs</h2>
+                <p className="panel-kicker">Saved sessions</p>
+                <h2>Completed runs</h2>
+                <p className="panel-copy">
+                  Real sessions saved in the backend. Open or abandoned live runs stay out of this review list.
+                </p>
               </div>
-              <span className="panel-tag">{recentBoothSessions.length} runs</span>
+              <span className="panel-tag">{completedReviewSessions.length} runs</span>
             </div>
 
             <div className="commentary-metadata commentary-metadata--review">
               <div>
                 <p className="control-label">Runs</p>
-                <strong>{boothAnalytics.totalSessions}</strong>
+                <strong>{completedReviewAnalytics.totalSessions}</strong>
               </div>
               <div>
                 <p className="control-label">Completed</p>
-                <strong>{boothAnalytics.completedSessions}</strong>
+                <strong>{completedReviewSessions.length}</strong>
               </div>
               <div>
                 <p className="control-label">Avg hesitation</p>
-                <strong>{formatPercent(boothAnalytics.averageMaxHesitationScore)}</strong>
+                <strong>{formatPercent(completedReviewAnalytics.averagePeakHesitation)}</strong>
               </div>
               <div>
                 <p className="control-label">Prompts</p>
-                <strong>{boothAnalytics.totalAssistCount}</strong>
+                <strong>{completedReviewAnalytics.totalPrompts}</strong>
               </div>
             </div>
 
@@ -2364,8 +2422,14 @@ function App() {
             </div>
 
             <div className="timeline-list">
-              {recentBoothSessions.length > 0 ? (
-                recentBoothSessions.map((session) => (
+              {activeSavedSessions.length > 0 ? (
+                <div className="inline-note">
+                  {activeSavedSessions.length} active run{activeSavedSessions.length === 1 ? '' : 's'} are still open in the saved session store and hidden from this review list.
+                </div>
+              ) : null}
+
+              {completedReviewSessions.length > 0 ? (
+                completedReviewSessions.map((session) => (
                   <article
                     className={`timeline-item ${selectedReviewSessionId === session.id ? 'timeline-item--hot' : ''}`}
                     key={session.id}
@@ -2384,30 +2448,35 @@ function App() {
                       className="text-button"
                       onClick={() => void loadSessionReview(session.id)}
                     >
-                      {selectedReviewSessionId === session.id ? 'Reload review' : 'Open review'}
+                      {selectedReviewSessionId === session.id ? 'Reload review' : 'Open session'}
                     </button>
                   </article>
                 ))
               ) : (
                 <p className="transcript-line transcript-line--muted">
-                  End a live session to save the session trace and open its review here.
+                  End a live session to save a completed run here.
                 </p>
               )}
             </div>
           </section>
 
-          <section className="panel">
+          <section className="panel review-panel">
             <div className="panel-header">
               <div>
-                <p className="panel-kicker">Review</p>
+                <p className="panel-kicker">Session review</p>
                 <h2>{latestCompletedSession?.clipName ?? 'No session selected'}</h2>
+                <p className="panel-copy">
+                  {latestCompletedSession
+                    ? 'Real data from the saved session record and AI review path.'
+                    : 'Choose a completed run to inspect its saved signals and review.'}
+                </p>
               </div>
               <span className="panel-tag">{reviewStatusLabel}</span>
             </div>
 
             {latestCompletedSession ? (
               <>
-                <div className="commentary-metadata commentary-metadata--review">
+                <div className="booth-summary booth-summary--review">
                   <div>
                     <p className="control-label">Peak hesitation</p>
                     <strong>{formatPercent(latestCompletedSession.maxHesitationScore)}</strong>
@@ -2426,7 +2495,7 @@ function App() {
                   </div>
                 </div>
 
-                <div className="inline-actions inline-actions--compact">
+                <div className="inline-actions inline-actions--compact review-actions">
                   <button
                     type="button"
                     className="text-button"
@@ -2444,27 +2513,38 @@ function App() {
                 </div>
 
                 {resolvedPostSessionReview ? (
-                  <>
-                    <p className="field-copy field-copy--tight">{resolvedPostSessionReview.summary}</p>
+                  <div className="review-stack">
+                    <div className="review-lead">
+                      <p className="field-copy field-copy--tight">{resolvedPostSessionReview.summary}</p>
+                    </div>
 
-                    <div className="reason-list">
+                    <div className="review-section">
+                      <p className="memory-title">What went well</p>
+                      <div className="reason-list">
                       {resolvedPostSessionReview.strengths.map((note) => (
                         <p key={`strength-${note}`}>{note}</p>
                       ))}
+                      </div>
                     </div>
 
-                    <div className="reason-list">
+                    <div className="review-section">
+                      <p className="memory-title">Watchouts</p>
+                      <div className="reason-list">
                       {resolvedPostSessionReview.watchouts.map((note) => (
                         <p key={`watchout-${note}`}>{note}</p>
                       ))}
+                      </div>
                     </div>
 
-                    <div className="reason-list">
+                    <div className="review-section">
+                      <p className="memory-title">Coaching notes</p>
+                      <div className="reason-list">
                       {resolvedPostSessionReview.coachingNotes.map((note) => (
                         <p key={`coach-${note}`}>{note}</p>
                       ))}
                     </div>
-                  </>
+                    </div>
+                  </div>
                 ) : (
                   <div className="reason-list">
                     <p>
