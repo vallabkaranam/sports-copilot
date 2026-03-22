@@ -231,8 +231,9 @@ server.post('/booth/interpret', async (request, reply): Promise<BoothInterpretat
   }
 
   const profile = parsed.data.profile ?? (await sessionStore.getSpeakerProfile());
-
-  return interpretBoothWithOpenAI(parsed.data.features, profile);
+  const result = await interpretBoothWithOpenAI(parsed.data.features, profile);
+  console.log('[interpret] state:', result.state, '| hesitation:', result.hesitationScore.toFixed(2), '| shouldSurface:', result.shouldSurfaceAssist);
+  return result;
 });
 
 server.post('/booth/generate-cue', async (request, reply): Promise<GenerateBoothCueResponse | void> => {
@@ -257,6 +258,10 @@ server.post('/booth/generate-cue', async (request, reply): Promise<GenerateBooth
     preMatchSummary: parsed.data.preMatchSummary,
     expectedTopics: parsed.data.expectedTopics,
     recentCueTexts: parsed.data.recentCueTexts,
+    liveMatch: parsed.data.liveMatch,
+    visionCues: parsed.data.visionCues,
+    conversationHistory: parsed.data.conversationHistory,
+    socialPosts: parsed.data.socialPosts,
   });
 });
 
@@ -281,7 +286,8 @@ server.post('/booth/realtime-connect', async (request, reply) => {
   try {
     const answerSdp = await createRealtimeBoothSdpAnswer(offerSdp);
     reply.header('Content-Type', 'application/sdp').send(answerSdp);
-  } catch (_error) {
+  } catch (error) {
+    console.error('[realtime-connect] failed:', error instanceof Error ? error.message : String(error));
     reply.status(502).send({ error: 'Failed to create realtime booth session' });
   }
 });

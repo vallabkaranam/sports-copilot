@@ -8,7 +8,7 @@ import {
 
 const MAX_RECENT_EVENTS = 8;
 const MAX_SURFACED_ASSISTS = 5;
-const MAX_RECENT_COMMENTARY = 6;
+const MAX_RECENT_COMMENTARY = 40; // ~2 minutes of commentary at average speech rate
 
 export interface SessionMemoryTracker {
   rememberAssist: (assist: AssistCard) => void;

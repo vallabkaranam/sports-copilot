@@ -195,8 +195,10 @@ async function run() {
   const narratives: NarrativeFixture[] = [];
   const socialPosts: SocialPost[] = [];
   const transcript: TranscriptEntry[] = [];
-  const visionFrames: VisionFrame[] = [];
+  const visionFramesPath = path.resolve(process.cwd(), '../../data/demo_match/vision_frames.json');
+  const visionFrames: VisionFrame[] = await loadFixture<VisionFrame[]>(visionFramesPath).catch(() => []);
   const visionCues: VisionCue[] = ingestVisionFrames(visionFrames);
+  console.log(`[worker] Loaded ${visionFrames.length} vision frames → ${visionCues.length} vision cues`);
   const sessionMemory = createSessionMemoryTracker();
   let lastKnownControls = createDefaultReplayControlState();
   let lastHandledRestartToken = 0;
@@ -303,8 +305,8 @@ async function run() {
         try {
           const blueskyPosts = await ingestBlueskySocialPosts(
             {
-              homeTeam: snapshot.liveMatch.homeTeam.name,
-              awayTeam: snapshot.liveMatch.awayTeam.name,
+              homeTeam: snapshot.liveMatch.homeTeam.name || (process.env.BLUESKY_FALLBACK_HOME_TEAM ?? ''),
+              awayTeam: snapshot.liveMatch.awayTeam.name || (process.env.BLUESKY_FALLBACK_AWAY_TEAM ?? ''),
               clockMs,
             },
             blueskyCache,

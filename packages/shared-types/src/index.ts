@@ -799,6 +799,10 @@ export const GenerateBoothCueInputSchema = z.object({
   preMatchSummary: z.string().optional(),
   expectedTopics: z.array(z.string()).optional(),
   recentCueTexts: z.array(z.string()).optional(),
+  liveMatch: LiveMatchStateSchema.optional(),
+  visionCues: z.array(VisionCueSchema).optional(),
+  conversationHistory: z.array(TranscriptEntrySchema).optional(),
+  socialPosts: z.array(SocialPostSchema).optional(),
 });
 export type GenerateBoothCueInput = z.infer<typeof GenerateBoothCueInputSchema>;
 

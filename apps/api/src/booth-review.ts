@@ -5,7 +5,7 @@ import {
 } from '@sports-copilot/shared-types';
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/responses';
-const OPENAI_REVIEW_MODEL = 'gpt-5.4';
+const OPENAI_REVIEW_MODEL = 'gpt-4o';
 
 function extractResponseText(payload: unknown) {
   const candidate = payload as {

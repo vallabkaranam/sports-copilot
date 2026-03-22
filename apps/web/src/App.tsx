@@ -916,6 +916,29 @@ function App() {
       console.debug('booth-transcription', { stage: 'realtime-start' });
     }
 
+    eventsChannel.addEventListener('open', () => {
+      // Configure transcription settings after the data channel is open.
+      eventsChannel.send(JSON.stringify({
+        type: 'session.update',
+        session: {
+          type: 'realtime',
+          input_audio_transcription: {
+            model: 'whisper-1',
+          },
+          turn_detection: {
+            type: 'server_vad',
+            threshold: 0.35,
+            prefix_padding_ms: 300,
+            silence_duration_ms: 450,
+            create_response: false,
+          },
+        },
+      }));
+      if (import.meta.env.DEV) {
+        console.debug('booth-transcription', { stage: 'realtime-session-configured' });
+      }
+    });
+
     eventsChannel.addEventListener('message', (event) => {
       try {
         const payload = JSON.parse(String(event.data)) as {
@@ -925,6 +948,8 @@ function App() {
           transcript?: string;
         };
         const now = Date.now();
+
+        console.log('[realtime-event]', payload.type, payload);
 
         if (payload.type === 'input_audio_buffer.speech_started') {
           setLastVoiceActivityAtMs(now);
@@ -1786,26 +1811,18 @@ function App() {
   });
 
   useEffect(() => {
-    if (!import.meta.env.DEV || !hasStartedBroadcast || !shouldSurfaceAssist) {
+    if (!hasStartedBroadcast || !shouldSurfaceAssist) {
       return;
     }
 
-    console.debug('booth-assist-visible', {
-      source: generatedCue?.assist.text === activeAssist.text ? 'model' : 'local',
-      query: boothAssistQuery,
-      activeAssist: activeAssist.text,
-      topFactSources: rankedBoothAssistFacts.slice(0, 3).map(({ fact }) => fact.source),
-      hasRealFacts: boothAssistFacts.length > 0,
-      hasTranscriptContext: boothHasTranscriptContext,
-    });
+    const source = generatedCue?.assist.text === activeAssist.text ? 'model' : 'local';
+    console.log(`[booth-assist-visible] source=${source} | interpret=${boothInterpretation?.state ?? 'none'} | text="${activeAssist.text}"`);
   }, [
     activeAssist.text,
-    boothAssistFacts.length,
-    boothAssistQuery,
-    boothHasTranscriptContext,
+    activeAssist.text,
+    boothInterpretation?.state,
     generatedCue?.assist.text,
     hasStartedBroadcast,
-    rankedBoothAssistFacts,
     shouldSurfaceAssist,
   ]);
 
@@ -2128,7 +2145,7 @@ function App() {
           setBoothInterpretation(null);
           setBoothError('Live booth interpretation failed.');
         });
-    }, 900);
+    }, 150);
 
     return () => {
       window.clearTimeout(timeoutId);
@@ -2167,6 +2184,7 @@ function App() {
       !boothHasLiveInput ||
       !isCueEndpointAvailable ||
       !liveBoothShouldSurfaceAssist ||
+      !boothInterpretation?.shouldSurfaceAssist ||
       boothInterpretation?.state === 'weaning-off'
     ) {
       if (generatedCue) {
@@ -2213,6 +2231,10 @@ function App() {
         preMatchSummary: preMatchCueSummary,
         expectedTopics: currentBoothFeatures.expectedTopics,
         recentCueTexts,
+        liveMatch: worldState.liveMatch,
+        visionCues: worldState.liveSignals.vision.slice(-5),
+        conversationHistory: boothTranscript.slice(-40),
+        socialPosts: worldState.liveSignals.social.slice(-6),
       })
         .then((nextCue) => {
           cueRetryBlockedUntilRef.current = 0;
@@ -2472,7 +2494,14 @@ function App() {
                 }`}
                 key={replayToastSignature}
               >
-                <p className="assist-type">Prompt</p>
+                <p className="assist-type">
+                  Prompt
+                  {import.meta.env.DEV && (
+                    <span style={{ marginLeft: '8px', fontSize: '10px', opacity: 0.6, fontFamily: 'monospace' }}>
+                      [{generatedCue?.assist.text === activeAssist.text ? 'AI' : 'local'}]
+                    </span>
+                  )}
+                </p>
                 <h3>{activeAssist.text}</h3>
                 <p>{activeAssistSupportCopy}</p>
               </article>

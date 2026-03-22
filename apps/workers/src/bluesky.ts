@@ -173,14 +173,18 @@ export async function ingestBlueskySocialPosts(
   }
 
   for (const query of queries) {
-    const payload = await searchBlueskyPosts(
-      query,
-      config.limitPerQuery ?? DEFAULT_QUERY_LIMIT,
-      fetchImpl,
-      token,
-    );
-    console.log(`[bluesky] query "${query}" → ${(payload.posts ?? []).length} posts`);
-    normalizeBlueskyPosts(payload, config.clockMs, cache);
+    try {
+      const payload = await searchBlueskyPosts(
+        query,
+        config.limitPerQuery ?? DEFAULT_QUERY_LIMIT,
+        fetchImpl,
+        token,
+      );
+      console.log(`[bluesky] query "${query}" → ${(payload.posts ?? []).length} posts`);
+      normalizeBlueskyPosts(payload, config.clockMs, cache);
+    } catch (error) {
+      console.warn(`[bluesky] query "${query}" failed:`, error instanceof Error ? error.message : String(error));
+    }
   }
 
   return Object.values(cache).sort((left, right) => left.timestamp - right.timestamp);

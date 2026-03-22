@@ -27,6 +27,7 @@ export async function transcribeBoothAudioWithOpenAI(
 ): Promise<TranscribeBoothAudioResponse> {
   const audioBuffer = Buffer.from(audioBase64, 'base64');
   const fileExtension = inferAudioExtension(mimeType);
+  console.log('[transcribe] mimeType:', mimeType, '| extension:', fileExtension, '| buffer bytes:', audioBuffer.length);
   const form = new FormData();
   const file = new File([audioBuffer], `booth.${fileExtension}`, { type: mimeType });
 
