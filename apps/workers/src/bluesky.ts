@@ -79,6 +79,16 @@ function normalizeQueryToken(text: string) {
   return normalizeText(text).replace(/\s+/g, ' ').trim();
 }
 
+function normalizeForMatch(text: string) {
+  return text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function tokenize(text: string) {
+  return normalizeForMatch(text)
+    .split(' ')
+    .filter((token) => token.length > 1);
+}
+
 function inferSentiment(text: string) {
   const normalized = text.toLowerCase();
 
@@ -91,6 +101,110 @@ function inferSentiment(text: string) {
   }
 
   return 'neutral';
+}
+
+const FOOTBALL_CONTEXT_TOKENS = new Set([
+  'match',
+  'game',
+  'goal',
+  'goals',
+  'shot',
+  'shots',
+  'xg',
+  'possession',
+  'corner',
+  'corners',
+  'penalty',
+  'penalties',
+  'var',
+  'yellow',
+  'red',
+  'card',
+  'cards',
+  'half',
+  'halftime',
+  'fulltime',
+  'kickoff',
+  'fixture',
+  'league',
+  'cup',
+  'win',
+  'wins',
+  'winner',
+  'lose',
+  'loss',
+  'draw',
+  'fans',
+  'supporters',
+  'manager',
+  'coach',
+  'striker',
+  'midfielder',
+  'defender',
+  'keeper',
+  'goalkeeper',
+  'stadium',
+  'ref',
+  'referee',
+]);
+
+function buildTeamAliases(teamName: string) {
+  const normalized = normalizeForMatch(teamName);
+  const compact = normalized.replace(/\b(fc|afc|cf|sc|ac)\b/g, '').replace(/\s+/g, ' ').trim();
+  return [...new Set([normalized, compact].filter((value) => value.length > 0))];
+}
+
+function mentionsAnyAlias(text: string, aliases: string[]) {
+  return aliases.some((alias) => alias.length > 0 && text.includes(alias));
+}
+
+function countFootballTokens(tokens: string[]) {
+  return tokens.filter((token) => FOOTBALL_CONTEXT_TOKENS.has(token)).length;
+}
+
+function scoreMatchRelevance(text: string, homeTeam: string, awayTeam: string) {
+  const normalized = normalizeForMatch(text);
+  const tokens = tokenize(text);
+  const mentionsHome = mentionsAnyAlias(normalized, buildTeamAliases(homeTeam));
+  const mentionsAway = mentionsAnyAlias(normalized, buildTeamAliases(awayTeam));
+  const footballTokenCount = countFootballTokens(tokens);
+
+  let score = 0;
+  if (mentionsHome) {
+    score += 1.2;
+  }
+  if (mentionsAway) {
+    score += 1.2;
+  }
+  if (mentionsHome && mentionsAway) {
+    score += 1.4;
+  }
+  score += Math.min(footballTokenCount, 3) * 0.5;
+
+  if (/\b(vs|versus|against)\b/.test(normalized) && (mentionsHome || mentionsAway)) {
+    score += 0.8;
+  }
+
+  return {
+    score,
+    mentionsHome,
+    mentionsAway,
+    footballTokenCount,
+  };
+}
+
+function isRelevantMatchPost(text: string, homeTeam: string, awayTeam: string) {
+  const relevance = scoreMatchRelevance(text, homeTeam, awayTeam);
+
+  if (relevance.mentionsHome && relevance.mentionsAway) {
+    return true;
+  }
+
+  if ((relevance.mentionsHome || relevance.mentionsAway) && relevance.footballTokenCount >= 1) {
+    return true;
+  }
+
+  return relevance.score >= 2.2;
 }
 
 export function buildQueries(homeTeam: string, awayTeam: string) {
@@ -135,6 +249,8 @@ function normalizeBlueskyPosts(
   payload: BlueskySearchResponse,
   clockMs: number,
   cache: BlueskyPostCache,
+  homeTeam: string,
+  awayTeam: string,
 ) {
   const posts = payload.posts ?? [];
 
@@ -144,6 +260,10 @@ function normalizeBlueskyPosts(
     const text = normalizeText(asString(post.record?.text));
 
     if (!uri || !handle || !text) {
+      continue;
+    }
+
+    if (!isRelevantMatchPost(text, homeTeam, awayTeam)) {
       continue;
     }
 
@@ -180,7 +300,7 @@ export async function ingestBlueskySocialPosts(
       token,
     );
     console.log(`[bluesky] query "${query}" → ${(payload.posts ?? []).length} posts`);
-    normalizeBlueskyPosts(payload, config.clockMs, cache);
+    normalizeBlueskyPosts(payload, config.clockMs, cache, config.homeTeam, config.awayTeam);
   }
 
   return Object.values(cache).sort((left, right) => left.timestamp - right.timestamp);

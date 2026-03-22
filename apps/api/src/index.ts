@@ -126,6 +126,7 @@ let worldState: Partial<WorldState> = {
 };
 
 let controlState: ReplayControlState = createDefaultReplayControlState();
+controlState.activeFixtureId = process.env.SPORTMONKS_FIXTURE_ID;
 
 server.get('/health', async () => {
   return { status: 'ok', matchId: worldState.matchId };
