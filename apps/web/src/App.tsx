@@ -2039,7 +2039,8 @@ function App() {
       <header className="app-header">
         <div className="brand-lockup">
           <div className="brand-mark" aria-hidden="true">
-            AO
+            <span className="brand-mark__dot" />
+            <span className="brand-mark__text">AO</span>
           </div>
           <div className="brand-copy">
             <p className="eyebrow">{BRAND.eyebrow}</p>
@@ -2057,7 +2058,8 @@ function App() {
               className={appView === 'live' ? 'ghost-button ghost-button--active' : 'ghost-button'}
               onClick={() => setAppView('live')}
             >
-              Live
+              <span className="tab-icon" aria-hidden="true">●</span>
+              Live Desk
             </button>
             <button
               type="button"
@@ -2066,7 +2068,8 @@ function App() {
               className={appView === 'reviews' ? 'ghost-button ghost-button--active' : 'ghost-button'}
               onClick={() => setAppView('reviews')}
             >
-              Sessions
+              <span className="tab-icon" aria-hidden="true">▤</span>
+              Session Archive
             </button>
           </div>
           <button
@@ -2074,7 +2077,8 @@ function App() {
             className="ghost-button ghost-button--subtle"
             onClick={() => setShowDetails((current) => !current)}
           >
-            {showDetails ? 'Hide Details' : 'Show Details'}
+            <span className="tab-icon" aria-hidden="true">{showDetails ? '–' : '+'}</span>
+            {showDetails ? 'Hide Context Rack' : 'Show Context Rack'}
           </button>
         </div>
       </header>
@@ -2084,14 +2088,14 @@ function App() {
       {appView === 'live' ? (
         <div className="main-grid">
         <section className="panel replay-panel stage-panel">
-          <div className="panel-header panel-header--stage">
-            <div>
-              <p className="panel-kicker">Live desk</p>
-              <h2>{feedHeading}</h2>
-              <p className="panel-copy">Keep the feed central. AndOne stays quiet until the call needs a hand.</p>
-            </div>
-            <div className="panel-chip-row">
-              <span className="panel-tag">{loadedClipUrl ? `${clipClockLabel} / ${clipDurationLabel}` : 'No feed live'}</span>
+            <div className="panel-header panel-header--stage">
+              <div>
+                <p className="panel-kicker"><span className="panel-kicker__icon" aria-hidden="true">🎛</span>Live desk</p>
+                <h2>{feedHeading}</h2>
+                <p className="panel-copy">Program feed front and center. AndOne only comes up when the call actually needs a line.</p>
+              </div>
+              <div className="panel-chip-row">
+                <span className="panel-tag">{loadedClipUrl ? `${clipClockLabel} / ${clipDurationLabel}` : 'No feed live'}</span>
             </div>
           </div>
 
@@ -2278,9 +2282,9 @@ function App() {
           <section className={`panel control-panel control-panel--${coachingTone.tone}`}>
             <div className="panel-header panel-header--compact">
               <div>
-                <p className="panel-kicker">Live session</p>
+                <p className="panel-kicker"><span className="panel-kicker__icon" aria-hidden="true">🎙</span>Live session</p>
                 <h2>Booth rail</h2>
-                <p className="panel-copy">Everything the commentator needs, without pushing extra reading into the call.</p>
+                <p className="panel-copy">One clean operator rail. Monitor delivery, prompt state, and only the cues that matter.</p>
               </div>
             </div>
 
@@ -2374,7 +2378,7 @@ function App() {
           <section className="panel">
             <div className="panel-header">
               <div>
-                <p className="panel-kicker">Saved sessions</p>
+                <p className="panel-kicker"><span className="panel-kicker__icon" aria-hidden="true">🗂</span>Saved sessions</p>
                 <h2>Completed runs</h2>
                 <p className="panel-copy">
                   Real sessions saved in the backend. Open or abandoned live runs stay out of this review list.
@@ -2463,7 +2467,7 @@ function App() {
           <section className="panel review-panel">
             <div className="panel-header">
               <div>
-                <p className="panel-kicker">Session review</p>
+                <p className="panel-kicker"><span className="panel-kicker__icon" aria-hidden="true">📋</span>Session review</p>
                 <h2>{latestCompletedSession?.clipName ?? 'No session selected'}</h2>
                 <p className="panel-copy">
                   {latestCompletedSession
@@ -2569,7 +2573,7 @@ function App() {
         <section className="panel">
           <div className="panel-header">
             <div>
-              <p className="panel-kicker">Context Rack</p>
+              <p className="panel-kicker"><span className="panel-kicker__icon" aria-hidden="true">🛰</span>Context Rack</p>
               <h2>Prematch and retrieval context</h2>
             </div>
             <span className="panel-tag">{worldState.preMatch.loadStatus}</span>

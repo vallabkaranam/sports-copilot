@@ -769,7 +769,7 @@ describe('App dashboard', () => {
 
   async function showDetailsPanel() {
     const showDetailsButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Show Details'),
+      button.textContent?.includes('Show Context Rack'),
     );
 
     await act(async () => {
@@ -786,7 +786,7 @@ describe('App dashboard', () => {
     expect(container.textContent).toContain('Channel 1');
     expect(container.textContent).toContain('Channel 2');
     expect(container.textContent).toContain('Booth rail');
-    expect(container.textContent).toContain('Show Details');
+    expect(container.textContent).toContain('Show Context Rack');
     expect(container.textContent).toContain('Channel 1 selected');
     expect(container.textContent).toContain('Barca preset');
     expect(container.textContent).not.toContain('Pre-match brief');
@@ -1146,7 +1146,7 @@ describe('App dashboard', () => {
     });
 
     expect(container.textContent).not.toContain('Courtois keeps Madrid alive with an enormous reflex stop.');
-    expect(container.textContent).toContain('Show Details');
+    expect(container.textContent).toContain('Show Context Rack');
   });
 
 });
