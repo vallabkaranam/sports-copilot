@@ -252,6 +252,7 @@ server.post('/booth/generate-cue', async (request, reply): Promise<GenerateBooth
       description: event.description,
       highSalience: event.highSalience,
     })),
+    liveSignals: parsed.data.liveSignals,
     clipName: parsed.data.clipName,
     contextSummary: parsed.data.contextSummary,
     preMatchSummary: parsed.data.preMatchSummary,

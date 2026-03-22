@@ -735,6 +735,39 @@
   max-width: none;
 }
 
+.assist-trace {
+  margin-top: 10px;
+  border-top: 1px solid rgba(45, 35, 29, 0.08);
+  padding-top: 10px;
+}
+
+.assist-trace summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--accent-deep);
+}
+
+.assist-trace summary::-webkit-details-marker {
+  display: none;
+}
+
+.assist-trace summary span {
+  color: var(--copy-soft);
+  font-weight: 500;
+}
+
+.assist-trace__body {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .replay-tags,
 .assist-meta,
 .source-chip-row,

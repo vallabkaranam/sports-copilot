@@ -794,6 +794,12 @@ export const GenerateBoothCueInputSchema = z.object({
   retrieval: RetrievalStateSchema,
   contextBundle: ContextBundleSchema.optional(),
   recentEvents: z.array(GameEventSchema).optional(),
+  liveSignals: z
+    .object({
+      social: z.array(SocialPostSchema),
+      vision: z.array(VisionCueSchema),
+    })
+    .optional(),
   clipName: z.string().optional(),
   contextSummary: z.string().optional(),
   preMatchSummary: z.string().optional(),

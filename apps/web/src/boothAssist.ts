@@ -1,6 +1,7 @@
 import {
   AssistCard,
   ContextBundle,
+  VisionCue,
   LiveMatchState,
   PreMatchState,
   RetrievedFact,
@@ -478,6 +479,7 @@ export function buildBoothAssistFacts(params: {
   preMatch?: PreMatchState;
   liveMatch?: LiveMatchState;
   socialPosts?: SocialPost[];
+  visionCues?: VisionCue[];
   recentEvents?: GameEvent[];
 }): RetrievedFact[] {
   const facts = [...params.retrieval.supportingFacts];
@@ -609,6 +611,19 @@ export function buildBoothAssistFacts(params: {
         source: `social:${post.handle}`,
         timestamp: post.timestamp,
         relevance: 0.74,
+      }),
+    );
+  });
+
+  (params.visionCues ?? []).slice(-4).forEach((cue, index) => {
+    facts.push(
+      createSyntheticFact({
+        id: `booth-vision-${cue.timestamp}-${index}`,
+        tier: 'live',
+        text: `Vision cue: ${cue.label}`,
+        source: `vision:${cue.tag}`,
+        timestamp: cue.timestamp,
+        relevance: 0.66,
       }),
     );
   });
@@ -754,6 +769,7 @@ export function buildBoothAssist(params: {
   preMatch?: PreMatchState;
   liveMatch?: LiveMatchState;
   socialPosts?: SocialPost[];
+  visionCues?: VisionCue[];
   recentEvents?: GameEvent[];
 }): AssistCard {
   const {
@@ -766,6 +782,7 @@ export function buildBoothAssist(params: {
     preMatch,
     liveMatch,
     socialPosts = [],
+    visionCues = [],
     recentEvents = [],
   } = params;
 
@@ -786,6 +803,7 @@ export function buildBoothAssist(params: {
     preMatch,
     liveMatch,
     socialPosts,
+    visionCues,
     recentEvents,
   });
   const rankedFacts = rankBoothAssistFacts({

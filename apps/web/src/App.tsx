@@ -1515,6 +1515,7 @@ function App() {
     preMatch: worldState.preMatch,
     liveMatch: worldState.liveMatch,
     socialPosts: worldState.liveSignals.social,
+    visionCues: worldState.liveSignals.vision,
     recentEvents: worldState.recentEvents,
   });
   const boothAssist = buildBoothAssist({
@@ -1527,6 +1528,7 @@ function App() {
     preMatch: worldState.preMatch,
     liveMatch: worldState.liveMatch,
     socialPosts: worldState.liveSignals.social,
+    visionCues: worldState.liveSignals.vision,
     recentEvents: worldState.recentEvents,
   });
   const boothAssistQuery = getBoothAssistQuery({
@@ -1743,6 +1745,22 @@ function App() {
     ? 'Confidence is returning. AndOne is backing off.'
     : activeAssist.whyNow;
   const transcriptWindow = boothTranscript.slice(-4);
+  const assistSourceSummary = activeAssist.sourceChips
+    .slice(0, 4)
+    .map((chip) => chip.source.replace(/^[^:]+:/, ''))
+    .join(' · ');
+  const assistTraceLines = [
+    `Hesitation ${boothHesitationPercent}${boothSignal.wordsPerMinute > 0 ? ` · ${Math.round(boothSignal.wordsPerMinute)} WPM` : ''}`,
+    worldState.recentEvents[worldState.recentEvents.length - 1]
+      ? `Live event · ${worldState.recentEvents[worldState.recentEvents.length - 1]?.description}`
+      : null,
+    worldState.liveSignals.social[worldState.liveSignals.social.length - 1]
+      ? `Social pulse · ${worldState.liveSignals.social[worldState.liveSignals.social.length - 1]?.text}`
+      : null,
+    worldState.liveSignals.vision[worldState.liveSignals.vision.length - 1]
+      ? `Vision cue · ${worldState.liveSignals.vision[worldState.liveSignals.vision.length - 1]?.label}`
+      : null,
+  ].filter((value): value is string => Boolean(value));
   const railSystemNote = isAssistWeaning
     ? 'Recovery is strong, so the cue is shrinking and handing the call back to you.'
     : shouldSurfaceAssist
@@ -2225,6 +2243,7 @@ function App() {
         },
         contextBundle: worldState.contextBundle,
         recentEvents: worldState.recentEvents.slice(-4),
+        liveSignals: worldState.liveSignals,
         clipName: loadedClipName,
         contextSummary: currentBoothFeatures.contextSummary,
         preMatchSummary: preMatchCueSummary,
@@ -2493,6 +2512,28 @@ function App() {
                 <p className="assist-type">Prompt</p>
                 <h3>{activeAssist.text}</h3>
                 <p>{activeAssistSupportCopy}</p>
+                {activeAssist.sourceChips.length > 0 ? (
+                  <details className="assist-trace">
+                    <summary>
+                      Why this cue
+                      {assistSourceSummary ? <span>{assistSourceSummary}</span> : null}
+                    </summary>
+                    <div className="assist-trace__body">
+                      <div className="source-chip-row">
+                        {activeAssist.sourceChips.map((chip) => (
+                          <span className="source-chip" key={chip.id}>
+                            {chip.label}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="reason-list">
+                        {assistTraceLines.map((line) => (
+                          <p key={line}>{line}</p>
+                        ))}
+                      </div>
+                    </div>
+                  </details>
+                ) : null}
               </article>
             ) : null}
 

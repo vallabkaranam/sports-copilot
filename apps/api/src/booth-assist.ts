@@ -62,6 +62,10 @@ function buildPrompt(params: {
   recentCueTexts?: string[];
   excludedCueTexts?: string[];
   contextBundle?: ContextBundle;
+  liveSignals?: {
+    social: Array<{ timestamp: number; handle: string; text: string; sentiment: string }>;
+    vision: Array<{ timestamp: number; tag: string; label: string }>;
+  };
   retrievedFacts: RetrievedFact[];
   recentEvents?: Array<{ matchTime: string; description: string; highSalience: boolean }>;
 }) {
@@ -75,6 +79,7 @@ function buildPrompt(params: {
     recentCueTexts = [],
     excludedCueTexts = [],
     contextBundle,
+    liveSignals,
     retrievedFacts,
     recentEvents = [],
   } = params;
@@ -106,6 +111,7 @@ function buildPrompt(params: {
       recentCueTexts,
       excludedCueTexts,
       contextBundle,
+      liveSignals,
       features,
       interpretation,
       recentEvents,
@@ -149,6 +155,10 @@ export async function generateBoothCueWithOpenAI(params: {
   recentCueTexts?: string[];
   excludedCueTexts?: string[];
   contextBundle?: ContextBundle;
+  liveSignals?: {
+    social: Array<{ timestamp: number; handle: string; text: string; sentiment: string }>;
+    vision: Array<{ timestamp: number; tag: string; label: string }>;
+  };
 }): Promise<GenerateBoothCueResponse> {
   const retrievedFacts = params.retrievalFacts.slice(0, 8);
   const model = selectAssistModel({
@@ -177,6 +187,7 @@ export async function generateBoothCueWithOpenAI(params: {
         recentCueTexts: params.recentCueTexts,
         excludedCueTexts: params.excludedCueTexts,
         contextBundle: params.contextBundle,
+        liveSignals: params.liveSignals,
         retrievedFacts,
         recentEvents: params.recentEvents,
       }),
