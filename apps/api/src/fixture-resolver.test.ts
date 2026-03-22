@@ -91,7 +91,7 @@ describe('fixture resolver ranking', () => {
     process.env.OPENAI_API_KEY = 'test-key';
 
     const resolved = await resolveFixtureFromScreenshot({
-      clipName: 'barca preset',
+      clipName: 'stadium screengrab 01',
       sportmonksApiToken: 'sportmonks-test',
     });
 
@@ -99,5 +99,39 @@ describe('fixture resolver ranking', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(String(fetchMock.mock.calls[1]?.[0])).toContain('participantSearch%3ABarcelona');
     expect(String(fetchMock.mock.calls[2]?.[0])).toContain('participantSearch%3AReal+Madrid');
+  });
+
+  it('returns the known Barca preset fixture without requiring OpenAI or SportMonks', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const resolved = await resolveFixtureFromScreenshot({
+      clipName: 'Barca preset',
+    });
+
+    expect(resolved).toMatchObject({
+      fixtureId: '19427573',
+      homeTeam: 'Barcelona',
+      awayTeam: 'Real Madrid',
+      source: 'preset',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('returns the known Rangers preset fixture without requiring OpenAI or SportMonks', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const resolved = await resolveFixtureFromScreenshot({
+      clipName: 'Rangers preset',
+    });
+
+    expect(resolved).toMatchObject({
+      fixtureId: '19428224',
+      homeTeam: 'Rangers',
+      awayTeam: 'Aberdeen',
+      source: 'preset',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

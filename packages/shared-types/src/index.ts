@@ -929,6 +929,6 @@ export const ResolveFixtureResponseSchema = z.object({
   awayTeam: z.string(),
   competition: z.string().nullable(),
   confidence: z.number().min(0).max(1),
-  source: z.enum(['openai+sportsmonks', 'sportsmonks']),
+  source: z.enum(['openai+sportsmonks', 'sportsmonks', 'preset']),
 });
 export type ResolveFixtureResponse = z.infer<typeof ResolveFixtureResponseSchema>;

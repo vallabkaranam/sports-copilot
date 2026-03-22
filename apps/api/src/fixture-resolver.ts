@@ -11,6 +11,40 @@ interface ExtractedFixtureHints {
   confidence: number;
 }
 
+type PresetFixtureFallback = {
+  fixtureId: string;
+  fixtureName: string;
+  homeTeam: string;
+  awayTeam: string;
+  competition: string | null;
+};
+
+const PRESET_FIXTURE_FALLBACKS: Array<{
+  matchers: string[];
+  fixture: PresetFixtureFallback;
+}> = [
+  {
+    matchers: ['barca preset', 'barcelona preset', 'barca'],
+    fixture: {
+      fixtureId: '19427573',
+      fixtureName: 'Barcelona vs Real Madrid',
+      homeTeam: 'Barcelona',
+      awayTeam: 'Real Madrid',
+      competition: 'La Liga',
+    },
+  },
+  {
+    matchers: ['rangers preset', 'rangers'],
+    fixture: {
+      fixtureId: '19428224',
+      fixtureName: 'Rangers vs Aberdeen',
+      homeTeam: 'Rangers',
+      awayTeam: 'Aberdeen',
+      competition: null,
+    },
+  },
+];
+
 interface SportmonksFixtureSearchResponse {
   data?: Array<{
     id?: number | string;
@@ -49,6 +83,21 @@ function tokenize(text: string) {
   return normalizeText(text)
     .split(' ')
     .filter((token) => token.length > 1);
+}
+
+function getKnownPresetFixture(clipName?: string): PresetFixtureFallback | null {
+  const normalizedClipName = normalizeText(clipName ?? '');
+  if (!normalizedClipName) {
+    return null;
+  }
+
+  for (const preset of PRESET_FIXTURE_FALLBACKS) {
+    if (preset.matchers.some((matcher) => normalizedClipName.includes(normalizeText(matcher)))) {
+      return preset.fixture;
+    }
+  }
+
+  return null;
 }
 
 function extractResponseText(payload: unknown) {
@@ -263,6 +312,15 @@ export async function resolveFixtureFromScreenshot(params: {
   clipName?: string;
   sportmonksApiToken?: string;
 }): Promise<ResolveFixtureResponse> {
+  const presetFixture = getKnownPresetFixture(params.clipName);
+  if (presetFixture) {
+    return {
+      ...presetFixture,
+      confidence: 0.99,
+      source: 'preset',
+    };
+  }
+
   const sportmonksApiToken = params.sportmonksApiToken ?? process.env.SPORTMONKS_API_TOKEN ?? '';
   if (!sportmonksApiToken) {
     throw new Error('SPORTMONKS_API_TOKEN is required for dynamic fixture resolution.');
