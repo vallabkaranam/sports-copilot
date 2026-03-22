@@ -1,6 +1,7 @@
 import { SocialPost } from '@sports-copilot/shared-types';
 
-const BLUESKY_BASE_URL = 'https://public.api.bsky.app';
+const BLUESKY_BASE_URL = process.env.BLUESKY_BASE_URL ?? 'https://public.api.bsky.app';
+const BLUESKY_SERVICE_URL = process.env.BLUESKY_SERVICE_URL ?? 'https://bsky.social';
 const DEFAULT_QUERY_LIMIT = 6;
 
 interface BlueskySearchConfig {
@@ -29,6 +30,37 @@ interface BlueskySearchResponse {
 
 export interface BlueskyPostCache {
   [uri: string]: SocialPost;
+}
+
+let cachedToken: string | null = null;
+let tokenExpiresAt = 0;
+
+async function getAccessToken(fetchImpl: typeof fetch): Promise<string | null> {
+  const identifier = process.env.BLUESKY_IDENTIFIER ?? '';
+  const appPassword = process.env.BLUESKY_APP_PASSWORD ?? '';
+  if (!identifier || !appPassword) {
+    console.warn('[bluesky] no credentials in env');
+    return null;
+  }
+  if (cachedToken && Date.now() < tokenExpiresAt) return cachedToken;
+
+  const response = await fetchImpl(`${BLUESKY_SERVICE_URL}/xrpc/com.atproto.server.createSession`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identifier, password: appPassword }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    console.warn('[bluesky] auth failed:', response.status, body);
+    return null;
+  }
+
+  const data = (await response.json()) as { accessJwt: string };
+  cachedToken = data.accessJwt;
+  tokenExpiresAt = Date.now() + 60 * 60 * 1000; // cache for 1 hour
+  console.log('[bluesky] auth success, token acquired');
+  return cachedToken;
 }
 
 function asString(value: unknown) {
@@ -65,20 +97,22 @@ async function searchBlueskyPosts(
   query: string,
   limit: number,
   fetchImpl: typeof fetch,
+  token: string | null,
 ) {
-  const url = new URL('/xrpc/app.bsky.feed.searchPosts', BLUESKY_BASE_URL);
+  const baseUrl = token ? BLUESKY_SERVICE_URL : BLUESKY_BASE_URL;
+  const url = new URL('/xrpc/app.bsky.feed.searchPosts', baseUrl);
   url.searchParams.set('q', query);
   url.searchParams.set('limit', String(limit));
   url.searchParams.set('sort', 'latest');
 
-  const response = await fetchImpl(url.toString(), {
-    headers: {
-      Accept: 'application/json',
-    },
-  });
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const response = await fetchImpl(url.toString(), { headers });
 
   if (!response.ok) {
-    throw new Error(`Bluesky request failed with ${response.status}`);
+    const body = await response.text();
+    throw new Error(`Bluesky request failed with ${response.status}: ${body}`);
   }
 
   return (await response.json()) as BlueskySearchResponse;
@@ -118,6 +152,7 @@ export async function ingestBlueskySocialPosts(
   cache: BlueskyPostCache,
 ) {
   const fetchImpl = config.fetchImpl ?? fetch;
+  const token = await getAccessToken(fetchImpl);
   const queries = buildQueries(config.homeTeam, config.awayTeam);
 
   for (const query of queries) {
@@ -125,6 +160,7 @@ export async function ingestBlueskySocialPosts(
       query,
       config.limitPerQuery ?? DEFAULT_QUERY_LIMIT,
       fetchImpl,
+      token,
     );
     normalizeBlueskyPosts(payload, config.clockMs, cache);
   }
