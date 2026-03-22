@@ -51,15 +51,18 @@ Recommended hosted setup:
 
 ## Local Env
 
-Create `.env.local` in the repo root for server-side secrets:
+Create one repo-root `.env` file:
 
 ```bash
+VITE_API_BASE_URL=http://localhost:3001
+API_BASE_URL=http://localhost:3001
 OPENAI_API_KEY=your_openai_api_key
-SUPABASE_URL=https://your-project-ref.supabase.co
-DATABASE_URL=postgresql://postgres.your-project-ref:your_password@your-supabase-pooler:6543/postgres
+SUPABASE_URL=https://ivynnjycdyrjbaotjzkx.supabase.co
+DATABASE_URL=postgresql://postgres:your_database_password@db.ivynnjycdyrjbaotjzkx.supabase.co:5432/postgres
 ```
 
 Notes:
+- [`.env.example`](/Users/vallabkaranam/Desktop/sports-copilot/.env.example) is the source-of-truth template for teammates
 - the worker now exposes a `/health` endpoint so Render can keep it as a web service
 - the API now respects the host platform `PORT`
 - booth session persistence now uses hosted Postgres whenever `DATABASE_URL` is present, and falls back to local SQLite only when no database is configured
