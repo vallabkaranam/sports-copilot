@@ -41,8 +41,6 @@ import {
 } from '@sports-copilot/shared-types';
 
 dotenv.config();
-
-const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3001';
 function requireEnv(name: string) {
   const value = process.env[name]?.trim();
   if (!value) {

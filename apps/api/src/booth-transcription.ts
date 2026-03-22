@@ -44,14 +44,20 @@ export async function transcribeBoothAudioWithOpenAI(
   });
 
   if (!response.ok) {
+    let errorText = '';
+
+    try {
+      errorText = await response.text();
+    } catch (_error) {
+      errorText = '';
+    }
+
+    const detail = errorText || response.statusText || 'Unknown error';
     console.warn('booth-transcription-openai-failed', {
       status: response.status,
       statusText: response.statusText,
     });
-    return {
-      transcript: '',
-      source: 'unavailable',
-    };
+    throw new Error(`OpenAI transcription failed: ${response.status} ${detail}`);
   }
 
   const payload = (await response.json()) as { text?: string };

@@ -124,10 +124,6 @@ export async function generateBoothCueWithOpenAI(params: {
   recentCueTexts?: string[];
   contextBundle?: ContextBundle;
 }): Promise<GenerateBoothCueResponse> {
-  if (!process.env.OPENAI_API_KEY) {
-    return buildUnavailableCue();
-  }
-
   const retrievedFacts = params.retrievalFacts.slice(0, 8);
 
   const response = await fetch(OPENAI_API_URL, {

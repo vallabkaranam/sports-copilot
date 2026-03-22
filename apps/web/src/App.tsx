@@ -1724,6 +1724,7 @@ function App() {
   }, [
     boothCueSignature,
     boothHasLiveInput,
+    boothHasTranscriptContext,
     boothInterpretation?.state,
     generatedCue,
     generatedCueRequestedAt,
