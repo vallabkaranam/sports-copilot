@@ -124,27 +124,6 @@ function buildSignals(
   ];
 }
 
-function buildUnavailableBoothInterpretation(
-  features: BoothFeatureSnapshot,
-  profile?: BoothSpeakerProfile,
-): BoothInterpretation {
-  return {
-    state: features.previousState ?? 'standby',
-    hesitationScore: 0,
-    recoveryScore: 0,
-    shouldSurfaceAssist: false,
-    summary: 'Live booth interpretation is unavailable until the model path responds.',
-    reasons: [
-      'The API transcription or interpretation path is unavailable right now.',
-      profile && profile.totalSamples > 0
-        ? `Historical profile is loaded from ${profile.totalSamples} samples, but live model inference is not available.`
-        : 'No historical booth profile is available yet.',
-    ],
-    signals: buildSignals(features, profile),
-    source: 'unavailable',
-  };
-}
-
 function extractResponseText(payload: unknown) {
   const candidate = payload as {
     output_text?: string;

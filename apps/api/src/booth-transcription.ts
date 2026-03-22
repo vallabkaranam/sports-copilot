@@ -44,10 +44,8 @@ export async function transcribeBoothAudioWithOpenAI(
   });
 
   if (!response.ok) {
-    return {
-      transcript: '',
-      source: 'unavailable',
-    };
+    const errorText = await response.text();
+    throw new Error(`OpenAI transcription failed: ${response.status} ${errorText}`);
   }
 
   const payload = (await response.json()) as { text?: string };

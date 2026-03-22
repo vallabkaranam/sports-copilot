@@ -727,7 +727,7 @@ function App() {
       setBoothAnalytics(nextBoothSessions.analytics);
       setRecentBoothSessions(nextBoothSessions.sessions);
     } catch (_error) {
-      // Keep the live booth usable even if session analytics are unavailable.
+      setBoothError('Saved sessions could not be loaded from the API.');
     }
   }
 
@@ -916,7 +916,7 @@ function App() {
           setBoothClockMs(now);
         })
         .catch(() => {
-          // Keep booth flow alive if a buffered chunk fails.
+          setBoothError('Buffered OpenAI transcription failed for the booth mic.');
         });
     };
 
@@ -1225,7 +1225,8 @@ function App() {
         setActiveBoothSessionId(response.session.id);
         await refreshBoothSessions();
       } catch (_error) {
-        setBoothError('The booth session could not be saved, but the live session can still run.');
+        setBoothError('The booth session could not be created in the saved session store.');
+        return;
       }
     }
 
@@ -1689,7 +1690,8 @@ function App() {
           setBoothError(null);
         })
         .catch(() => {
-          // Keep the local booth flow running even if interpretation is unavailable.
+          setBoothInterpretation(null);
+          setBoothError('Live booth interpretation failed.');
         });
     }, 900);
 
@@ -1779,7 +1781,7 @@ function App() {
           }
         })
         .catch(() => {
-          // Keep the current cue latched instead of replacing it with a fake fallback.
+          setBoothError('Live cue generation failed.');
         });
     }, waitMs);
 

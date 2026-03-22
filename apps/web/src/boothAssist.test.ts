@@ -307,7 +307,7 @@ describe('buildBoothAssist', () => {
     expect(assist.sourceChips.length).toBeGreaterThan(0);
   });
 
-  it('falls back to hardcoded Clasico demo facts when no API-backed data exists', () => {
+  it('returns no assist when no grounded booth facts exist', () => {
     const assist = buildBoothAssist({
       boothSignal: makeSignal(),
       boothTranscript: makeTranscript('Let me bring in the fan reaction around this Clasico'),
@@ -316,9 +316,7 @@ describe('buildBoothAssist', () => {
       liveMatch: createEmptyLiveMatchState(),
     });
 
-    expect(assist.type).not.toBe('none');
-    expect(assist.text.toLowerCase()).toMatch(/reaction|fan pulse|crowd/);
-    expect(assist.sourceChips.length).toBeGreaterThan(0);
+    expect(assist.type).toBe('none');
   });
 
   it('returns no assist when visibility is gated elsewhere', () => {

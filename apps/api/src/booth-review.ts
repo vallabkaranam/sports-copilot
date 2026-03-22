@@ -7,18 +7,6 @@ import {
 const OPENAI_API_URL = 'https://api.openai.com/v1/responses';
 const OPENAI_REVIEW_MODEL = 'gpt-5.4';
 
-function buildFallbackReview(session: BoothSessionRecord): BoothSessionReview {
-  return {
-    headline: 'Session review is ready.',
-    summary: `Saved ${session.sampleCount} samples, with peak hesitation at ${Math.round(
-      session.maxHesitationScore * 100,
-    )}% and ${session.assistCount} assist moment${session.assistCount === 1 ? '' : 's'}.`,
-    strengths: ['The booth trace is saved and ready for review.'],
-    watchouts: ['AI review is unavailable, so this summary is based on the stored session metrics only.'],
-    coachingNotes: ['Re-run the session once the OpenAI review path is reachable to get a richer analysis.'],
-  };
-}
-
 function extractResponseText(payload: unknown) {
   const candidate = payload as {
     output_text?: string;
@@ -66,14 +54,15 @@ export async function reviewBoothSessionWithOpenAI(
   });
 
   if (!response.ok) {
-    return buildFallbackReview(session);
+    const errorText = await response.text();
+    throw new Error(`OpenAI review failed: ${response.status} ${errorText}`);
   }
 
   const payload = (await response.json()) as unknown;
   const text = extractResponseText(payload);
 
   if (!text) {
-    return buildFallbackReview(session);
+    throw new Error('OpenAI review returned no text');
   }
 
   try {
@@ -94,9 +83,8 @@ export async function reviewBoothSessionWithOpenAI(
         coachingNotes: parsed.coachingNotes.filter((item): item is string => typeof item === 'string'),
       };
     }
+    throw new Error('OpenAI review returned an invalid JSON shape');
   } catch (_error) {
-    // Fall through to fallback review.
+    throw new Error('OpenAI review returned invalid JSON');
   }
-
-  return buildFallbackReview(session);
 }

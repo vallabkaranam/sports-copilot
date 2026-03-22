@@ -87,113 +87,6 @@ function createSyntheticFact(
   };
 }
 
-function buildHardcodedClasicoFacts(): RetrievedFact[] {
-  return [
-    createSyntheticFact({
-      id: 'demo-pre-match-form-home',
-      tier: 'pre_match',
-      text: 'Barcelona have won 3 of their last 5 and are leaning on fast starts at home.',
-      source: 'demo:recent-form',
-      timestamp: 0,
-      relevance: 0.72,
-      metadata: {
-        chunkCategory: 'recent-form',
-        teamSide: 'home',
-        phaseHints: ['pre_kickoff', 'early_match', 'quiet_stretch'],
-      },
-    }),
-    createSyntheticFact({
-      id: 'demo-pre-match-form-away',
-      tier: 'pre_match',
-      text: 'Real Madrid have won 4 of their last 5 and usually stay dangerous in transition.',
-      source: 'demo:recent-form',
-      timestamp: 0,
-      relevance: 0.72,
-      metadata: {
-        chunkCategory: 'recent-form',
-        teamSide: 'away',
-        phaseHints: ['pre_kickoff', 'early_match', 'quiet_stretch'],
-      },
-    }),
-    createSyntheticFact({
-      id: 'demo-pre-match-head-to-head',
-      tier: 'pre_match',
-      text: 'The last five Clásicos are split tightly, so one swing can flip the whole feel of the night.',
-      source: 'demo:head-to-head',
-      timestamp: 0,
-      relevance: 0.75,
-      metadata: {
-        chunkCategory: 'head-to-head',
-        phaseHints: ['pre_kickoff', 'early_match', 'quiet_stretch'],
-      },
-    }),
-    createSyntheticFact({
-      id: 'demo-pre-match-venue',
-      tier: 'pre_match',
-      text: 'Venue: a packed Barcelona home crowd with the pressure already up before kickoff.',
-      source: 'demo:venue',
-      timestamp: 0,
-      relevance: 0.64,
-      metadata: {
-        chunkCategory: 'venue',
-        phaseHints: ['pre_kickoff', 'early_match', 'quiet_stretch'],
-      },
-    }),
-    createSyntheticFact({
-      id: 'demo-pre-match-weather',
-      tier: 'pre_match',
-      text: 'Weather: calm conditions, quick surface, and no excuse for a slow technical start.',
-      source: 'demo:weather',
-      timestamp: 0,
-      relevance: 0.6,
-      metadata: {
-        chunkCategory: 'weather',
-        phaseHints: ['pre_kickoff', 'early_match', 'quiet_stretch'],
-      },
-    }),
-    createSyntheticFact({
-      id: 'demo-social-1',
-      tier: 'live',
-      text: '@clasico_watch: Fans are already losing it over every Madrid counter and every Barca overload.',
-      source: 'social:@clasico_watch',
-      timestamp: 0,
-      relevance: 0.78,
-    }),
-    createSyntheticFact({
-      id: 'demo-social-2',
-      tier: 'live',
-      text: '@touchlinebuzz: The crowd online keeps calling this one chaotic even when the score is level.',
-      source: 'social:@touchlinebuzz',
-      timestamp: 0,
-      relevance: 0.74,
-    }),
-    createSyntheticFact({
-      id: 'demo-live-stat-1',
-      tier: 'live',
-      text: 'Barcelona possession: 58%.',
-      source: 'stats:possession',
-      timestamp: 0,
-      relevance: 0.7,
-    }),
-    createSyntheticFact({
-      id: 'demo-live-stat-2',
-      tier: 'live',
-      text: 'Real Madrid shots on target: 4.',
-      source: 'stats:shots-on-target',
-      timestamp: 0,
-      relevance: 0.69,
-    }),
-    createSyntheticFact({
-      id: 'demo-live-event-1',
-      tier: 'session',
-      text: 'Courtois stands tall to deny Barcelona from close range.',
-      source: 'event-feed:save',
-      timestamp: 75_000,
-      relevance: 0.8,
-    }),
-  ];
-}
-
 export function buildBoothAssistFacts(params: {
   retrieval: RetrievalState;
   preMatch?: PreMatchState;
@@ -333,10 +226,6 @@ export function buildBoothAssistFacts(params: {
       }),
     );
   });
-
-  if (facts.length === 0) {
-    facts.push(...buildHardcodedClasicoFacts());
-  }
 
   return facts;
 }
@@ -497,15 +386,7 @@ export function buildBoothAssist(params: {
   const topFact = rankedFacts[0]?.fact;
 
   if (!topFact) {
-    return {
-      ...createEmptyAssistCard(),
-      type: 'context',
-      text: 'Reset with one clean scene line, then land a single takeaway.',
-      confidence: clamp(0.42 + boothSignal.hesitationScore * 0.3),
-      whyNow: currentLine
-        ? `You paused after ${quoteExcerpt(currentLine)}.`
-        : 'You left a clean hesitation window.',
-    };
+    return createEmptyAssistCard();
   }
 
   const grounded = buildHintFromFact(topFact);

@@ -25,11 +25,19 @@ describe('booth review', () => {
     delete process.env.OPENAI_API_KEY;
   });
 
-  it('falls back cleanly when no key is present', async () => {
-    const review = await reviewBoothSessionWithOpenAI(createSession());
+  it('throws when the review path cannot authenticate', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        text: async () => 'Unauthorized',
+      }),
+    );
 
-    expect(review.headline).toContain('Session review');
-    expect(review.summary).toContain('Saved 3 samples');
+    await expect(reviewBoothSessionWithOpenAI(createSession())).rejects.toThrow(
+      'OpenAI review failed: 401 Unauthorized',
+    );
   });
 
   it('parses an OpenAI JSON review when available', async () => {

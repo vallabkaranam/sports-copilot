@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import fs from 'fs/promises';
-import path from 'path';
 import http from 'http';
 import { buildAssistCard } from './assist';
 import { BlueskyPostCache, ingestBlueskySocialPosts } from './bluesky';
@@ -80,14 +79,6 @@ async function loadRequiredFixture<T>(fixturePath: string, label: string) {
         error instanceof Error ? error.message : String(error)
       }`,
     );
-  }
-}
-
-async function loadOptionalFixture<T>(fixturePath: string, fallback: T) {
-  try {
-    return await loadFixture<T>(fixturePath);
-  } catch (_error) {
-    return fallback;
   }
 }
 
@@ -191,13 +182,10 @@ function buildDegradedState(reason: string, fixtureId: string) {
 
 async function run() {
   startHealthServer();
-  const fixturesDir = path.resolve(__dirname, '../../../data/demo_match');
-  const [narratives, socialPosts, transcript, visionFrames] = await Promise.all([
-    loadRequiredFixture<NarrativeFixture[]>(path.join(fixturesDir, 'narratives.json'), 'narratives'),
-    loadOptionalFixture<SocialPost[]>(path.join(fixturesDir, 'fake_social.json'), []),
-    loadOptionalFixture<TranscriptEntry[]>(path.join(fixturesDir, 'transcript_seed.json'), []),
-    loadOptionalFixture<VisionFrame[]>(path.join(fixturesDir, 'vision_frames.json'), []),
-  ]);
+  const narratives: NarrativeFixture[] = [];
+  const socialPosts: SocialPost[] = [];
+  const transcript: TranscriptEntry[] = [];
+  const visionFrames: VisionFrame[] = [];
   const visionCues: VisionCue[] = ingestVisionFrames(visionFrames);
   const sessionMemory = createSessionMemoryTracker();
   let lastKnownControls = createDefaultReplayControlState();

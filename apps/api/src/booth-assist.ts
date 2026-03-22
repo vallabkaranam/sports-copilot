@@ -51,14 +51,6 @@ function dedupeSourceChips(facts: RetrievedFact[]) {
   return chips;
 }
 
-function buildUnavailableCue(): GenerateBoothCueResponse {
-  return {
-    assist: createEmptyAssistCard(),
-    refreshAfterMs: 2200,
-    source: 'unavailable',
-  };
-}
-
 function buildPrompt(params: {
   features: BoothFeatureSnapshot;
   interpretation?: BoothInterpretation;
@@ -163,14 +155,15 @@ export async function generateBoothCueWithOpenAI(params: {
   });
 
   if (!response.ok) {
-    return buildUnavailableCue();
+    const errorText = await response.text();
+    throw new Error(`OpenAI cue generation failed: ${response.status} ${errorText}`);
   }
 
   const payload = (await response.json()) as unknown;
   const text = extractResponseText(payload);
 
   if (!text) {
-    return buildUnavailableCue();
+    throw new Error('OpenAI cue generation returned no text');
   }
 
   try {
@@ -184,7 +177,7 @@ export async function generateBoothCueWithOpenAI(params: {
     };
 
     if (!parsed.text || !parsed.whyNow || !parsed.type) {
-      return buildUnavailableCue();
+      throw new Error('OpenAI cue generation returned an invalid JSON shape');
     }
 
     const selectedFacts = retrievedFacts.filter((fact) =>
@@ -216,6 +209,6 @@ export async function generateBoothCueWithOpenAI(params: {
       source: 'openai',
     };
   } catch (_error) {
-    return buildUnavailableCue();
+    throw new Error('OpenAI cue generation returned invalid JSON');
   }
 }

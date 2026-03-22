@@ -26,8 +26,6 @@ import {
   createEmptyRetrievalState,
   createEmptySessionMemory,
 } from '@sports-copilot/shared-types';
-import fs from 'fs/promises';
-import path from 'path';
 import { generateBoothCueWithOpenAI } from './booth-assist';
 import { interpretBoothWithOpenAI } from './booth-interpretation';
 import { createRealtimeBoothSdpAnswer } from './booth-realtime';
@@ -121,7 +119,7 @@ server.get('/preset-feeds/:feedId', async (request, reply) => {
     return;
   }
 
-  const stats = await fs.stat(preset.filePath);
+  const stats = fsSync.statSync(preset.filePath);
   const fileSize = stats.size;
   const rangeHeader = request.headers.range;
 
@@ -336,12 +334,6 @@ server.post('/booth-sessions/:sessionId/finish', async (request, reply) => {
 const start = async () => {
   try {
     boothSessionStore = await createBoothSessionStore();
-    const rosterPath = path.resolve(__dirname, '../../../data/demo_match/roster.json');
-    const rosterData = await fs.readFile(rosterPath, 'utf8');
-    const roster = JSON.parse(rosterData);
-    
-    console.log('Loaded Roster:', roster.home.name, 'vs', roster.away.name);
-
     await server.listen({ port: API_PORT, host: API_HOST });
     console.log(`API running on http://${API_HOST}:${API_PORT}`);
   } catch (err) {
