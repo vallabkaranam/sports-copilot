@@ -60,6 +60,7 @@ OPENAI_API_KEY=your_openai_api_key
 DATABASE_URL=postgresql://postgres:your_database_password@your_current_supabase_postgres_host:5432/postgres
 SPORTMONKS_API_TOKEN=your_sportmonks_token
 SPORTMONKS_FIXTURE_ID=your_fixture_id
+BLUESKY_SOCIAL_ENABLED=false
 ```
 
 Notes:
@@ -68,6 +69,8 @@ Notes:
 - the API now fails fast on startup if `OPENAI_API_KEY` or `DATABASE_URL` are missing
 - the API now also fails fast if the `DATABASE_URL` hostname does not resolve, with a specific hint when the host looks like a stale Supabase DB hostname
 - the worker now fails fast on startup if `API_BASE_URL`, `SPORTMONKS_API_TOKEN`, or `SPORTMONKS_FIXTURE_ID` are missing
+- the repo-root `.env` is now loaded for both workspace dev servers and built runtime entrypoints
+- Bluesky social ingest is now explicit opt-in through `BLUESKY_SOCIAL_ENABLED=true`; leave it off until you have a working live source strategy
 - the worker now exposes a `/health` endpoint so Render can keep it as a web service
 - the API now respects the host platform `PORT`
 - booth session persistence is expected to use hosted Postgres via `DATABASE_URL` on the live stack

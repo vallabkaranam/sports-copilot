@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import fs from 'fs/promises';
 import http from 'http';
+import path from 'path';
 import { buildAssistCard } from './assist.js';
 import { BlueskyPostCache, ingestBlueskySocialPosts } from './bluesky.js';
 import { analyzeCommentary } from './commentator.js';
@@ -40,7 +41,14 @@ import {
   createEmptyRetrievalState,
 } from '@sports-copilot/shared-types';
 
-dotenv.config();
+dotenv.config({
+  path: [
+    path.resolve(process.cwd(), '.env.local'),
+    path.resolve(process.cwd(), '.env'),
+    path.resolve(process.cwd(), '../../.env.local'),
+    path.resolve(process.cwd(), '../../.env'),
+  ],
+});
 function requireEnv(name: string) {
   const value = process.env[name]?.trim();
   if (!value) {
@@ -64,7 +72,7 @@ const API_HOSTNAME = API_URL.hostname;
 const API_PORT = Number(API_URL.port || (API_URL.protocol === 'https:' ? 443 : 80));
 const HEALTH_PORT = Number(process.env.PORT ?? 0);
 const POLL_INTERVAL_MS = 15_000;
-const ENABLE_BLUESKY_SOCIAL = true;
+const ENABLE_BLUESKY_SOCIAL = process.env.BLUESKY_SOCIAL_ENABLED === 'true';
 const BLUESKY_WARNING_COOLDOWN_MS = 5 * 60_000;
 
 async function loadFixture<T>(fixturePath: string) {

@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import fastify from 'fastify';
 import fsSync from 'fs';
+import path from 'path';
 import {
   AppendBoothSessionSampleInputSchema,
   BoothInterpretation,
@@ -33,7 +34,14 @@ import { reviewBoothSessionWithOpenAI } from './booth-review';
 import { createBoothSessionStore } from './booth-session-store';
 import { transcribeBoothAudioWithOpenAI } from './booth-transcription';
 
-dotenv.config();
+dotenv.config({
+  path: [
+    path.resolve(process.cwd(), '.env.local'),
+    path.resolve(process.cwd(), '.env'),
+    path.resolve(process.cwd(), '../../.env.local'),
+    path.resolve(process.cwd(), '../../.env'),
+  ],
+});
 function requireEnv(name: string) {
   const value = process.env[name]?.trim();
   if (!value) {
