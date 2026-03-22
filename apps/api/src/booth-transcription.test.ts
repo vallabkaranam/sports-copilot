@@ -35,4 +35,28 @@ describe('booth transcription', () => {
       source: 'openai',
     });
   });
+
+  it('logs a warning when OpenAI transcription fails', async () => {
+    process.env.OPENAI_API_KEY = 'test-key';
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        statusText: 'Service Unavailable',
+      }),
+    );
+
+    const result = await transcribeBoothAudioWithOpenAI('dGVzdA==', 'audio/webm');
+
+    expect(result).toEqual({
+      transcript: '',
+      source: 'unavailable',
+    });
+    expect(warnSpy).toHaveBeenCalledWith('booth-transcription-openai-failed', {
+      status: 503,
+      statusText: 'Service Unavailable',
+    });
+  });
 });

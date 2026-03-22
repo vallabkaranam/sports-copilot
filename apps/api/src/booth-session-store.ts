@@ -1,7 +1,6 @@
 import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
-import { Pool } from 'pg';
 import {
   BoothSessionAnalytics,
   BoothSessionRecord,
@@ -169,6 +168,7 @@ function getPoolConfiguration(connectionString: string) {
 }
 
 async function createPostgresBoothSessionStore(connectionString: string): Promise<BoothSessionStore> {
+  const { Pool } = await import('pg');
   const pool = new Pool(getPoolConfiguration(connectionString));
 
   await pool.query(`

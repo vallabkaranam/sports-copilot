@@ -151,6 +151,7 @@ describe('buildBoothAssist', () => {
       boothSignal: makeSignal(),
       boothTranscript: makeTranscript('Fans are really reacting to that save and then I lost it'),
       interimTranscript: '',
+      currentTimestampMs: 1000,
       retrieval: {
         ...createEmptyRetrievalState(),
         supportingFacts: [
@@ -181,6 +182,7 @@ describe('buildBoothAssist', () => {
       boothSignal: makeSignal(),
       boothTranscript: makeTranscript('I was talking about the form coming into this match'),
       interimTranscript: '',
+      currentTimestampMs: 1000,
       retrieval: {
         ...createEmptyRetrievalState(),
         supportingFacts: [
@@ -221,6 +223,7 @@ describe('buildBoothAssist', () => {
       boothSignal: makeSignal(),
       boothTranscript: makeTranscript('The numbers really tell the story here'),
       interimTranscript: '',
+      currentTimestampMs: 1000,
       retrieval: {
         ...createEmptyRetrievalState(),
         supportingFacts: [
@@ -251,6 +254,7 @@ describe('buildBoothAssist', () => {
       boothSignal: makeSignal(),
       boothTranscript: makeTranscript('Let me reset the setup and the weather here'),
       interimTranscript: '',
+      currentTimestampMs: 1000,
       retrieval: createEmptyRetrievalState(),
       preMatch: {
         ...createEmptyPreMatchState(),
@@ -307,18 +311,67 @@ describe('buildBoothAssist', () => {
     expect(assist.sourceChips.length).toBeGreaterThan(0);
   });
 
-  it('falls back to hardcoded Clasico demo facts when no API-backed data exists', () => {
+  it('uses a neutral stat bridge when the speaker wants numbers but no stat facts exist', () => {
     const assist = buildBoothAssist({
       boothSignal: makeSignal(),
-      boothTranscript: makeTranscript('Let me bring in the fan reaction around this Clasico'),
+      boothTranscript: makeTranscript('The numbers tell you the story here'),
       interimTranscript: '',
+      currentTimestampMs: 1000,
       retrieval: createEmptyRetrievalState(),
       liveMatch: createEmptyLiveMatchState(),
     });
 
-    expect(assist.type).not.toBe('none');
-    expect(assist.text.toLowerCase()).toMatch(/reaction|fan pulse|crowd/);
-    expect(assist.sourceChips.length).toBeGreaterThan(0);
+    expect(assist.type).toBe('stat');
+    expect(assist.text.toLowerCase()).toMatch(/number/);
+    expect(assist.text).not.toContain('Fans are already losing it over every Madrid counter');
+    expect(assist.sourceChips).toHaveLength(0);
+  });
+
+  it('uses a neutral live-play bridge when the speaker wants the moment but no event facts exist', () => {
+    const assist = buildBoothAssist({
+      boothSignal: makeSignal(),
+      boothTranscript: makeTranscript('That save changes the whole sequence'),
+      interimTranscript: '',
+      currentTimestampMs: 1000,
+      retrieval: createEmptyRetrievalState(),
+      liveMatch: createEmptyLiveMatchState(),
+    });
+
+    expect(assist.type).toBe('transition');
+    expect(assist.text.toLowerCase()).toMatch(/moment|effect|clean line/);
+    expect(assist.text).not.toContain('Fans are already losing it over every Madrid counter');
+    expect(assist.sourceChips).toHaveLength(0);
+  });
+
+  it('uses a neutral crowd bridge when the speaker wants reaction but no social facts exist', () => {
+    const assist = buildBoothAssist({
+      boothSignal: makeSignal(),
+      boothTranscript: makeTranscript('Fans are reacting to this one'),
+      interimTranscript: '',
+      currentTimestampMs: 1000,
+      retrieval: createEmptyRetrievalState(),
+      liveMatch: createEmptyLiveMatchState(),
+    });
+
+    expect(assist.type).toBe('context');
+    expect(assist.text.toLowerCase()).toMatch(/audience angle|reaction beat/);
+    expect(assist.text).not.toContain('Fans are already losing it over every Madrid counter');
+    expect(assist.sourceChips).toHaveLength(0);
+  });
+
+  it('falls back to a generic bridge when the transcript is stale', () => {
+    const assist = buildBoothAssist({
+      boothSignal: makeSignal(),
+      boothTranscript: makeTranscript('Fans are reacting to this one'),
+      interimTranscript: '',
+      currentTimestampMs: 10_000,
+      retrieval: createEmptyRetrievalState(),
+      liveMatch: createEmptyLiveMatchState(),
+    });
+
+    expect(assist.type).toBe('transition');
+    expect(assist.text).toContain('Reset with one clean scene line');
+    expect(assist.sourceChips).toHaveLength(0);
   });
 
   it('returns no assist when visibility is gated elsewhere', () => {
@@ -326,6 +379,7 @@ describe('buildBoothAssist', () => {
       boothSignal: makeSignal({ shouldSurfaceAssist: false }),
       boothTranscript: makeTranscript('steady call'),
       interimTranscript: '',
+      currentTimestampMs: 1000,
       retrieval: createEmptyRetrievalState(),
     });
 

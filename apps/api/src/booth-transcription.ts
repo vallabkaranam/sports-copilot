@@ -51,6 +51,10 @@ export async function transcribeBoothAudioWithOpenAI(
   });
 
   if (!response.ok) {
+    console.warn('booth-transcription-openai-failed', {
+      status: response.status,
+      statusText: response.statusText,
+    });
     return {
       transcript: '',
       source: 'unavailable',

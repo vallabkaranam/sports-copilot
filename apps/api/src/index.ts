@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import fastify from 'fastify';
 import fsSync from 'fs';
 import {
@@ -34,6 +34,8 @@ import { createRealtimeBoothSdpAnswer } from './booth-realtime';
 import { reviewBoothSessionWithOpenAI } from './booth-review';
 import { createBoothSessionStore } from './booth-session-store';
 import { transcribeBoothAudioWithOpenAI } from './booth-transcription';
+
+dotenv.config();
 
 const server = fastify({ logger: true });
 const API_PORT = Number(process.env.PORT ?? 3001);

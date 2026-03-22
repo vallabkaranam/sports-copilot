@@ -73,6 +73,7 @@ Notes:
 - Live booth assists only surface when the interpreted booth state says the commentator actually needs help; stored world/retrieval context is still used to shape the assist itself.
 - Chrome or Edge currently give the best microphone support for the live booth flow.
 - Deterministic fixtures still exist in the repo for the original demo path, but the next work phase is replacing the primary path with real free-input integrations.
+- Use [DEMO_VALIDATION.md](/Users/farzaann1/Desktop/sports-copilot/DEMO_VALIDATION.md) for the manual runtime pass that checks hesitation surfacing, cue topic changes, and degraded behavior in the live app.
 
 ## Verification
 ```bash
@@ -98,3 +99,4 @@ The test suite includes:
 - [JUDGE_PITCH.md](/Users/vallabkaranam/Desktop/sports-copilot/JUDGE_PITCH.md)
 - [KNOWN_LIMITATIONS.md](/Users/vallabkaranam/Desktop/sports-copilot/KNOWN_LIMITATIONS.md)
 - [ARCHITECTURE.md](/Users/vallabkaranam/Desktop/sports-copilot/ARCHITECTURE.md)
+- [DEMO_VALIDATION.md](/Users/farzaann1/Desktop/sports-copilot/DEMO_VALIDATION.md)

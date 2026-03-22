@@ -136,9 +136,7 @@ export async function generateBoothCueWithOpenAI(params: {
     return buildUnavailableCue();
   }
 
-  const retrievedFacts = [...params.retrievalFacts]
-    .sort((left, right) => right.relevance - left.relevance)
-    .slice(0, 8);
+  const retrievedFacts = params.retrievalFacts.slice(0, 8);
 
   const response = await fetch(OPENAI_API_URL, {
     method: 'POST',

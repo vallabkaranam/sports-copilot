@@ -444,6 +444,7 @@ describe('App dashboard', () => {
   let mediaRecorders: Array<{
     mimeType: string;
     ondataavailable: ((event: { data: Blob }) => void) | null;
+    timesliceMs: number | null;
   }>;
   let currentBoothInterpretation: {
     state: string;
@@ -455,7 +456,7 @@ describe('App dashboard', () => {
     signals?: string[];
     source: string;
   };
-  let queuedTranscripts: string[];
+  let queuedTranscriptResponses: Array<{ transcript: string; source: 'openai' | 'unavailable' }>;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -479,7 +480,7 @@ describe('App dashboard', () => {
       signals: [],
       source: 'openai',
     };
-    queuedTranscripts = [];
+    queuedTranscriptResponses = [];
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
     vi.stubGlobal('btoa', vi.fn((value: string) => value));
@@ -528,13 +529,16 @@ describe('App dashboard', () => {
         ondataavailable: ((event: { data: Blob }) => void) | null = null;
         onerror: (() => void) | null = null;
         onstop: (() => void) | null = null;
+        timesliceMs: number | null = null;
 
         constructor(_stream: MediaStream, options?: { mimeType?: string }) {
           this.mimeType = options?.mimeType ?? 'audio/webm';
           mediaRecorders.push(this);
         }
 
-        start() {}
+        start(timeslice?: number) {
+          this.timesliceMs = timeslice ?? null;
+        }
 
         stop() {
           this.onstop?.();
@@ -634,10 +638,12 @@ describe('App dashboard', () => {
       }
 
       if (url.includes('/booth/transcribe') && init?.method === 'POST') {
-        return jsonResponse({
-          transcript: queuedTranscripts.shift() ?? 'um vinicius is driving forward',
-          source: 'openai',
-        });
+        return jsonResponse(
+          queuedTranscriptResponses.shift() ?? {
+            transcript: 'um vinicius is driving forward',
+            source: 'openai',
+          },
+        );
       }
 
       if (url.includes('/controls') && (!init?.method || init.method === 'GET')) {
@@ -745,6 +751,31 @@ describe('App dashboard', () => {
     });
   }
 
+  async function startLiveSession() {
+    await renderApp();
+
+    const goLiveButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Go live'),
+    );
+
+    await act(async () => {
+      goLiveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  }
+
+  async function showDetailsPanel() {
+    const showDetailsButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Show Details'),
+    );
+
+    await act(async () => {
+      showDetailsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+  }
+
   it('renders the live AndOne booth surface', async () => {
     await renderApp();
 
@@ -769,6 +800,80 @@ describe('App dashboard', () => {
     expect(playButton?.hasAttribute('disabled')).toBe(false);
     expect(container.textContent).toContain('Channel 1 · Barca preset');
     expect(container.textContent).toContain('AndOne will request access when you go live.');
+  });
+
+  it('commits buffered transcription into the transcript rail', async () => {
+    queuedTranscriptResponses.push({
+      transcript: 'the numbers tell you rangers controlled this one',
+      source: 'openai',
+    });
+
+    await startLiveSession();
+    await showDetailsPanel();
+
+    expect(mediaRecorders[0]?.timesliceMs).toBe(2500);
+
+    await act(async () => {
+      mediaRecorders[0]?.ondataavailable?.({
+        data: new Blob(['audio'], { type: 'audio/webm' }),
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('the numbers tell you rangers controlled this one');
+  });
+
+  it('shows a transcription warning after repeated empty chunks and clears it on recovery', async () => {
+    queuedTranscriptResponses.push(
+      { transcript: '', source: 'unavailable' },
+      { transcript: '', source: 'unavailable' },
+      { transcript: '', source: 'unavailable' },
+      {
+        transcript: 'that rangers goal right after the break changes the match',
+        source: 'openai',
+      },
+    );
+
+    await startLiveSession();
+    await showDetailsPanel();
+
+    await act(async () => {
+      mediaRecorders[0]?.ondataavailable?.({
+        data: new Blob(['audio-1'], { type: 'audio/webm' }),
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+      mediaRecorders[0]?.ondataavailable?.({
+        data: new Blob(['audio-2'], { type: 'audio/webm' }),
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+      mediaRecorders[0]?.ondataavailable?.({
+        data: new Blob(['audio-3'], { type: 'audio/webm' }),
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain(
+      'Live transcription is not producing usable text yet. Keep speaking or check the OpenAI mic path.',
+    );
+
+    await act(async () => {
+      mediaRecorders[0]?.ondataavailable?.({
+        data: new Blob(['audio-4'], { type: 'audio/webm' }),
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).not.toContain(
+      'Live transcription is not producing usable text yet. Keep speaking or check the OpenAI mic path.',
+    );
+    expect(container.textContent).toContain(
+      'that rangers goal right after the break changes the match',
+    );
   });
 
   it('requests mic access when going live and still posts control updates', async () => {

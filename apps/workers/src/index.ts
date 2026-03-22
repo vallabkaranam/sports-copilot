@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import fs from 'fs/promises';
 import path from 'path';
 import http from 'http';
@@ -40,6 +40,8 @@ import {
   createEmptyPreMatchState,
   createEmptyRetrievalState,
 } from '@sports-copilot/shared-types';
+
+dotenv.config();
 
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3001';
 const API_URL = new URL(API_BASE_URL);

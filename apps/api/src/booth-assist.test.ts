@@ -122,4 +122,65 @@ describe('booth cue generation', () => {
     expect(result.refreshAfterMs).toBe(1800);
     expect(result.assist.sourceChips[0]?.id).toBe('fact-1');
   });
+
+  it('preserves the incoming fact order in the OpenAI prompt payload', async () => {
+    process.env.OPENAI_API_KEY = 'test-key';
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        output_text: JSON.stringify({
+          type: 'context',
+          text: 'Use the current top fact.',
+          whyNow: 'The ranked fact order should be preserved.',
+          confidence: 0.7,
+          sourceFactIds: ['fact-b'],
+          refreshAfterMs: 1600,
+        }),
+      }),
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const lowRelevanceTopRanked: RetrievedFact = {
+      id: 'fact-b',
+      tier: 'live',
+      text: 'Barcelona possession: 58%.',
+      source: 'stats:possession',
+      timestamp: 75_000,
+      relevance: 0.4,
+      sourceChip: {
+        id: 'fact-b',
+        label: 'Barcelona possession: 58%.',
+        source: 'live:stats:possession',
+        relevance: 0.4,
+      },
+    };
+    const highRelevanceSecond: RetrievedFact = {
+      id: 'fact-a',
+      tier: 'live',
+      text: '@MadridXtra: Fans are losing it over the save.',
+      source: 'social:@MadridXtra',
+      timestamp: 76_000,
+      relevance: 0.95,
+      sourceChip: {
+        id: 'fact-a',
+        label: 'Fans are losing it over the save.',
+        source: 'live:social:@MadridXtra',
+        relevance: 0.95,
+      },
+    };
+
+    await generateBoothCueWithOpenAI({
+      features: makeFeatures(),
+      retrievalFacts: [lowRelevanceTopRanked, highRelevanceSecond],
+    });
+
+    const requestBody = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body ?? '{}')) as {
+      input?: string;
+    };
+    const promptPayload = JSON.parse(requestBody.input?.split('\n').at(-1) ?? '{}') as {
+      retrievedFacts?: Array<{ id: string }>;
+    };
+
+    expect(promptPayload.retrievedFacts?.map((fact) => fact.id)).toEqual(['fact-b', 'fact-a']);
+  });
 });

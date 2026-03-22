@@ -62,6 +62,108 @@ function cleanFactText(text: string) {
   return text.replace(/^@[^:]+:\s*/i, '').replace(/\s+/g, ' ').trim();
 }
 
+const TRANSCRIPT_FRESHNESS_WINDOW_MS = 7_000;
+
+type BoothIntent = 'social' | 'stats' | 'live-play' | 'setup' | 'generic';
+
+function inferBoothIntent(query: string): BoothIntent {
+  if (/\b(fans?|reaction|social|online|buzz|crowd)\b/i.test(query)) {
+    return 'social';
+  }
+
+  if (/\b(stat|stats|number|numbers|possession|shots|corners|xg)\b/i.test(query)) {
+    return 'stats';
+  }
+
+  if (/\b(save|chance|play|shot|sequence|move|moment|attack|counter|finish)\b/i.test(query)) {
+    return 'live-play';
+  }
+
+  if (/\b(form|history|meeting|head to head|venue|weather|setup|coming in|tonight)\b/i.test(query)) {
+    return 'setup';
+  }
+
+  return 'generic';
+}
+
+function hasFreshTranscript({
+  boothTranscript,
+  interimTranscript,
+  currentTimestampMs,
+}: {
+  boothTranscript: TranscriptEntry[];
+  interimTranscript: string;
+  currentTimestampMs: number;
+}) {
+  if (interimTranscript.trim()) {
+    return true;
+  }
+
+  const latestEntry = boothTranscript[boothTranscript.length - 1];
+  if (!latestEntry) {
+    return false;
+  }
+
+  return currentTimestampMs - latestEntry.timestamp <= TRANSCRIPT_FRESHNESS_WINDOW_MS;
+}
+
+function factMatchesIntent(fact: RetrievedFact, intent: BoothIntent) {
+  switch (intent) {
+    case 'social':
+      return fact.source.includes('social:');
+    case 'stats':
+      return fact.source.includes('stats:');
+    case 'live-play':
+      return fact.source.includes('event-feed:');
+    case 'setup':
+      return (
+        fact.metadata?.chunkCategory === 'recent-form' ||
+        fact.metadata?.chunkCategory === 'trend' ||
+        fact.metadata?.chunkCategory === 'head-to-head' ||
+        fact.metadata?.chunkCategory === 'venue' ||
+        fact.metadata?.chunkCategory === 'weather' ||
+        fact.metadata?.chunkCategory === 'opener'
+      );
+    case 'generic':
+      return true;
+  }
+}
+
+function buildNeutralHint(intent: BoothIntent) {
+  switch (intent) {
+    case 'social':
+      return {
+        type: 'context' as const,
+        text: 'Reset with the audience angle, then land one clean reaction beat.',
+        whyNow: 'You sounded like you were reaching for reaction, but the live social facts are thin.',
+      };
+    case 'stats':
+      return {
+        type: 'stat' as const,
+        text: 'Reset with one number, then connect it back to the flow of the match.',
+        whyNow: 'You were reaching for a stat, but there is not a strong live number to quote cleanly here.',
+      };
+    case 'live-play':
+      return {
+        type: 'transition' as const,
+        text: 'Go back to the moment itself, then describe its effect in one clean line.',
+        whyNow: 'You were trying to land the live play, but the freshest event detail is thin right now.',
+      };
+    case 'setup':
+      return {
+        type: 'context' as const,
+        text: 'Reframe the setup in one line, then bring it back to what this moment means.',
+        whyNow: 'You were scene-setting, but the supporting setup facts are thin right now.',
+      };
+    case 'generic':
+      return {
+        type: 'transition' as const,
+        text: 'Reset with one clean scene line, then land a single takeaway.',
+        whyNow: 'Use a short bridge to recover the flow without forcing a bigger restart.',
+      };
+  }
+}
+
 export function getBoothAssistQuery({
   boothTranscript,
   interimTranscript,
@@ -85,113 +187,6 @@ function createSyntheticFact(
       metadata: partial.metadata,
     },
   };
-}
-
-function buildHardcodedClasicoFacts(): RetrievedFact[] {
-  return [
-    createSyntheticFact({
-      id: 'demo-pre-match-form-home',
-      tier: 'pre_match',
-      text: 'Barcelona have won 3 of their last 5 and are leaning on fast starts at home.',
-      source: 'demo:recent-form',
-      timestamp: 0,
-      relevance: 0.72,
-      metadata: {
-        chunkCategory: 'recent-form',
-        teamSide: 'home',
-        phaseHints: ['pre_kickoff', 'early_match', 'quiet_stretch'],
-      },
-    }),
-    createSyntheticFact({
-      id: 'demo-pre-match-form-away',
-      tier: 'pre_match',
-      text: 'Real Madrid have won 4 of their last 5 and usually stay dangerous in transition.',
-      source: 'demo:recent-form',
-      timestamp: 0,
-      relevance: 0.72,
-      metadata: {
-        chunkCategory: 'recent-form',
-        teamSide: 'away',
-        phaseHints: ['pre_kickoff', 'early_match', 'quiet_stretch'],
-      },
-    }),
-    createSyntheticFact({
-      id: 'demo-pre-match-head-to-head',
-      tier: 'pre_match',
-      text: 'The last five Clásicos are split tightly, so one swing can flip the whole feel of the night.',
-      source: 'demo:head-to-head',
-      timestamp: 0,
-      relevance: 0.75,
-      metadata: {
-        chunkCategory: 'head-to-head',
-        phaseHints: ['pre_kickoff', 'early_match', 'quiet_stretch'],
-      },
-    }),
-    createSyntheticFact({
-      id: 'demo-pre-match-venue',
-      tier: 'pre_match',
-      text: 'Venue: a packed Barcelona home crowd with the pressure already up before kickoff.',
-      source: 'demo:venue',
-      timestamp: 0,
-      relevance: 0.64,
-      metadata: {
-        chunkCategory: 'venue',
-        phaseHints: ['pre_kickoff', 'early_match', 'quiet_stretch'],
-      },
-    }),
-    createSyntheticFact({
-      id: 'demo-pre-match-weather',
-      tier: 'pre_match',
-      text: 'Weather: calm conditions, quick surface, and no excuse for a slow technical start.',
-      source: 'demo:weather',
-      timestamp: 0,
-      relevance: 0.6,
-      metadata: {
-        chunkCategory: 'weather',
-        phaseHints: ['pre_kickoff', 'early_match', 'quiet_stretch'],
-      },
-    }),
-    createSyntheticFact({
-      id: 'demo-social-1',
-      tier: 'live',
-      text: '@clasico_watch: Fans are already losing it over every Madrid counter and every Barca overload.',
-      source: 'social:@clasico_watch',
-      timestamp: 0,
-      relevance: 0.78,
-    }),
-    createSyntheticFact({
-      id: 'demo-social-2',
-      tier: 'live',
-      text: '@touchlinebuzz: The crowd online keeps calling this one chaotic even when the score is level.',
-      source: 'social:@touchlinebuzz',
-      timestamp: 0,
-      relevance: 0.74,
-    }),
-    createSyntheticFact({
-      id: 'demo-live-stat-1',
-      tier: 'live',
-      text: 'Barcelona possession: 58%.',
-      source: 'stats:possession',
-      timestamp: 0,
-      relevance: 0.7,
-    }),
-    createSyntheticFact({
-      id: 'demo-live-stat-2',
-      tier: 'live',
-      text: 'Real Madrid shots on target: 4.',
-      source: 'stats:shots-on-target',
-      timestamp: 0,
-      relevance: 0.69,
-    }),
-    createSyntheticFact({
-      id: 'demo-live-event-1',
-      tier: 'session',
-      text: 'Courtois stands tall to deny Barcelona from close range.',
-      source: 'event-feed:save',
-      timestamp: 75_000,
-      relevance: 0.8,
-    }),
-  ];
 }
 
 export function buildBoothAssistFacts(params: {
@@ -334,10 +329,6 @@ export function buildBoothAssistFacts(params: {
     );
   });
 
-  if (facts.length === 0) {
-    facts.push(...buildHardcodedClasicoFacts());
-  }
-
   return facts;
 }
 
@@ -460,6 +451,7 @@ export function buildBoothAssist(params: {
   boothSignal: BoothSignal;
   boothTranscript: TranscriptEntry[];
   interimTranscript: string;
+  currentTimestampMs: number;
   retrieval: RetrievalState;
   preMatch?: PreMatchState;
   liveMatch?: LiveMatchState;
@@ -470,6 +462,7 @@ export function buildBoothAssist(params: {
     boothSignal,
     boothTranscript,
     interimTranscript,
+    currentTimestampMs,
     retrieval,
     preMatch,
     liveMatch,
@@ -482,6 +475,12 @@ export function buildBoothAssist(params: {
   }
 
   const currentLine = getBoothAssistQuery({ boothTranscript, interimTranscript });
+  const hasFreshQuery = hasFreshTranscript({
+    boothTranscript,
+    interimTranscript,
+    currentTimestampMs,
+  });
+  const intent = hasFreshQuery ? inferBoothIntent(currentLine) : 'generic';
   const candidateFacts = buildBoothAssistFacts({
     retrieval,
     preMatch,
@@ -494,17 +493,22 @@ export function buildBoothAssist(params: {
     boothTranscript,
     interimTranscript,
   });
-  const topFact = rankedFacts[0]?.fact;
+  const topFact =
+    rankedFacts.find(({ fact }) => factMatchesIntent(fact, intent))?.fact ??
+    (intent === 'generic' ? rankedFacts[0]?.fact : undefined);
 
   if (!topFact) {
+    const fallback = buildNeutralHint(intent);
+
     return {
       ...createEmptyAssistCard(),
-      type: 'context',
-      text: 'Reset with one clean scene line, then land a single takeaway.',
+      type: fallback.type,
+      text: fallback.text,
       confidence: clamp(0.42 + boothSignal.hesitationScore * 0.3),
       whyNow: currentLine
-        ? `You paused after ${quoteExcerpt(currentLine)}.`
-        : 'You left a clean hesitation window.',
+        ? `${fallback.whyNow} You paused after ${quoteExcerpt(currentLine)}.`
+        : fallback.whyNow,
+      sourceChips: [],
     };
   }
 

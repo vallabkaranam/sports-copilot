@@ -70,6 +70,10 @@ const AUDIO_ACTIVITY_SAMPLE_MS = 120;
 const MIN_AUDIO_ACTIVITY_THRESHOLD = 0.012;
 const MAX_AUDIO_ACTIVITY_THRESHOLD = 0.08;
 const ASSIST_WEAN_OFF_MS = 2600;
+const BUFFERED_TRANSCRIPTION_CHUNK_MS = 2_500;
+const BUFFERED_TRANSCRIPTION_WARNING_THRESHOLD = 3;
+const BUFFERED_TRANSCRIPTION_WARNING =
+  'Live transcription is not producing usable text yet. Keep speaking or check the OpenAI mic path.';
 const PROGRAM_FEED_SLOTS: ProgramFeedSlot[] = [
   {
     id: 'program-a',
@@ -186,6 +190,10 @@ function mergeTranscriptEntry(
   }
 
   return [...current, nextEntry].slice(-LOCAL_TRANSCRIPT_LIMIT);
+}
+
+function shouldClearBufferedTranscriptionWarning(currentWarning: string | null) {
+  return currentWarning === BUFFERED_TRANSCRIPTION_WARNING;
 }
 
 async function canLoadPresetFeed(url: string) {
@@ -487,6 +495,7 @@ function App() {
   const realtimeDataChannelRef = useRef<RTCDataChannel | null>(null);
   const bufferedRecorderRef = useRef<MediaRecorder | null>(null);
   const bufferedTranscriptionQueueRef = useRef(Promise.resolve());
+  const consecutiveBufferedTranscriptFailuresRef = useRef(0);
   const realtimeTranscriptItemRef = useRef<{ itemId: string | null; text: string }>({
     itemId: null,
     text: '',
@@ -719,6 +728,7 @@ function App() {
     setSpeechStreakStartedAtMs(-1);
     setSilenceStreakStartedAtMs(-1);
     setSelectedProgramFeedId(null);
+    consecutiveBufferedTranscriptFailuresRef.current = 0;
   }
 
   async function refreshBoothSessions() {
@@ -809,6 +819,10 @@ function App() {
     const eventsChannel = peerConnection.createDataChannel('oai-events');
     realtimeDataChannelRef.current = eventsChannel;
 
+    if (import.meta.env.DEV) {
+      console.debug('booth-transcription', { stage: 'realtime-start' });
+    }
+
     eventsChannel.addEventListener('message', (event) => {
       try {
         const payload = JSON.parse(String(event.data)) as {
@@ -849,6 +863,9 @@ function App() {
 
           if (!transcriptText) {
             setBoothInterimTranscript('');
+            if (import.meta.env.DEV) {
+              console.debug('booth-transcription', { stage: 'realtime-empty' });
+            }
             return;
           }
 
@@ -857,9 +874,19 @@ function App() {
             mergeTranscriptEntry(current, createTranscriptEntry(baseTimestamp, transcriptText)),
           );
           setBoothInterimTranscript('');
+          consecutiveBufferedTranscriptFailuresRef.current = 0;
+          setBoothError((current) =>
+            shouldClearBufferedTranscriptionWarning(current) ? null : current,
+          );
           setLastSpeechAtMs(now);
           setLastVoiceActivityAtMs(now);
           setBoothClockMs(now);
+          if (import.meta.env.DEV) {
+            console.debug('booth-transcription', {
+              stage: 'realtime-commit',
+              transcript: transcriptText,
+            });
+          }
         }
       } catch (_error) {
         // Ignore malformed realtime events and keep the booth live.
@@ -896,10 +923,30 @@ function App() {
 
       bufferedTranscriptionQueueRef.current = bufferedTranscriptionQueueRef.current
         .then(async () => {
+          if (import.meta.env.DEV) {
+            console.debug('booth-transcription', {
+              stage: 'buffered-send',
+              bytes: event.data.size,
+            });
+          }
           const audioBase64 = await encodeBlobAsBase64(event.data);
           const result = await transcribeBoothAudio(audioBase64, recorder.mimeType || mimeType);
 
           if (result.source !== 'openai' || !result.transcript.trim()) {
+            consecutiveBufferedTranscriptFailuresRef.current += 1;
+            if (import.meta.env.DEV) {
+              console.debug('booth-transcription', {
+                stage: 'buffered-empty',
+                source: result.source,
+                failures: consecutiveBufferedTranscriptFailuresRef.current,
+              });
+            }
+            if (
+              consecutiveBufferedTranscriptFailuresRef.current >=
+              BUFFERED_TRANSCRIPTION_WARNING_THRESHOLD
+            ) {
+              setBoothError((current) => current ?? BUFFERED_TRANSCRIPTION_WARNING);
+            }
             return;
           }
 
@@ -911,11 +958,35 @@ function App() {
             mergeTranscriptEntry(current, createTranscriptEntry(baseTimestamp, transcriptText)),
           );
           setBoothInterimTranscript('');
+          consecutiveBufferedTranscriptFailuresRef.current = 0;
+          setBoothError((current) =>
+            shouldClearBufferedTranscriptionWarning(current) ? null : current,
+          );
           setLastSpeechAtMs(now);
           setLastVoiceActivityAtMs(now);
           setBoothClockMs(now);
+          if (import.meta.env.DEV) {
+            console.debug('booth-transcription', {
+              stage: 'buffered-commit',
+              source: result.source,
+              transcript: transcriptText,
+            });
+          }
         })
         .catch(() => {
+          consecutiveBufferedTranscriptFailuresRef.current += 1;
+          if (import.meta.env.DEV) {
+            console.debug('booth-transcription', {
+              stage: 'buffered-failed',
+              failures: consecutiveBufferedTranscriptFailuresRef.current,
+            });
+          }
+          if (
+            consecutiveBufferedTranscriptFailuresRef.current >=
+            BUFFERED_TRANSCRIPTION_WARNING_THRESHOLD
+          ) {
+            setBoothError((current) => current ?? BUFFERED_TRANSCRIPTION_WARNING);
+          }
           // Keep booth flow alive if a buffered chunk fails.
         });
     };
@@ -924,7 +995,7 @@ function App() {
       bufferedRecorderRef.current = null;
     };
 
-    recorder.start(1_000);
+    recorder.start(BUFFERED_TRANSCRIPTION_CHUNK_MS);
     return true;
   }
 
@@ -1038,6 +1109,7 @@ function App() {
     microphoneStreamRef.current = null;
     audioNoiseFloorRef.current = 0.004;
     audioActivityThresholdRef.current = 0.02;
+    consecutiveBufferedTranscriptFailuresRef.current = 0;
     setAudioLevel(0);
     setSpeechStreakStartedAtMs(-1);
     setSilenceStreakStartedAtMs(-1);
@@ -1152,6 +1224,9 @@ function App() {
           const startedBufferedShadow = startBufferedTranscription(stream);
 
           void startRealtimeTranscription(stream).catch(() => {
+            if (import.meta.env.DEV) {
+              console.debug('booth-transcription', { stage: 'realtime-failed' });
+            }
             if (startedBufferedShadow) {
               setBoothError(null);
               return;
@@ -1192,6 +1267,7 @@ function App() {
     setSilenceStreakStartedAtMs(-1);
     setAudioLevel(0);
     setBoothClockMs(Date.now());
+    consecutiveBufferedTranscriptFailuresRef.current = 0;
     setBoothError(null);
   }
 
@@ -1305,9 +1381,11 @@ function App() {
     audioLevel,
     nowMs: boothClockMs,
   });
+  const boothHasTranscriptContext =
+    boothInterimTranscript.trim().length > 0 || boothTranscript.length > 0;
   const boothHasLiveInput =
     hasStartedBroadcast &&
-    (isMicListening || boothTranscript.length > 0 || boothInterimTranscript.length > 0);
+    (isMicListening || boothHasTranscriptContext);
   const boothAssistFacts = buildBoothAssistFacts({
     retrieval: worldState.retrieval,
     preMatch: worldState.preMatch,
@@ -1319,6 +1397,7 @@ function App() {
     boothSignal,
     boothTranscript,
     interimTranscript: boothInterimTranscript,
+    currentTimestampMs: getCurrentTranscriptTimestamp(),
     retrieval: worldState.retrieval,
     preMatch: worldState.preMatch,
     liveMatch: worldState.liveMatch,
@@ -1335,6 +1414,15 @@ function App() {
     interimTranscript: boothInterimTranscript,
     limit: 8,
   });
+  const boothCueSignature = useMemo(() => {
+    const normalizedQuery = boothAssistQuery.trim().toLowerCase();
+    const factIds = rankedBoothAssistFacts.slice(0, 5).map(({ fact }) => fact.id);
+
+    return JSON.stringify({
+      query: normalizedQuery,
+      factIds,
+    });
+  }, [boothAssistQuery, rankedBoothAssistFacts]);
   const currentBoothFeatures = useMemo<BoothFeatureSnapshot>(
     () => ({
       timestamp: boothClockMs,
@@ -1507,6 +1595,30 @@ function App() {
         : 'Standby';
 
   useEffect(() => {
+    if (!import.meta.env.DEV || !hasStartedBroadcast || !shouldSurfaceAssist) {
+      return;
+    }
+
+    console.debug('booth-assist-visible', {
+      source: generatedCue?.assist.text === activeAssist.text ? 'model' : 'local',
+      query: boothAssistQuery,
+      activeAssist: activeAssist.text,
+      topFactSources: rankedBoothAssistFacts.slice(0, 3).map(({ fact }) => fact.source),
+      hasRealFacts: boothAssistFacts.length > 0,
+      hasTranscriptContext: boothHasTranscriptContext,
+    });
+  }, [
+    activeAssist.text,
+    boothAssistFacts.length,
+    boothAssistQuery,
+    boothHasTranscriptContext,
+    generatedCue?.assist.text,
+    hasStartedBroadcast,
+    rankedBoothAssistFacts,
+    shouldSurfaceAssist,
+  ]);
+
+  useEffect(() => {
     if (!hasStartedBroadcast) {
       if (latchedAssist.type !== 'none') {
         setLatchedAssist(createEmptyAssistCard());
@@ -1554,6 +1666,52 @@ function App() {
       window.clearTimeout(timeoutId);
     };
   }, [assistVisibilityPhase]);
+
+  const lastGeneratedCueSignatureRef = useRef('');
+
+  useEffect(() => {
+    if (
+      !hasStartedBroadcast ||
+      !boothHasLiveInput ||
+      !boothHasTranscriptContext ||
+      !liveBoothShouldSurfaceAssist ||
+      boothInterpretation?.state === 'weaning-off'
+    ) {
+      lastGeneratedCueSignatureRef.current = '';
+      return;
+    }
+
+    if (!boothCueSignature) {
+      return;
+    }
+
+    if (lastGeneratedCueSignatureRef.current === '') {
+      lastGeneratedCueSignatureRef.current = boothCueSignature;
+      return;
+    }
+
+    if (lastGeneratedCueSignatureRef.current === boothCueSignature) {
+      return;
+    }
+
+    lastGeneratedCueSignatureRef.current = boothCueSignature;
+
+    if (generatedCue) {
+      setGeneratedCue(null);
+    }
+
+    if (generatedCueRequestedAt !== 0) {
+      setGeneratedCueRequestedAt(0);
+    }
+  }, [
+    boothCueSignature,
+    boothHasLiveInput,
+    boothInterpretation?.state,
+    generatedCue,
+    generatedCueRequestedAt,
+    hasStartedBroadcast,
+    liveBoothShouldSurfaceAssist,
+  ]);
 
   useEffect(() => {
     if (!hasStartedBroadcast) {
@@ -1788,6 +1946,7 @@ function App() {
     };
   }, [
     boothHasLiveInput,
+    boothHasTranscriptContext,
     boothInterpretation,
     currentBoothFeatures,
     generatedCue,
@@ -1798,6 +1957,7 @@ function App() {
     liveBoothShouldSurfaceAssist,
     loadedClipName,
     boothAssistQuery,
+    boothCueSignature,
     rankedBoothAssistFacts,
     preMatchCueSummary,
     worldState.contextBundle,
