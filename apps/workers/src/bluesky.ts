@@ -75,6 +75,10 @@ function normalizeText(text: string) {
   return text.replace(/\s+/g, ' ').trim();
 }
 
+function normalizeQueryToken(text: string) {
+  return normalizeText(text).replace(/\s+/g, ' ').trim();
+}
+
 function inferSentiment(text: string) {
   const normalized = text.toLowerCase();
 
@@ -89,8 +93,17 @@ function inferSentiment(text: string) {
   return 'neutral';
 }
 
-function buildQueries(homeTeam: string, awayTeam: string) {
-  return [...new Set([homeTeam.trim(), awayTeam.trim()].filter((value) => value.length > 0))];
+export function buildQueries(homeTeam: string, awayTeam: string) {
+  const home = normalizeQueryToken(homeTeam);
+  const away = normalizeQueryToken(awayTeam);
+  const candidates = [
+    home,
+    away,
+    home && away ? `${home} ${away}` : '',
+    home && away ? `${home} vs ${away}` : '',
+  ];
+
+  return [...new Set(candidates.filter((value) => value.length > 0))];
 }
 
 async function searchBlueskyPosts(
@@ -155,6 +168,10 @@ export async function ingestBlueskySocialPosts(
   const token = await getAccessToken(fetchImpl);
   const queries = buildQueries(config.homeTeam, config.awayTeam);
 
+  if (queries.length > 0) {
+    console.log('[bluesky] search queries:', JSON.stringify(queries));
+  }
+
   for (const query of queries) {
     const payload = await searchBlueskyPosts(
       query,
@@ -162,6 +179,7 @@ export async function ingestBlueskySocialPosts(
       fetchImpl,
       token,
     );
+    console.log(`[bluesky] query "${query}" → ${(payload.posts ?? []).length} posts`);
     normalizeBlueskyPosts(payload, config.clockMs, cache);
   }
 

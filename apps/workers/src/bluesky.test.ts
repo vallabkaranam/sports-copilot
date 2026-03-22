@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BlueskyPostCache, ingestBlueskySocialPosts } from './bluesky';
+import { BlueskyPostCache, buildQueries, ingestBlueskySocialPosts } from './bluesky';
 
 function jsonResponse(data: unknown) {
   return Promise.resolve({
@@ -9,6 +9,15 @@ function jsonResponse(data: unknown) {
 }
 
 describe('bluesky social ingest', () => {
+  it('builds matchup-aware queries from the active home and away teams', () => {
+    expect(buildQueries('Rangers', 'Aberdeen')).toEqual([
+      'Rangers',
+      'Aberdeen',
+      'Rangers Aberdeen',
+      'Rangers vs Aberdeen',
+    ]);
+  });
+
   it('normalizes public search results into social posts and dedupes by uri', async () => {
     const cache: BlueskyPostCache = {};
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
@@ -52,6 +61,10 @@ describe('bluesky social ingest', () => {
         });
       }
 
+      if (url.includes('q=Barcelona+Real+Madrid') || url.includes('q=Barcelona+vs+Real+Madrid')) {
+        return jsonResponse({ posts: [] });
+      }
+
       throw new Error(`Unhandled fetch: ${url}`);
     });
 
@@ -69,5 +82,6 @@ describe('bluesky social ingest', () => {
     expect(posts[0]?.handle).toBe('@matchfan.bsky.social');
     expect(posts[0]?.timestamp).toBe(12_000);
     expect(posts[1]?.sentiment).toBe('neutral');
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 });
