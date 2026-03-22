@@ -2321,40 +2321,49 @@ function App() {
                   <h3>Load a reel into Channel 1 or Channel 2 to begin.</h3>
                 </div>
               ) : null}
+            </div>
+          </div>
 
-              {shouldSurfaceAssist ? (
-                <article
-                  className={`replay-toast ${
-                    isAssistWeaning ? 'replay-toast--weaning' : 'replay-toast--live'
-                  }`}
-                  key={replayToastSignature}
-                >
-                  <p className="assist-type">Prompt</p>
-                  <h3>{activeAssist.text}</h3>
-                  <p>{activeAssistSupportCopy}</p>
-                </article>
-              ) : null}
+          <div className="stage-support">
+            <div className="stage-support__status">
+              <div className={`coach-lane coach-lane--${coachingTone.tone}`}>
+                <strong>{coachingTone.headline}</strong>
+                <p>{guidanceSummary}</p>
+              </div>
 
-              {activeTriggerBadges.length > 0 ? (
-                <div className="replay-tags">
-                  {activeTriggerBadges.map((badge) => (
-                    <span className="scene-chip" key={badge}>
-                      {badge}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-
-              <div className="replay-footer">
-                <div className={`coach-lane coach-lane--${coachingTone.tone}`}>
-                  <strong>{coachingTone.headline}</strong>
+              <div className="stage-support__progress">
+                <div className="meter-label-row">
+                  <span>Clip progress</span>
+                  <strong>{clipProgress}%</strong>
                 </div>
                 <div className="progress-track" aria-label="Replay progress">
                   <span style={{ width: `${clipProgress}%` }} />
                 </div>
-                <p className="pulse-copy">{guidanceSummary}</p>
               </div>
             </div>
+
+            {activeTriggerBadges.length > 0 ? (
+              <div className="replay-tags stage-support__tags">
+                {activeTriggerBadges.map((badge) => (
+                  <span className="scene-chip" key={badge}>
+                    {badge}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+
+            {shouldSurfaceAssist ? (
+              <article
+                className={`replay-toast replay-toast--below ${
+                  isAssistWeaning ? 'replay-toast--weaning' : 'replay-toast--live'
+                }`}
+                key={replayToastSignature}
+              >
+                <p className="assist-type">Prompt</p>
+                <h3>{activeAssist.text}</h3>
+                <p>{activeAssistSupportCopy}</p>
+              </article>
+            ) : null}
           </div>
         </section>
 
