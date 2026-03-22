@@ -1,8 +1,9 @@
 # Demo Validation
 
-This guide is the runtime validation pass for the two live booth engines:
+This guide is the runtime validation pass for the live booth engines:
 - hesitation detection
 - cue / hint generation
+- cue grounding / explainability
 
 Use it to classify each behavior as:
 - `working as intended`
@@ -74,11 +75,13 @@ Pass if:
 - the stats line produces a stat-led cue
 - the play/save line produces a live-moment cue
 - the cue does not keep repeating the same fan-reaction framing across all three
+- once a cue idea is spoken back in the transcript, the next cue advances instead of repeating that same angle
 
 Record:
 - social:
 - stats:
 - live play:
+- cue advancement:
 
 ### 4. Degraded-path behavior
 
@@ -115,6 +118,27 @@ Pass if:
 - the top `retrieval.supportingFacts` change with the current transcript
 - the facts are not always social-first
 - when data is sparse, the fallback path still produces a grounded cue
+- the prompt card `Why this cue` reveal shows source chips or live context traces that match the underlying request
+
+Record:
+- status:
+- notes:
+
+### 6. Explainability surface
+
+Verify:
+- the prompt card can expand `Why this cue`
+- the reveal stays compact and does not overwhelm the main cue
+- the reveal references real grounding inputs like:
+  - live event
+  - social pulse
+  - vision cue
+  - source chips
+  - hesitation / WPM context
+
+Pass if:
+- the explainability layer makes the cue feel grounded
+- it does not turn the main prompt into a wall of text
 
 Record:
 - status:
@@ -166,8 +190,10 @@ A validation cycle is successful if all of these are true:
 - preset feed can start a live session
 - every deliberate hesitation shows a cue card
 - cue topic changes between social, stats, and live-play prompts
+- cue ideas advance after transcript uptake instead of repeating
 - missing model or backend support still leaves a visible fallback cue
 - model request facts track the current transcript instead of reusing one static fact set
+- the prompt card can show compact provenance without clutter
 
 ## Current Assumptions
 

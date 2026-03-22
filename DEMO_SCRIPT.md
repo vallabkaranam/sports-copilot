@@ -1,13 +1,13 @@
 # Demo Script
 
 ## Goal
-Show that Sports Copilot is an AI sidekick, not a chatbot:
+Show that AndOne is an adaptive sidekick, not a chatbot:
 - it ingests multiple messy streams
-- maintains a live world model
+- maintains a rolling live context model
 - waits while the booth is active
-- detects hesitation at the right moment
+- detects hesitation and recovery
 - surfaces one short grounded assist
-- adapts to style mode on command
+- shows compact provenance without cluttering the cue
 
 ## Operator Setup
 1. Run `npm run demo`.
@@ -18,12 +18,12 @@ Show that Sports Copilot is an AI sidekick, not a chatbot:
 ## Judge Flow
 1. Start with the replay paused and explain that the system is running entirely from local deterministic fixtures.
 2. Press `Play`.
-3. Point out the scoreboard, event timeline, narrative stack, hesitation meter, source chips, and replay panel as the feed advances.
+3. Point out the live desk layout, hesitation meter, transcript rail, and the fact that the system stays quiet while delivery is stable.
 4. Let the save sequence arrive, then call out that the system stays quiet while the co-host is still talking.
-5. As soon as the co-host line clears, show the grounded toss-up assist.
+5. As soon as the co-host line clears, show the grounded assist.
 6. Let the clip continue into the Madrid counter.
-7. In `analyst` mode, note that the expected assist is a context line.
-8. Restart, switch to `hype`, and replay the late counter if you want to show style adaptation.
+7. Open `Why this cue` and point out that the card is grounded in live context rather than generic filler.
+8. Continue speaking and show that once the user takes up the idea, the next cue advances instead of repeating it.
 9. Use `Force Hesitation` only as a backup if you miss the natural hesitation window.
 
 ## Exact Event Timestamps
@@ -48,26 +48,17 @@ Show that Sports Copilot is an AI sidekick, not a chatbot:
 | `01:32.5` | Madrid counter is hot and the lead has gone quiet again | Style-sensitive assist appears |
 
 ## Exact Expected Assists
-### Save Window
-- Replay time: `01:19.0`
-- Style mode: `analyst`
-- Expected assist type: `co-host-tossup`
-- Expected assist text:
-  `What did you make of Courtois's save there?`
-
-### Late Counter in Analyst Mode
-- Replay time: `01:32.5`
-- Style mode: `analyst`
-- Expected assist type: `context`
-- Expected assist text:
-  `Vinícius Júnior is at the heart of it, and the bigger story is Real Madrid are flipping the momentum.`
-
-### Late Counter in Hype Mode
-- Replay time: `01:32.5`
-- Style mode: `hype`
-- Expected assist type: `hype`
-- Expected assist text:
-  `Vinícius Júnior has Real Madrid flying in transition!`
+### Expected Behavior
+- Save window:
+  - a grounded assist should appear once the hesitation window opens
+  - the prompt should reference the live moment rather than generic bridge phrasing
+- After the prompt is taken up in speech:
+  - the next cue should move to a fresh grounded angle
+  - it should not simply paraphrase the same save line again
+- Late counter:
+  - the assist should stay short
+  - the assist should reflect current match context
+  - the provenance reveal should show live supporting sources
 
 ## Backup Plan
 - If you miss the timing, press `Restart`.

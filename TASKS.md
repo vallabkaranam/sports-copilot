@@ -213,6 +213,8 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 - [x] track live hesitation in the browser booth
 - [x] gate assist reveal on live booth hesitation when mic input is active
 - [x] soften the visual design for live demo usability
+- [x] slim and unify the live/archive surfaces around one sidekick-first design language
+- [x] keep the prompt card minimal while moving deeper context into compact reveal patterns
 
 ### Tests
 - [x] e2e test dashboard render
@@ -258,6 +260,28 @@ Build a hackathon-ready AI soccer commentator co-pilot for a controlled El Clás
 - [x] write DEMO_SCRIPT.md
 - [x] write JUDGE_PITCH.md
 - [x] write KNOWN_LIMITATIONS.md
+
+---
+
+## P8 — Sidekick Productization
+
+### Adaptive Booth Behavior
+- [x] add explicit recovery scoring so hesitation can fall as confidence returns
+- [x] prevent cues from repeating once the speaker has already taken them up in recent transcript
+- [x] let cue generation advance to a fresh grounded angle within the same hesitation period
+
+### Grounded Cue System
+- [x] blend pre-match, live match, recent events, social, context bundle, and transcript context into cue generation
+- [x] include sampled vision cues in cue grounding inputs
+- [x] pass recent and excluded cue text into the generation path to reduce generic repetition
+
+### Explainability
+- [x] add a compact `Why this cue` reveal on the live prompt card
+- [x] expose source chips and lightweight cue provenance without bloating the main cue
+
+### Product Framing
+- [x] align pitch, architecture, validation, and limitation docs around the Track 3 sidekick story
+- [x] frame the system as an orchestrated sidekick with specialist agents/modules rather than a generic dashboard
 
 ---
 
