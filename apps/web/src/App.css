@@ -297,6 +297,7 @@
 
 .main-grid--live {
   grid-template-columns: minmax(0, 1.8fr) minmax(320px, 0.78fr);
+  align-items: start;
 }
 
 .main-grid--debug {
