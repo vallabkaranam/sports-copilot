@@ -1,5 +1,6 @@
 import { ChangeEvent, startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AgentExplainability,
   BoothFeatureSnapshot,
   BoothInterpretation,
   BoothSessionRecord,
@@ -48,7 +49,6 @@ import {
   deriveBoothActivity,
   resolveBoothGuidanceScores,
 } from './boothSignal';
-import { buildSidekickTrace } from './sidekickTrace';
 import {
   createInitialWorldState,
   formatDurationMs,
@@ -67,7 +67,12 @@ import {
 type MicrophoneAvailability = 'supported' | 'degraded' | 'unsupported';
 type CoachingTone = 'standby' | 'steady' | 'supporting' | 'step-in';
 type AssistVisibilityPhase = 'hidden' | 'live' | 'weaning';
-type AppView = 'live' | 'reviews';
+type AppRoute = 'live' | 'archive' | 'debug';
+type SidebarAgentState = 'idle' | 'active' | 'contributing' | 'blocked';
+type SidebarAgent = AgentExplainability & {
+  displayState: SidebarAgentState;
+  origin: 'interpretation' | 'orchestration' | 'generation';
+};
 
 const AUDIO_ACTIVITY_SAMPLE_MS = 120;
 const MIN_AUDIO_ACTIVITY_THRESHOLD = 0.012;
@@ -110,6 +115,101 @@ function createEmptyStoredProgramFeeds(): Record<ProgramFeedSlotId, StoredProgra
     'program-b': null,
     'program-c': null,
   };
+}
+
+function getAppRouteFromLocation(): AppRoute {
+  if (typeof window === 'undefined') {
+    return 'live';
+  }
+
+  const route = window.location.hash.replace(/^#\/?/, '').trim().toLowerCase();
+  if (route === 'archive' || route === 'reviews') {
+    return 'archive';
+  }
+  if (route === 'debug') {
+    return 'debug';
+  }
+
+  return 'live';
+}
+
+function setAppRouteHash(route: AppRoute) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const nextHash = `#/${route}`;
+  if (window.location.hash !== nextHash) {
+    window.location.hash = nextHash;
+  }
+}
+
+function normalizeAgentName(agentName: string) {
+  return agentName.trim().toLowerCase();
+}
+
+function mergeAgentRuns(
+  agentCollections: Array<{ agents: AgentExplainability[]; origin: SidebarAgent['origin'] }>,
+  options: {
+    contextBlocked: boolean;
+    cueBlocked: boolean;
+  },
+) {
+  const merged = new Map<string, SidebarAgent>();
+  const stateRank: Record<AgentExplainability['state'], number> = {
+    quiet: 0,
+    waiting: 1,
+    ready: 2,
+    active: 3,
+  };
+
+  for (const collection of agentCollections) {
+    for (const agent of collection.agents) {
+      const key = normalizeAgentName(agent.agentName);
+      const existing = merged.get(key);
+      const shouldPreferNext = !existing || stateRank[agent.state] >= stateRank[existing.state];
+      const sourceMap = new Map<string, (typeof agent.sourcesUsed)[number]>();
+
+      for (const chip of existing?.sourcesUsed ?? []) {
+        sourceMap.set(chip.id, chip);
+      }
+      for (const chip of agent.sourcesUsed) {
+        sourceMap.set(chip.id, chip);
+      }
+
+      const nextAgent: SidebarAgent = {
+        ...(shouldPreferNext ? agent : existing!),
+        output: shouldPreferNext ? agent.output : existing!.output,
+        reasoningTrace: [...new Set([...(existing?.reasoningTrace ?? []), ...agent.reasoningTrace])],
+        sourcesUsed: [...sourceMap.values()],
+        origin: shouldPreferNext ? collection.origin : existing!.origin,
+        displayState:
+          options.contextBlocked && key.includes('context')
+            ? 'blocked'
+            : options.cueBlocked && (key.includes('cue') || key.includes('grounding'))
+              ? 'blocked'
+              : collection.origin === 'generation'
+                ? 'contributing'
+                : agent.state === 'active'
+                  ? 'active'
+                  : agent.state === 'ready'
+                    ? 'active'
+                    : 'idle',
+      };
+
+      merged.set(key, nextAgent);
+    }
+  }
+
+  return [...merged.values()].sort((left, right) => {
+    const displayRank: Record<SidebarAgentState, number> = {
+      contributing: 3,
+      active: 2,
+      blocked: 1,
+      idle: 0,
+    };
+    return displayRank[right.displayState] - displayRank[left.displayState];
+  });
 }
 
 function supportsAudioMonitoring() {
@@ -652,7 +752,7 @@ function App() {
   const [selectedReviewSessionId, setSelectedReviewSessionId] = useState<string | null>(null);
   const [isLoadingReview, setIsLoadingReview] = useState(false);
   const [isFinalizingSession, setIsFinalizingSession] = useState(false);
-  const [appView, setAppView] = useState<AppView>('live');
+  const [appRoute, setAppRoute] = useState<AppRoute>(() => getAppRouteFromLocation());
   const [activeBoothSessionId, setActiveBoothSessionId] = useState<string | null>(null);
   const [loadedClipName, setLoadedClipName] = useState('');
   const [loadedClipUrl, setLoadedClipUrl] = useState<string | null>(null);
@@ -716,6 +816,34 @@ function App() {
   const clipObjectUrlRef = useRef<string | null>(null);
   const lastRestartTokenRef = useRef(controls.restartToken);
   const lastResolvedFeedKeyRef = useRef('');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const syncRoute = () => {
+      setAppRoute(getAppRouteFromLocation());
+    };
+
+    syncRoute();
+    window.addEventListener('hashchange', syncRoute);
+    if (!window.location.hash) {
+      setAppRouteHash('live');
+    }
+
+    return () => {
+      window.removeEventListener('hashchange', syncRoute);
+      if (window.location.hash !== '#/live') {
+        window.location.hash = '#/live';
+      }
+    };
+  }, []);
+
+  function navigateToRoute(route: AppRoute) {
+    setAppRoute(route);
+    setAppRouteHash(route);
+  }
 
   useEffect(() => {
     let isActive = true;
@@ -1119,7 +1247,9 @@ function App() {
       const response = await finishBoothSession(activeBoothSessionId);
       setLatestCompletedSessionReview(null);
       setSelectedReviewSessionId(response.session.id);
-      setLatestCompletedSession(null);
+      if ('samples' in response.session) {
+        setLatestCompletedSession(response.session as BoothSessionRecord);
+      }
 
       try {
         const completedSession = await fetchBoothSession(response.session.id);
@@ -1128,7 +1258,7 @@ function App() {
         setBoothError('The live session was saved, but the saved session detail is not ready yet.');
       }
 
-      setAppView('reviews');
+      navigateToRoute('archive');
 
       try {
         const review = await fetchBoothSessionReview(response.session.id);
@@ -1936,6 +2066,43 @@ function App() {
     generatedCue?.explainability ?? worldState.orchestration?.lastGeneration ?? null;
   const usedContextFacts = worldState.retrieval.supportingFacts;
   const unusedContextFacts = worldState.retrieval.unusedFacts ?? [];
+  const fixtureLinkBlocked =
+    Boolean(boothError) &&
+    /match linking|identify this match|fixture extraction|sportmonks_api_token|fixture resolution/i.test(
+      boothError ?? '',
+    );
+  const cueGenerationBlocked =
+    !isCueEndpointAvailable ||
+    (Boolean(boothError) &&
+      /generate-cue|prompt|cue|assist could not be generated|render is missing the \/booth\/generate-cue route/i.test(
+        boothError ?? '',
+      ));
+  const liveAgents = mergeAgentRuns(
+    [
+      {
+        agents: boothInterpretation?.explainability?.contributingAgents ?? [],
+        origin: 'interpretation',
+      },
+      {
+        agents: worldState.orchestration?.agentRuns ?? [],
+        origin: 'orchestration',
+      },
+      {
+        agents: generationExplainability?.contributingAgents ?? [],
+        origin: 'generation',
+      },
+    ],
+    {
+      contextBlocked: fixtureLinkBlocked,
+      cueBlocked: cueGenerationBlocked,
+    },
+  );
+  const activeAgentNames = liveAgents
+    .filter((agent) => agent.displayState === 'active' || agent.displayState === 'contributing')
+    .map((agent) => agent.agentName);
+  const contextPreviewFacts = usedContextFacts.slice(0, 3);
+  const heldContextPreviewFacts = unusedContextFacts.slice(0, 2);
+  const liveContextItems = worldState.contextBundle.items.slice(0, 4);
   const coachingTone = getCoachingTone({
     hasStartedBroadcast,
     boothHasLiveInput,
@@ -2041,22 +2208,6 @@ function App() {
           ? 'worker'
           : 'local'
       : 'none';
-  const sidekickTrace = buildSidekickTrace({
-    boothSignal,
-    effectiveRecoveryScore,
-    shouldSurfaceAssist,
-    isAssistWeaning,
-    activeFixtureId: controls.activeFixtureId,
-    fixtureResolutionLabel,
-    cueSource,
-    recentEventCount: worldState.recentEvents.length,
-    socialCount: worldState.liveSignals.social.length,
-    visionCount: worldState.liveSignals.vision.length,
-    supportingFactCount: boothAssistFacts.length,
-    transcriptLineCount: transcriptWindow.length + (boothInterimTranscript.trim() ? 1 : 0),
-  });
-  const deliveryTrace = sidekickTrace.filter((item) => item.lane === 'sensing');
-  const contentTrace = sidekickTrace.filter((item) => item.lane === 'content');
   const railSystemNote = isAssistWeaning
     ? 'Recovery is strong, so the cue is shrinking and handing the call back to you.'
     : shouldSurfaceAssist
@@ -2613,20 +2764,29 @@ function App() {
             <button
               type="button"
               role="tab"
-              aria-selected={appView === 'live'}
-              className={appView === 'live' ? 'ghost-button ghost-button--active' : 'ghost-button'}
-              onClick={() => setAppView('live')}
+              aria-selected={appRoute === 'live'}
+              className={appRoute === 'live' ? 'ghost-button ghost-button--active' : 'ghost-button'}
+              onClick={() => navigateToRoute('live')}
             >
               Live
             </button>
             <button
               type="button"
               role="tab"
-              aria-selected={appView === 'reviews'}
-              className={appView === 'reviews' ? 'ghost-button ghost-button--active' : 'ghost-button'}
-              onClick={() => setAppView('reviews')}
+              aria-selected={appRoute === 'archive'}
+              className={appRoute === 'archive' ? 'ghost-button ghost-button--active' : 'ghost-button'}
+              onClick={() => navigateToRoute('archive')}
             >
               Archive
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={appRoute === 'debug'}
+              className={appRoute === 'debug' ? 'ghost-button ghost-button--active' : 'ghost-button'}
+              onClick={() => navigateToRoute('debug')}
+            >
+              Debug
             </button>
           </div>
         </div>
@@ -2634,565 +2794,533 @@ function App() {
 
       {error ? <div className="warning-banner">{error}</div> : null}
 
-      {appView === 'live' ? (
-        <div className="main-grid">
-        <section className="panel replay-panel stage-panel">
-            <div className="panel-header panel-header--stage">
-              <div>
-                <p className="panel-kicker">Live desk</p>
-                <h2>{feedHeading}</h2>
-                <p className="panel-copy">Keep the program feed in view. The prompt only appears when delivery slips.</p>
+      {appRoute === 'live' ? (
+        <>
+          <section className="panel live-toolbar">
+            <div className="program-toolbar">
+              <div className="program-toolbar__group" role="tablist" aria-label="Program feeds">
+                {PROGRAM_FEED_SLOTS.map((slot) => {
+                  const feed = storedProgramFeeds[slot.id];
+                  const isSelected = selectedProgramFeedId === slot.id;
+
+                  return (
+                    <button
+                      key={slot.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={isSelected}
+                      className={`program-pill ${isSelected ? 'program-pill--active' : ''}`}
+                      onClick={() => {
+                        if (slot.source === 'preset') {
+                          void loadProgramFeed(slot.id, {
+                            slotId: slot.id,
+                            fileName: slot.presetFileName ?? slot.label,
+                            fileSize: 0,
+                            updatedAt: '',
+                            blob: new Blob(),
+                          });
+                          return;
+                        }
+
+                        if (feed) {
+                          void loadProgramFeed(slot.id, feed);
+                          return;
+                        }
+
+                        setSelectedProgramFeedId(slot.id);
+                        setBoothError(null);
+                      }}
+                    >
+                      <span>{slot.label}</span>
+                      <small>
+                        {slot.source === 'preset'
+                          ? `${slot.presetFileName} · ${slot.tone}`
+                          : feed?.fileName ?? 'Load reel'}
+                      </small>
+                    </button>
+                  );
+                })}
               </div>
+
+              <div className="program-toolbar__actions">
+                <label className="file-chip ghost-button">
+                  <span>
+                    {storedProgramFeeds['program-c'] ? 'Update Channel 3' : 'Upload to Channel 3'}
+                  </span>
+                  <input
+                    type="file"
+                    accept="video/*"
+                    onChange={(event) => void handleProgramFeedChange('program-c', event)}
+                  />
+                </label>
+                {selectedProgramSlot?.source === 'upload' ? (
+                  <>
+                    {storedProgramFeeds[selectedProgramSlot.id] ? (
+                      <button
+                        type="button"
+                        className="text-button"
+                        onClick={() => void clearProgramFeedSlot(selectedProgramSlot.id)}
+                      >
+                        Clear
+                      </button>
+                    ) : null}
+                  </>
+                ) : null}
+                {loadedClipUrl ? (
+                  <button
+                    type="button"
+                    className="ghost-button ghost-button--subtle"
+                    onClick={() => setIsClipMuted((current) => !current)}
+                  >
+                    {isClipMuted ? 'Muted' : 'Audio on'}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="program-toolbar__meta">
+              <p>
+                {selectedProgramSlot
+                  ? `${selectedProgramSlot.label} is on deck${loadedClipName ? ` · ${loadedClipName}` : ''}`
+                  : 'Select a preset or load a reel to start the desk.'}
+              </p>
               <div className="panel-chip-row">
-                <span className="panel-tag">{loadedClipUrl ? `${clipClockLabel} / ${clipDurationLabel}` : 'No feed live'}</span>
+                {loadedClipUrl ? <span className="panel-tag">{clipClockLabel} / {clipDurationLabel}</span> : null}
                 {isResolvingFixture ? <span className="panel-tag">Identifying match</span> : null}
                 {fixtureResolutionLabel ? <span className="panel-tag">{fixtureResolutionLabel}</span> : null}
-            </div>
-          </div>
-
-          <div className="media-toolbar">
-            <div className="feed-switcher" role="group" aria-label="Program feeds">
-              {PROGRAM_FEED_SLOTS.map((slot) => {
-                const feed = storedProgramFeeds[slot.id];
-                const isSelected = selectedProgramFeedId === slot.id;
-                const isPreset = slot.source === 'preset';
-                const slotFeedName = isPreset ? slot.presetFileName ?? 'Preset feed' : feed?.fileName ?? 'No reel loaded';
-
-                return (
-                  <article
-                    key={slot.id}
-                    className={`feed-switcher__slot ${isSelected ? 'feed-switcher__slot--selected' : ''}`}
-                  >
-                    <div className="feed-switcher__copy">
-                      <span className="feed-switcher__label">{slot.label}</span>
-                      <strong>{slotFeedName}</strong>
-                      <small>{slot.tone}</small>
-                    </div>
-                    <div className="feed-switcher__actions">
-                      {isPreset ? (
-                        <button
-                          type="button"
-                          className={isSelected ? 'ghost-button ghost-button--active' : 'ghost-button'}
-                          onClick={() =>
-                            void loadProgramFeed(slot.id, {
-                              slotId: slot.id,
-                              fileName: slot.presetFileName ?? slot.label,
-                              fileSize: 0,
-                              updatedAt: '',
-                              blob: new Blob(),
-                            })
-                          }
-                        >
-                          {isSelected ? 'On deck' : 'Take feed'}
-                        </button>
-                      ) : feed ? (
-                        <button
-                          type="button"
-                          className={isSelected ? 'ghost-button ghost-button--active' : 'ghost-button'}
-                          onClick={() => void loadProgramFeed(slot.id, feed)}
-                        >
-                          {isSelected ? 'On deck' : 'Take feed'}
-                        </button>
-                      ) : null}
-                      {!isPreset ? (
-                        <label className="file-chip file-chip--slot">
-                          <span>{feed ? 'Replace reel' : 'Load reel'}</span>
-                          <input
-                            type="file"
-                            accept="video/*"
-                            onChange={(event) => void handleProgramFeedChange(slot.id, event)}
-                          />
-                        </label>
-                      ) : null}
-                      {!isPreset && feed ? (
-                        <button
-                          type="button"
-                          className="text-button"
-                          onClick={() => void clearProgramFeedSlot(slot.id)}
-                        >
-                          Clear
-                        </button>
-                      ) : null}
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-            <div className="media-meta">
-              <span className="meta-pill">
-                {selectedProgramSlot ? `${selectedProgramSlot.label}` : 'Choose a feed'}
-              </span>
-              {loadedClipName ? <span className="meta-pill">{loadedClipName}</span> : null}
-              {loadedClipUrl ? (
-                <button
-                  type="button"
-                  className="ghost-button ghost-button--subtle"
-                  onClick={() => setIsClipMuted((current) => !current)}
-                >
-                  {isClipMuted ? 'Clip audio muted' : 'Clip audio on'}
-                </button>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="stage-primary-bar">
-            <button
-              type="button"
-              className={`stage-primary-button ${isBroadcastLive ? 'stage-primary-button--live' : ''}`}
-              disabled={primaryActionDisabled}
-              onClick={() => void (isBroadcastLive ? stopBroadcast() : startBroadcast())}
-            >
-              {primaryActionLabel}
-            </button>
-            <p className="stage-primary-copy">
-              {isFinalizingSession
-                ? 'Saving the session and building the review.'
-                : loadedClipUrl
-                ? isBroadcastLive
-                  ? 'You are live. AndOne will stay quiet until you need support.'
-                  : 'Start when you are ready.'
-                : 'Load a feed, then go live.'}
-            </p>
-          </div>
-
-          <div className={`replay-stage ${loadedClipUrl ? 'replay-stage--video' : ''}`}>
-            {loadedClipUrl ? (
-              <video
-                ref={videoRef}
-                className="replay-video"
-                src={loadedClipUrl}
-                crossOrigin="anonymous"
-                playsInline
-                loop
-                muted={isClipMuted}
-                onLoadedMetadata={(event) => {
-                  setClipDurationMs(Math.round(event.currentTarget.duration * 1_000));
-                }}
-                onTimeUpdate={(event) => {
-                  setClipPositionMs(Math.round(event.currentTarget.currentTime * 1_000));
-                }}
-                onEnded={(event) => {
-                  if (!hasStartedBroadcast || controls.playbackStatus !== 'playing') {
-                    return;
-                  }
-
-                  event.currentTarget.currentTime = 0;
-                  safelyPlayVideo(event.currentTarget, () => {
-                    setBoothError('Press play on the loaded clip if the browser blocks autoplay.');
-                  });
-                }}
-                onError={() => {
-                  setBoothError('The selected video feed could not be loaded. Try the other channel or reload the reel.');
-                }}
-              />
-            ) : (
-              <div className="replay-stage__scrim" />
-            )}
-
-            <div className="replay-stage__overlay" />
-
-            <div className="replay-stage__content">
-              {!loadedClipUrl ? (
-                <div className="replay-copy">
-                  <span className="live-chip">Ready for upload</span>
-                  <h3>Load a feed into Channel 1 or Channel 2 to begin.</h3>
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="stage-support">
-            {shouldSurfaceAssist ? (
-              <article
-                className={`replay-toast replay-toast--below ${
-                  isAssistWeaning ? 'replay-toast--weaning' : 'replay-toast--live'
-                }`}
-                key={replayToastSignature}
-              >
-                <p className="assist-type">Prompt</p>
-                <h3>{activeAssist.text}</h3>
-                <p>{activeAssistSupportCopy}</p>
-                {activeAssist.sourceChips.length > 0 ? (
-                  <details className="assist-trace">
-                    <summary>
-                      Why this cue
-                      {assistSourceSummary ? <span>{assistSourceSummary}</span> : null}
-                    </summary>
-                    <div className="assist-trace__body">
-                      <div className="source-chip-row">
-                        {activeAssist.sourceChips.map((chip) => (
-                          <span className="source-chip" key={chip.id}>
-                            {chip.label}
-                          </span>
-                        ))}
-                      </div>
-                      <div className="reason-list">
-                        {assistTraceLines.map((line) => (
-                          <p key={line}>{line}</p>
-                        ))}
-                      </div>
-                    </div>
-                  </details>
-                ) : null}
-              </article>
-            ) : null}
-
-            <p className="stage-footnote">
-              {loadedClipUrl
-                ? isBroadcastLive
-                  ? 'The feed loops while the session is live so the desk behaves like a continuous broadcast.'
-                  : 'Load the feed, then go live when you are ready.'
-                : 'Channel 1 and Channel 2 are presets. Channel 3 can hold your own reel.'}
-            </p>
-          </div>
-        </section>
-
-        <div className="side-column">
-          <section className={`panel control-panel control-panel--${coachingTone.tone}`}>
-            <div className="panel-header panel-header--compact">
-              <div>
-                <p className="panel-kicker">Live session</p>
-                <h2>Monitor</h2>
               </div>
-            </div>
-
-            <div className="rail-status-strip" aria-label="Booth readiness">
-              {readinessChecks.map((check) => (
-                <div
-                  key={check.label}
-                  className={`rail-status-chip ${check.done ? 'rail-status-chip--done' : ''}`}
-                  title={check.detail}
-                >
-                  <span className={`readiness-dot ${check.done ? 'readiness-dot--done' : ''}`} />
-                  <strong>{check.label}</strong>
-                </div>
-              ))}
-            </div>
-
-            {boothError ? <p className="inline-warning">{boothError}</p> : null}
-
-            <article className={`booth-card booth-card--compact booth-card--${coachingTone.tone}`}>
-              <div className="booth-card__header">
-                <div>
-                  <p className="control-label">System note</p>
-                  <strong>{isAssistWeaning ? 'Prompt is fading out' : assistStateLabel}</strong>
-                </div>
-              </div>
-
-              <p className="field-copy field-copy--tight">{railSystemNote}</p>
-
-              <div className="metric-card">
-                <div className="meter-label-row">
-                  <span>Hesitation</span>
-                  <strong>{boothHesitationPercent}</strong>
-                </div>
-                <div className={`meter-track meter-track--${coachingTone.tone}`}>
-                  <span style={{ width: boothHesitationPercent }} />
-                </div>
-              </div>
-
-              <div className="metric-card">
-                <div className="meter-label-row">
-                  <span>Confidence</span>
-                  <strong>{boothConfidencePercent}</strong>
-                </div>
-                <div className="meter-track meter-track--steady">
-                  <span style={{ width: boothConfidencePercent }} />
-                </div>
-                <p className="field-copy field-copy--tight">{confidenceReason}</p>
-              </div>
-
-              <div className="signal-meta">
-                <div className="signal-meta__item">
-                  <span>Mic activity</span>
-                  <div className="audio-meter" aria-label="Mic activity">
-                    {micBars.map((isActive, index) => (
-                      <span
-                        key={index}
-                        className={isActive ? 'audio-meter__bar audio-meter__bar--active' : 'audio-meter__bar'}
-                      />
-                    ))}
-                  </div>
-                </div>
-                <div className="signal-meta__item">
-                  <span>Prompt state</span>
-                  <strong>{assistStateLabel}</strong>
-                </div>
-              </div>
-
-              <div className="signal-indicator-row" aria-label="Live booth indicators">
-                {boothSignalIndicators.map((indicator) => (
-                  <div
-                    key={indicator.label}
-                    className={`signal-indicator signal-indicator--${indicator.emphasis} ${
-                      indicator.active ? 'signal-indicator--active' : ''
-                    }`}
-                  >
-                    <span>{indicator.label}</span>
-                    <strong>{indicator.value}</strong>
-                  </div>
-                ))}
-              </div>
-
-              <div className="reason-list">
-                {visibleReasons.slice(0, 1).map((reason) => (
-                  <p key={reason}>{reason}</p>
-                ))}
-              </div>
-            </article>
-
-            <article className="booth-card booth-card--compact booth-card--steady booth-card--transcript">
-              <div className="booth-card__header">
-                <div>
-                  <p className="control-label">Live transcript</p>
-                  <strong>{boothHasTranscriptContext ? 'Mic copy is flowing' : 'Waiting for speech'}</strong>
-                </div>
-              </div>
-
-              <div className="transcript-list" aria-live="polite">
-                {transcriptWindow.length > 0 ? (
-                  transcriptWindow.map((entry) => (
-                    <p className="transcript-line" key={`${entry.timestamp}-${entry.text}`}>
-                      {entry.text}
-                    </p>
-                  ))
-                ) : (
-                  <p className="transcript-line transcript-line--muted">
-                    Once the booth mic produces usable text, the latest lines will appear here.
-                  </p>
-                )}
-
-                {boothInterimTranscript.trim() ? (
-                  <p className="transcript-line transcript-line--interim">{boothInterimTranscript.trim()}</p>
-                ) : null}
-              </div>
-            </article>
-
-            <article className="booth-card booth-card--compact booth-card--trace">
-              <div className="booth-card__header">
-                <div>
-                  <p className="control-label">Engine trace</p>
-                  <strong>Specialist agents</strong>
-                </div>
-              </div>
-
-              <div className="agent-trace-groups" aria-label="AndOne orchestration trace">
-                <section className="agent-trace-group">
-                  <div className="agent-trace-group__header">
-                    <p className="memory-title">Delivery sensing</p>
-                    <span className="agent-trace-group__hint">Hesitation system</span>
-                  </div>
-                  <div className="agent-trace-list">
-                    {deliveryTrace.map((item) => (
-                      <div
-                        className={`agent-trace-item agent-trace-item--${item.state}`}
-                        key={item.id}
-                      >
-                        <div>
-                          <span className="agent-trace-item__label">{item.label}</span>
-                          <p className="agent-trace-item__detail">{item.detail}</p>
-                        </div>
-                        <span className="agent-trace-item__state">{item.state}</span>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-                <section className="agent-trace-group">
-                  <div className="agent-trace-group__header">
-                    <p className="memory-title">Cue grounding</p>
-                    <span className="agent-trace-group__hint">Content system</span>
-                  </div>
-                  <div className="agent-trace-list">
-                    {contentTrace.map((item) => (
-                      <div
-                        className={`agent-trace-item agent-trace-item--${item.state}`}
-                        key={item.id}
-                      >
-                        <div>
-                          <span className="agent-trace-item__label">{item.label}</span>
-                          <p className="agent-trace-item__detail">{item.detail}</p>
-                        </div>
-                        <span className="agent-trace-item__state">{item.state}</span>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              </div>
-            </article>
-
-            <details className="booth-card booth-card--compact details-card" open={Boolean(generationExplainability)}>
-              <summary className="details-card__summary">
-                <div>
-                  <p className="control-label">Generation explainability</p>
-                  <strong>Who made this cue</strong>
-                </div>
-                <span className="panel-tag">
-                  {generationExplainability?.contributingAgents.length ?? 0} agents
-                </span>
-              </summary>
-
-              {generationExplainability ? (
-                <div className="details-card__body">
-                  <div className="reason-list">
-                    {generationExplainability.reasoningTrace.map((line) => (
-                      <p key={line}>{line}</p>
-                    ))}
-                  </div>
-                  <div className="agent-trace-list">
-                    {generationExplainability.contributingAgents.map((agent) => (
-                      <details className={`agent-trace-item agent-trace-item--${agent.state}`} key={agent.agentName}>
-                        <summary className="agent-trace-item__summary">
-                          <div>
-                            <span className="agent-trace-item__label">{agent.agentName}</span>
-                            <p className="agent-trace-item__detail">{agent.output}</p>
-                          </div>
-                          <span className="agent-trace-item__state">{agent.state}</span>
-                        </summary>
-                        <div className="details-card__body">
-                          <div className="reason-list">
-                            {agent.reasoningTrace.map((traceLine) => (
-                              <p key={`${agent.agentName}-${traceLine}`}>{traceLine}</p>
-                            ))}
-                          </div>
-                          {agent.sourcesUsed.length > 0 ? (
-                            <div className="source-chip-row">
-                              {agent.sourcesUsed.map((chip) => (
-                                <span className="source-chip" key={`${agent.agentName}-${chip.id}`}>
-                                  {chip.label}
-                                </span>
-                              ))}
-                            </div>
-                          ) : null}
-                        </div>
-                      </details>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <p className="transcript-line transcript-line--muted">
-                  Cue explainability will appear once a grounded prompt is generated.
-                </p>
-              )}
-            </details>
-
-            <details className="booth-card booth-card--compact details-card">
-              <summary className="details-card__summary">
-                <div>
-                  <p className="control-label">Context drawer</p>
-                  <strong>Live RAG context</strong>
-                </div>
-                <span className="panel-tag">
-                  {usedContextFacts.length} used · {unusedContextFacts.length} held
-                </span>
-              </summary>
-
-              <div className="details-card__body">
-                <div className="context-upload">
-                  <textarea
-                    className="context-textarea"
-                    value={contextUploadText}
-                    onChange={(event) => setContextUploadText(event.target.value)}
-                    placeholder="Paste prep notes or talking points..."
-                  />
-                  <div className="context-upload__actions">
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      disabled={isUploadingContext || !contextUploadText.trim()}
-                      onClick={() => void handleContextTextUpload()}
-                    >
-                      {isUploadingContext ? 'Saving...' : 'Save notes'}
-                    </button>
-                    <label className="file-chip">
-                      <span>Upload file</span>
-                      <input type="file" accept=".txt,.md,.csv,.json,.html,.xml" onChange={(event) => void handleContextFileUpload(event)} />
-                    </label>
-                  </div>
-                </div>
-
-                {contextDocuments.length > 0 ? (
-                  <div className="context-doc-list">
-                    {contextDocuments.map((document) => (
-                      <div className="context-doc-item" key={document.id}>
-                        <strong>{document.fileName}</strong>
-                        <span>{document.chunkCount} chunks</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-
-                <div className="context-columns">
-                  <div className="context-column">
-                    <p className="memory-title">Used now</p>
-                    <div className="context-fact-list">
-                      {usedContextFacts.map((fact) => (
-                        <div className="context-fact-item" key={fact.id}>
-                          <strong>{fact.sourceChip.label}</strong>
-                          <p>{fact.text}</p>
-                          <span>{Math.round(fact.relevance * 100)}%</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="context-column">
-                    <p className="memory-title">Retrieved but held</p>
-                    <div className="context-fact-list">
-                      {unusedContextFacts.length > 0 ? (
-                        unusedContextFacts.map((fact) => (
-                          <div className="context-fact-item context-fact-item--held" key={fact.id}>
-                            <strong>{fact.sourceChip.label}</strong>
-                            <p>{fact.text}</p>
-                            <span>{Math.round(fact.relevance * 100)}%</span>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="transcript-line transcript-line--muted">No reserve context is waiting right now.</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </details>
-
-            <details className="booth-card booth-card--compact details-card">
-              <summary className="details-card__summary">
-                <div>
-                  <p className="control-label">State drawer</p>
-                  <strong>Live memory and debug</strong>
-                </div>
-                <span className="panel-tag">{worldState.orchestration?.agentRuns.length ?? 0} runs</span>
-              </summary>
-
-              <div className="details-card__body">
-                <div className="reason-list">
-                  {(worldState.orchestration?.memoryState ?? []).map((line) => (
-                    <p key={`memory-${line}`}>{line}</p>
-                  ))}
-                </div>
-                <div className="reason-list">
-                  {(worldState.orchestration?.retrievalReasoning ?? []).map((line) => (
-                    <p key={`retrieval-${line}`}>{line}</p>
-                  ))}
-                </div>
-              </div>
-            </details>
-
-            <div className="inline-actions inline-actions--compact">
-              <button
-                type="button"
-                className="text-button"
-                disabled={isFinalizingSession}
-                onClick={clearBoothTranscript}
-              >
-                Clear transcript
-              </button>
             </div>
           </section>
 
-        </div>
-      </div>
-      ) : (
+          <div className="main-grid main-grid--live">
+            <section className="panel replay-panel stage-panel">
+              <div className="panel-header panel-header--stage">
+                <div>
+                  <p className="panel-kicker">Live desk</p>
+                  <h2>{feedHeading}</h2>
+                  <p className="panel-copy">The feed stays central. The sidekick only opens up when it has something real to add.</p>
+                </div>
+                <div className="panel-chip-row">
+                  <span className="panel-tag">{loadedClipUrl ? 'Feed armed' : 'No feed live'}</span>
+                  <span className="panel-tag">{cueSource === 'none' ? 'Monitoring only' : `Cue via ${cueSource}`}</span>
+                </div>
+              </div>
+
+              <div className="stage-primary-bar">
+                <button
+                  type="button"
+                  className={`stage-primary-button ${isBroadcastLive ? 'stage-primary-button--live' : ''}`}
+                  disabled={primaryActionDisabled}
+                  onClick={() => void (isBroadcastLive ? stopBroadcast() : startBroadcast())}
+                >
+                  {primaryActionLabel}
+                </button>
+                <p className="stage-primary-copy">
+                  {isFinalizingSession
+                    ? 'Saving the session and building the review.'
+                    : loadedClipUrl
+                      ? isBroadcastLive
+                        ? 'The desk is live. AndOne stays quiet until your delivery slips.'
+                        : 'The feed is loaded and muted. Go live when you are ready.'
+                      : 'Pick a preset above or load a reel into Channel 3.'}
+                </p>
+              </div>
+
+              <div className={`replay-stage ${loadedClipUrl ? 'replay-stage--video' : ''}`}>
+                {loadedClipUrl ? (
+                  <video
+                    ref={videoRef}
+                    className="replay-video"
+                    src={loadedClipUrl}
+                    crossOrigin="anonymous"
+                    playsInline
+                    loop
+                    muted={isClipMuted}
+                    onLoadedMetadata={(event) => {
+                      setClipDurationMs(Math.round(event.currentTarget.duration * 1_000));
+                    }}
+                    onTimeUpdate={(event) => {
+                      setClipPositionMs(Math.round(event.currentTarget.currentTime * 1_000));
+                    }}
+                    onEnded={(event) => {
+                      if (!hasStartedBroadcast || controls.playbackStatus !== 'playing') {
+                        return;
+                      }
+
+                      event.currentTarget.currentTime = 0;
+                      safelyPlayVideo(event.currentTarget, () => {
+                        setBoothError('Press play on the loaded clip if the browser blocks autoplay.');
+                      });
+                    }}
+                    onError={() => {
+                      setBoothError('The selected video feed could not be loaded. Try the other channel or reload the reel.');
+                    }}
+                  />
+                ) : (
+                  <div className="replay-stage__scrim" />
+                )}
+
+                <div className="replay-stage__overlay" />
+
+                <div className="replay-stage__content">
+                  {!loadedClipUrl ? (
+                    <div className="replay-copy">
+                      <span className="live-chip">Ready for live desk</span>
+                      <h3>Choose a preset above or upload a backup reel.</h3>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="stage-support">
+                {shouldSurfaceAssist ? (
+                  <article
+                    className={`replay-toast replay-toast--below ${
+                      isAssistWeaning ? 'replay-toast--weaning' : 'replay-toast--live'
+                    }`}
+                    key={replayToastSignature}
+                  >
+                    <p className="assist-type">Prompt</p>
+                    <h3>{activeAssist.text}</h3>
+                    <p>{activeAssistSupportCopy}</p>
+                    {activeAssist.sourceChips.length > 0 ? (
+                      <details className="assist-trace">
+                        <summary>
+                          Why this cue
+                          {assistSourceSummary ? <span>{assistSourceSummary}</span> : null}
+                        </summary>
+                        <div className="assist-trace__body">
+                          <div className="source-chip-row">
+                            {activeAssist.sourceChips.map((chip) => (
+                              <span className="source-chip" key={chip.id}>
+                                {chip.label}
+                              </span>
+                            ))}
+                          </div>
+                          <div className="reason-list">
+                            {assistTraceLines.map((line) => (
+                              <p key={line}>{line}</p>
+                            ))}
+                          </div>
+                        </div>
+                      </details>
+                    ) : null}
+                  </article>
+                ) : null}
+
+                <p className="stage-footnote">
+                  {loadedClipUrl
+                    ? isBroadcastLive
+                      ? 'The feed keeps looping while the session is live so the desk behaves like a continuous broadcast.'
+                      : 'The feed is loaded and ready. Go live when you want the sidekick to start monitoring.'
+                    : 'Channel 1 and Channel 2 are presets. Channel 3 is your upload slot.'}
+                </p>
+              </div>
+            </section>
+
+            <aside className="side-column">
+              <section className={`panel control-panel control-panel--${coachingTone.tone} live-sidebar`}>
+                <div className="panel-header panel-header--compact">
+                  <div>
+                    <p className="panel-kicker">Live session</p>
+                    <h2>Monitor</h2>
+                  </div>
+                  <span className="panel-tag">
+                    {activeAgentNames.length > 0 ? `${activeAgentNames.length} active` : 'Quiet'}
+                  </span>
+                </div>
+
+                <div className="rail-status-strip" aria-label="Booth readiness">
+                  {readinessChecks.map((check) => (
+                    <div
+                      key={check.label}
+                      className={`rail-status-chip ${check.done ? 'rail-status-chip--done' : ''}`}
+                      title={check.detail}
+                    >
+                      <span className={`readiness-dot ${check.done ? 'readiness-dot--done' : ''}`} />
+                      <strong>{check.label}</strong>
+                    </div>
+                  ))}
+                </div>
+
+                {boothError ? <p className="inline-warning">{boothError}</p> : null}
+
+                <article className={`booth-card booth-card--compact booth-card--${coachingTone.tone}`}>
+                  <div className="booth-card__header">
+                    <div>
+                      <p className="control-label">System note</p>
+                      <strong>{isAssistWeaning ? 'Prompt is fading out' : assistStateLabel}</strong>
+                    </div>
+                  </div>
+
+                  <p className="field-copy field-copy--tight">{railSystemNote}</p>
+
+                  <div className="metric-card">
+                    <div className="meter-label-row">
+                      <span>Hesitation</span>
+                      <strong>{boothHesitationPercent}</strong>
+                    </div>
+                    <div className={`meter-track meter-track--${coachingTone.tone}`}>
+                      <span style={{ width: boothHesitationPercent }} />
+                    </div>
+                  </div>
+
+                  <div className="metric-card">
+                    <div className="meter-label-row">
+                      <span>Confidence</span>
+                      <strong>{boothConfidencePercent}</strong>
+                    </div>
+                    <div className="meter-track meter-track--steady">
+                      <span style={{ width: boothConfidencePercent }} />
+                    </div>
+                    <p className="field-copy field-copy--tight">{confidenceReason}</p>
+                  </div>
+
+                  <div className="signal-meta">
+                    <div className="signal-meta__item">
+                      <span>Mic activity</span>
+                      <div className="audio-meter" aria-label="Mic activity">
+                        {micBars.map((isActive, index) => (
+                          <span
+                            key={index}
+                            className={isActive ? 'audio-meter__bar audio-meter__bar--active' : 'audio-meter__bar'}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    <div className="signal-meta__item">
+                      <span>Prompt state</span>
+                      <strong>{assistStateLabel}</strong>
+                    </div>
+                  </div>
+
+                  <div className="signal-indicator-row" aria-label="Live booth indicators">
+                    {boothSignalIndicators.map((indicator) => (
+                      <div
+                        key={indicator.label}
+                        className={`signal-indicator signal-indicator--${indicator.emphasis} ${
+                          indicator.active ? 'signal-indicator--active' : ''
+                        }`}
+                      >
+                        <span>{indicator.label}</span>
+                        <strong>{indicator.value}</strong>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="reason-list">
+                    {visibleReasons.slice(0, 1).map((reason) => (
+                      <p key={reason}>{reason}</p>
+                    ))}
+                  </div>
+                </article>
+
+                <article className="booth-card booth-card--compact booth-card--steady booth-card--transcript">
+                  <div className="booth-card__header">
+                    <div>
+                      <p className="control-label">Live transcript</p>
+                      <strong>{boothHasTranscriptContext ? 'Mic copy is flowing' : 'Waiting for speech'}</strong>
+                    </div>
+                  </div>
+
+                  <div className="transcript-list" aria-live="polite">
+                    {transcriptWindow.length > 0 ? (
+                      transcriptWindow.map((entry) => (
+                        <p className="transcript-line" key={`${entry.timestamp}-${entry.text}`}>
+                          {entry.text}
+                        </p>
+                      ))
+                    ) : (
+                      <p className="transcript-line transcript-line--muted">
+                        Once the booth mic produces usable text, the latest lines will appear here.
+                      </p>
+                    )}
+
+                    {boothInterimTranscript.trim() ? (
+                      <p className="transcript-line transcript-line--interim">{boothInterimTranscript.trim()}</p>
+                    ) : null}
+                  </div>
+                </article>
+
+                <details className="booth-card booth-card--compact details-card" open>
+                  <summary className="details-card__summary">
+                    <div>
+                      <p className="control-label">Agent activity</p>
+                      <strong>
+                        {activeAgentNames.length > 0
+                          ? `Active agents: ${activeAgentNames.join(', ')}`
+                          : 'No agents are contributing right now'}
+                      </strong>
+                    </div>
+                    <span className="panel-tag">{liveAgents.length} observed</span>
+                  </summary>
+
+                  {liveAgents.length > 0 ? (
+                    <div className="details-card__body">
+                      <div className="agent-trace-list">
+                        {liveAgents.map((agent) => (
+                          <details
+                            className={`agent-trace-item agent-trace-item--${agent.displayState}`}
+                            key={`${agent.origin}-${agent.agentName}`}
+                          >
+                            <summary className="agent-trace-item__summary">
+                              <div>
+                                <span className="agent-trace-item__label">{agent.agentName}</span>
+                                <p className="agent-trace-item__detail">{agent.output}</p>
+                              </div>
+                              <span className="agent-trace-item__state">{agent.displayState}</span>
+                            </summary>
+                            <div className="details-card__body">
+                              <div className="reason-list">
+                                {agent.reasoningTrace.map((traceLine) => (
+                                  <p key={`${agent.agentName}-${traceLine}`}>{traceLine}</p>
+                                ))}
+                              </div>
+                              {agent.sourcesUsed.length > 0 ? (
+                                <div className="source-chip-row">
+                                  {agent.sourcesUsed.map((chip) => (
+                                    <span className="source-chip" key={`${agent.agentName}-${chip.id}`}>
+                                      {chip.label}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
+                          </details>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="transcript-line transcript-line--muted">
+                      The sidebar only shows specialist agents that actually ran for the current moment.
+                    </p>
+                  )}
+                </details>
+
+                <details className="booth-card booth-card--compact details-card" open={Boolean(generationExplainability)}>
+                  <summary className="details-card__summary">
+                    <div>
+                      <p className="control-label">Generation explainability</p>
+                      <strong>Who made this cue</strong>
+                    </div>
+                    <span className="panel-tag">
+                      {generationExplainability?.contributingAgents.length ?? 0} agents
+                    </span>
+                  </summary>
+
+                  {generationExplainability ? (
+                    <div className="details-card__body">
+                      <div className="reason-list">
+                        {generationExplainability.reasoningTrace.map((line) => (
+                          <p key={line}>{line}</p>
+                        ))}
+                      </div>
+                      {generationExplainability.sourcesUsed.length > 0 ? (
+                        <div className="source-chip-row">
+                          {generationExplainability.sourcesUsed.map((chip) => (
+                            <span className="source-chip" key={`generation-${chip.id}`}>
+                              {chip.label}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="transcript-line transcript-line--muted">
+                      Cue explainability will appear once a grounded prompt is generated.
+                    </p>
+                  )}
+                </details>
+
+                <details className="booth-card booth-card--compact details-card">
+                  <summary className="details-card__summary">
+                    <div>
+                      <p className="control-label">Context drawer</p>
+                      <strong>Live retrieval context</strong>
+                    </div>
+                    <span className="panel-tag">{usedContextFacts.length} used · {unusedContextFacts.length} held</span>
+                  </summary>
+
+                  <div className="details-card__body">
+                    {liveContextItems.length > 0 ? (
+                      <div className="context-doc-list context-doc-list--compact">
+                        {liveContextItems.map((item) => (
+                          <div className="context-doc-item" key={item.id}>
+                            <strong>{item.headline}</strong>
+                            <span>{Math.round(item.salience * 100)}%</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {contextDocuments.length > 0 ? (
+                      <div className="context-doc-list context-doc-list--compact">
+                        {contextDocuments.map((document) => (
+                          <div className="context-doc-item" key={`live-doc-${document.id}`}>
+                            <strong>{document.fileName}</strong>
+                            <span>{document.chunkCount} chunks</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    <div className="context-columns">
+                      <div className="context-column">
+                        <p className="memory-title">Used now</p>
+                        <div className="context-fact-list">
+                          {contextPreviewFacts.length > 0 ? (
+                            contextPreviewFacts.map((fact) => (
+                              <div className="context-fact-item" key={fact.id}>
+                                <strong>{fact.sourceChip.label}</strong>
+                                <p>{fact.text}</p>
+                                <span>{Math.round(fact.relevance * 100)}%</span>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="transcript-line transcript-line--muted">
+                              Retrieval context will appear once the sidekick has enough live signal.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="context-column">
+                        <p className="memory-title">Retrieved but held</p>
+                        <div className="context-fact-list">
+                          {heldContextPreviewFacts.length > 0 ? (
+                            heldContextPreviewFacts.map((fact) => (
+                              <div className="context-fact-item context-fact-item--held" key={fact.id}>
+                                <strong>{fact.sourceChip.label}</strong>
+                                <p>{fact.text}</p>
+                                <span>{Math.round(fact.relevance * 100)}%</span>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="transcript-line transcript-line--muted">No reserve context is waiting right now.</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </details>
+
+                <div className="inline-actions inline-actions--compact inline-actions--spread">
+                  <button
+                    type="button"
+                    className="text-button"
+                    disabled={isFinalizingSession}
+                    onClick={clearBoothTranscript}
+                  >
+                    Clear transcript
+                  </button>
+                  <button type="button" className="text-button" onClick={() => navigateToRoute('debug')}>
+                    Open debug view
+                  </button>
+                </div>
+              </section>
+            </aside>
+          </div>
+        </>
+      ) : appRoute === 'archive' ? (
         <div className="main-grid main-grid--reviews">
           <section className="panel">
             <div className="panel-header">
@@ -3312,7 +3440,7 @@ function App() {
                   <button
                     type="button"
                     className="text-button"
-                    onClick={() => setAppView('live')}
+                    onClick={() => navigateToRoute('live')}
                   >
                     Return to live
                   </button>
@@ -3427,6 +3555,169 @@ function App() {
                 Pick a saved session to inspect its hesitation trace and AI review.
               </p>
             )}
+          </section>
+        </div>
+      ) : (
+        <div className="main-grid main-grid--debug">
+          <section className="panel review-panel">
+            <div className="panel-header">
+              <div>
+                <p className="panel-kicker">Context and retrieval</p>
+                <h2>Live RAG debug</h2>
+                <p className="panel-copy">Inspect the exact context the system is using, what it held back, and any uploaded notes.</p>
+              </div>
+              <span className="panel-tag">{usedContextFacts.length} used</span>
+            </div>
+
+            <div className="context-upload">
+              <textarea
+                className="context-textarea"
+                value={contextUploadText}
+                onChange={(event) => setContextUploadText(event.target.value)}
+                placeholder="Paste prep notes or talking points..."
+              />
+              <div className="context-upload__actions">
+                <button
+                  type="button"
+                  className="ghost-button"
+                  disabled={isUploadingContext || !contextUploadText.trim()}
+                  onClick={() => void handleContextTextUpload()}
+                >
+                  {isUploadingContext ? 'Saving...' : 'Save notes'}
+                </button>
+                <label className="file-chip">
+                  <span>Upload file</span>
+                  <input
+                    type="file"
+                    accept=".txt,.md,.csv,.json,.html,.xml"
+                    onChange={(event) => void handleContextFileUpload(event)}
+                  />
+                </label>
+              </div>
+            </div>
+
+            {contextDocuments.length > 0 ? (
+              <div className="context-doc-list">
+                {contextDocuments.map((document) => (
+                  <div className="context-doc-item" key={document.id}>
+                    <strong>{document.fileName}</strong>
+                    <span>{document.chunkCount} chunks</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            <div className="context-columns">
+              <div className="context-column">
+                <p className="memory-title">Used now</p>
+                <div className="context-fact-list">
+                  {usedContextFacts.map((fact) => (
+                    <div className="context-fact-item" key={fact.id}>
+                      <strong>{fact.sourceChip.label}</strong>
+                      <p>{fact.text}</p>
+                      <span>{Math.round(fact.relevance * 100)}%</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="context-column">
+                <p className="memory-title">Retrieved but held</p>
+                <div className="context-fact-list">
+                  {unusedContextFacts.length > 0 ? (
+                    unusedContextFacts.map((fact) => (
+                      <div className="context-fact-item context-fact-item--held" key={fact.id}>
+                        <strong>{fact.sourceChip.label}</strong>
+                        <p>{fact.text}</p>
+                        <span>{Math.round(fact.relevance * 100)}%</span>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="transcript-line transcript-line--muted">No reserve context is waiting right now.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="panel review-panel">
+            <div className="panel-header">
+              <div>
+                <p className="panel-kicker">Agent and memory state</p>
+                <h2>System debug</h2>
+                <p className="panel-copy">This view is the full state drawer: agent runs, retrieval reasoning, and sliding memory.</p>
+              </div>
+              <span className="panel-tag">{liveAgents.length} agents</span>
+            </div>
+
+            <div className="review-stack">
+              <div className="review-section">
+                <p className="memory-title">Agent runs</p>
+                <div className="agent-trace-list">
+                  {liveAgents.length > 0 ? (
+                    liveAgents.map((agent) => (
+                      <details
+                        className={`agent-trace-item agent-trace-item--${agent.displayState}`}
+                        key={`debug-${agent.origin}-${agent.agentName}`}
+                      >
+                        <summary className="agent-trace-item__summary">
+                          <div>
+                            <span className="agent-trace-item__label">{agent.agentName}</span>
+                            <p className="agent-trace-item__detail">{agent.output}</p>
+                          </div>
+                          <span className="agent-trace-item__state">{agent.displayState}</span>
+                        </summary>
+                        <div className="details-card__body">
+                          <div className="reason-list">
+                            {agent.reasoningTrace.map((traceLine) => (
+                              <p key={`debug-${agent.agentName}-${traceLine}`}>{traceLine}</p>
+                            ))}
+                          </div>
+                          {agent.sourcesUsed.length > 0 ? (
+                            <div className="source-chip-row">
+                              {agent.sourcesUsed.map((chip) => (
+                                <span className="source-chip" key={`debug-${agent.agentName}-${chip.id}`}>
+                                  {chip.label}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      </details>
+                    ))
+                  ) : (
+                    <p className="transcript-line transcript-line--muted">No agent runs have been recorded for the current state yet.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="review-section">
+                <p className="memory-title">Retrieval reasoning</p>
+                <div className="reason-list">
+                  {(worldState.orchestration?.retrievalReasoning ?? []).map((line) => (
+                    <p key={`retrieval-${line}`}>{line}</p>
+                  ))}
+                </div>
+              </div>
+
+              <div className="review-section">
+                <p className="memory-title">Sliding memory</p>
+                <div className="reason-list">
+                  {(worldState.orchestration?.memoryState ?? []).map((line) => (
+                    <p key={`memory-${line}`}>{line}</p>
+                  ))}
+                </div>
+              </div>
+
+              <div className="inline-actions inline-actions--compact inline-actions--spread">
+                <button type="button" className="text-button" onClick={() => navigateToRoute('live')}>
+                  Return to live
+                </button>
+                <button type="button" className="text-button" onClick={() => navigateToRoute('archive')}>
+                  Open archive
+                </button>
+              </div>
+            </div>
           </section>
         </div>
       )}
