@@ -157,7 +157,17 @@ function getDefaultSqlitePath() {
   return path.resolve(__dirname, '../../../data/app/sports-copilot.sqlite');
 }
 
-function getPoolConfiguration(connectionString: string) {
+type PoolConfiguration = {
+  connectionString?: string;
+  user?: string;
+  password?: string;
+  host?: string;
+  port?: number;
+  database?: string;
+  ssl?: false | { rejectUnauthorized: false; servername?: string };
+};
+
+function getPoolConfiguration(connectionString: string): PoolConfiguration {
   const requiresSsl =
     /supabase\.co|render\.com|neon\.tech|railway\.app/i.test(connectionString) &&
     !/sslmode=disable/i.test(connectionString);
@@ -174,6 +184,48 @@ function getConnectionHostname(connectionString: string) {
     return parsed.hostname;
   } catch (_error) {
     throw new Error('DATABASE_URL is not a valid Postgres connection string.');
+  }
+}
+
+function getParsedConnectionDetails(connectionString: string) {
+  try {
+    const parsed = new URL(connectionString);
+
+    return {
+      user: decodeURIComponent(parsed.username),
+      password: decodeURIComponent(parsed.password),
+      host: parsed.hostname,
+      port: parsed.port ? Number(parsed.port) : 5432,
+      database: parsed.pathname.replace(/^\//, ''),
+    };
+  } catch (_error) {
+    throw new Error('DATABASE_URL is not a valid Postgres connection string.');
+  }
+}
+
+async function getIpv4PreferredPoolConfiguration(
+  connectionString: string,
+  resolveHostname: typeof lookup = lookup,
+): Promise<PoolConfiguration> {
+  const baseConfig = getPoolConfiguration(connectionString);
+  const parsed = getParsedConnectionDetails(connectionString);
+
+  try {
+    const { address } = await resolveHostname(parsed.host, { family: 4 });
+
+    return {
+      user: parsed.user,
+      password: parsed.password,
+      host: address,
+      port: parsed.port,
+      database: parsed.database,
+      ssl:
+        baseConfig.ssl && typeof baseConfig.ssl === 'object'
+          ? { ...baseConfig.ssl, servername: parsed.host }
+          : baseConfig.ssl,
+    };
+  } catch (_error) {
+    return baseConfig;
   }
 }
 
@@ -200,7 +252,7 @@ export async function assertResolvableDatabaseHost(
 async function createPostgresBoothSessionStore(connectionString: string): Promise<BoothSessionStore> {
   await assertResolvableDatabaseHost(connectionString);
   const { Pool } = await import('pg');
-  const pool = new Pool(getPoolConfiguration(connectionString));
+  const pool = new Pool(await getIpv4PreferredPoolConfiguration(connectionString));
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS booth_sessions (
