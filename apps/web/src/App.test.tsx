@@ -444,7 +444,6 @@ describe('App dashboard', () => {
   let mediaRecorders: Array<{
     mimeType: string;
     ondataavailable: ((event: { data: Blob }) => void) | null;
-    timesliceMs: number | null;
   }>;
   let currentBoothInterpretation: {
     state: string;
@@ -530,16 +529,12 @@ describe('App dashboard', () => {
         ondataavailable: ((event: { data: Blob }) => void) | null = null;
         onerror: (() => void) | null = null;
         onstop: (() => void) | null = null;
-        timesliceMs: number | null = null;
-
         constructor(_stream: MediaStream, options?: { mimeType?: string }) {
           this.mimeType = options?.mimeType ?? 'audio/webm';
           mediaRecorders.push(this);
         }
 
-        start(timeslice?: number) {
-          this.timesliceMs = timeslice ?? null;
-        }
+        start() {}
 
         stop() {
           this.onstop?.();
@@ -812,8 +807,6 @@ describe('App dashboard', () => {
 
     await startLiveSession();
     await showDetailsPanel();
-
-    expect(mediaRecorders[0]?.timesliceMs).toBe(2500);
 
     await act(async () => {
       mediaRecorders[0]?.ondataavailable?.({

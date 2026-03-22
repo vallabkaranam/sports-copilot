@@ -74,6 +74,7 @@ const BUFFERED_TRANSCRIPTION_CHUNK_MS = 2_500;
 const BUFFERED_TRANSCRIPTION_WARNING_THRESHOLD = 3;
 const BUFFERED_TRANSCRIPTION_WARNING =
   'Live transcription is not producing usable text yet. Keep speaking or check the OpenAI mic path.';
+const GENERATE_CUE_FAILURE_BACKOFF_MS = 4_000;
 const PROGRAM_FEED_SLOTS: ProgramFeedSlot[] = [
   {
     id: 'program-a',
@@ -514,9 +515,11 @@ function App() {
   const realtimePeerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const realtimeDataChannelRef = useRef<RTCDataChannel | null>(null);
   const bufferedRecorderRef = useRef<MediaRecorder | null>(null);
+  const bufferedRecorderSegmentTimerRef = useRef<number | null>(null);
   const transcribeEndpointAvailableRef = useRef(true);
   const bufferedTranscriptionQueueRef = useRef(Promise.resolve());
   const consecutiveBufferedTranscriptFailuresRef = useRef(0);
+  const cueRetryBlockedUntilRef = useRef(0);
   const realtimeTranscriptItemRef = useRef<{ itemId: string | null; text: string }>({
     itemId: null,
     text: '',
@@ -939,32 +942,84 @@ function App() {
       return false;
     }
 
-    const recorder = new window.MediaRecorder(stream, { mimeType });
-    bufferedRecorderRef.current = recorder;
-
-    recorder.ondataavailable = (event) => {
-      if (!event.data || event.data.size === 0 || !transcribeEndpointAvailableRef.current) {
+    const startSegment = () => {
+      if (!shouldKeepMicLiveRef.current || !transcribeEndpointAvailableRef.current) {
         return;
       }
 
-      bufferedTranscriptionQueueRef.current = bufferedTranscriptionQueueRef.current
-        .then(async () => {
-          if (import.meta.env.DEV) {
-            console.debug('booth-transcription', {
-              stage: 'buffered-send',
-              bytes: event.data.size,
-            });
-          }
-          const audioBase64 = await encodeBlobAsBase64(event.data);
-          const result = await transcribeBoothAudio(audioBase64, recorder.mimeType || mimeType);
+      const recorder = new window.MediaRecorder(stream, { mimeType });
+      bufferedRecorderRef.current = recorder;
 
-          if (result.source !== 'openai' || !result.transcript.trim()) {
+      recorder.ondataavailable = (event) => {
+        if (!event.data || event.data.size === 0 || !transcribeEndpointAvailableRef.current) {
+          return;
+        }
+
+        bufferedTranscriptionQueueRef.current = bufferedTranscriptionQueueRef.current
+          .then(async () => {
+            if (import.meta.env.DEV) {
+              console.debug('booth-transcription', {
+                stage: 'buffered-send',
+                bytes: event.data.size,
+              });
+            }
+            const audioBase64 = await encodeBlobAsBase64(event.data);
+            const result = await transcribeBoothAudio(audioBase64, recorder.mimeType || mimeType);
+
+            if (result.source !== 'openai' || !result.transcript.trim()) {
+              consecutiveBufferedTranscriptFailuresRef.current += 1;
+              if (import.meta.env.DEV) {
+                console.debug('booth-transcription', {
+                  stage: 'buffered-empty',
+                  source: result.source,
+                  failures: consecutiveBufferedTranscriptFailuresRef.current,
+                });
+              }
+              if (
+                consecutiveBufferedTranscriptFailuresRef.current >=
+                BUFFERED_TRANSCRIPTION_WARNING_THRESHOLD
+              ) {
+                setBoothError((current) => current ?? BUFFERED_TRANSCRIPTION_WARNING);
+              }
+              return;
+            }
+
+            const transcriptText = result.transcript.trim();
+            const now = Date.now();
+            const baseTimestamp = getCurrentTranscriptTimestamp();
+
+            setBoothTranscript((current) =>
+              mergeTranscriptEntry(current, createTranscriptEntry(baseTimestamp, transcriptText)),
+            );
+            setBoothInterimTranscript('');
+            consecutiveBufferedTranscriptFailuresRef.current = 0;
+            setBoothError((current) =>
+              shouldClearBufferedTranscriptionWarning(current) ? null : current,
+            );
+            setLastSpeechAtMs(now);
+            setLastVoiceActivityAtMs(now);
+            setBoothClockMs(now);
+            if (import.meta.env.DEV) {
+              console.debug('booth-transcription', {
+                stage: 'buffered-commit',
+                source: result.source,
+                transcript: transcriptText,
+              });
+            }
+          })
+          .catch((error) => {
+            if (isMissingApiRouteError(error, '/booth/transcribe')) {
+              transcribeEndpointAvailableRef.current = false;
+              setBoothError('Render is missing the /booth/transcribe route. Redeploy the API service.');
+              return;
+            }
+
             consecutiveBufferedTranscriptFailuresRef.current += 1;
             if (import.meta.env.DEV) {
               console.debug('booth-transcription', {
-                stage: 'buffered-empty',
-                source: result.source,
+                stage: 'buffered-failed',
                 failures: consecutiveBufferedTranscriptFailuresRef.current,
+                message: error instanceof Error ? error.message : String(error),
               });
             }
             if (
@@ -973,61 +1028,40 @@ function App() {
             ) {
               setBoothError((current) => current ?? BUFFERED_TRANSCRIPTION_WARNING);
             }
-            return;
-          }
+            // Keep booth flow alive if a buffered chunk fails.
+          });
+      };
 
-          const transcriptText = result.transcript.trim();
-          const now = Date.now();
-          const baseTimestamp = getCurrentTranscriptTimestamp();
+      recorder.onstop = () => {
+        if (bufferedRecorderSegmentTimerRef.current !== null) {
+          window.clearTimeout(bufferedRecorderSegmentTimerRef.current);
+          bufferedRecorderSegmentTimerRef.current = null;
+        }
 
-          setBoothTranscript((current) =>
-            mergeTranscriptEntry(current, createTranscriptEntry(baseTimestamp, transcriptText)),
-          );
-          setBoothInterimTranscript('');
-          consecutiveBufferedTranscriptFailuresRef.current = 0;
-          setBoothError((current) =>
-            shouldClearBufferedTranscriptionWarning(current) ? null : current,
-          );
-          setLastSpeechAtMs(now);
-          setLastVoiceActivityAtMs(now);
-          setBoothClockMs(now);
-          if (import.meta.env.DEV) {
-            console.debug('booth-transcription', {
-              stage: 'buffered-commit',
-              source: result.source,
-              transcript: transcriptText,
-            });
-          }
-        })
-        .catch((error) => {
-          if (isMissingApiRouteError(error, '/booth/transcribe')) {
-            transcribeEndpointAvailableRef.current = false;
-            setBoothError('Render is missing the /booth/transcribe route. Redeploy the API service.');
-            return;
-          }
+        if (bufferedRecorderRef.current === recorder) {
+          bufferedRecorderRef.current = null;
+        }
 
-          consecutiveBufferedTranscriptFailuresRef.current += 1;
-          if (import.meta.env.DEV) {
-            console.debug('booth-transcription', {
-              stage: 'buffered-failed',
-              failures: consecutiveBufferedTranscriptFailuresRef.current,
-            });
-          }
-          if (
-            consecutiveBufferedTranscriptFailuresRef.current >=
-            BUFFERED_TRANSCRIPTION_WARNING_THRESHOLD
-          ) {
-            setBoothError((current) => current ?? BUFFERED_TRANSCRIPTION_WARNING);
-          }
-          // Keep booth flow alive if a buffered chunk fails.
-        });
+        if (
+          shouldKeepMicLiveRef.current &&
+          transcribeEndpointAvailableRef.current &&
+          stream.getAudioTracks().some((track) => track.readyState === 'live')
+        ) {
+          window.setTimeout(startSegment, 0);
+        }
+      };
+
+      recorder.start();
+      bufferedRecorderSegmentTimerRef.current = window.setTimeout(() => {
+        try {
+          recorder.stop();
+        } catch (_error) {
+          // Ignore invalid state transitions while cycling the recorder.
+        }
+      }, BUFFERED_TRANSCRIPTION_CHUNK_MS);
     };
 
-    recorder.onstop = () => {
-      bufferedRecorderRef.current = null;
-    };
-
-    recorder.start(BUFFERED_TRANSCRIPTION_CHUNK_MS);
+    startSegment();
     return true;
   }
 
@@ -1123,6 +1157,10 @@ function App() {
   }
 
   function stopAudioMonitoring() {
+    if (bufferedRecorderSegmentTimerRef.current !== null) {
+      window.clearTimeout(bufferedRecorderSegmentTimerRef.current);
+      bufferedRecorderSegmentTimerRef.current = null;
+    }
     bufferedRecorderRef.current?.stop();
     bufferedRecorderRef.current = null;
     realtimeDataChannelRef.current?.close();
@@ -1142,6 +1180,7 @@ function App() {
     audioNoiseFloorRef.current = 0.004;
     audioActivityThresholdRef.current = 0.02;
     consecutiveBufferedTranscriptFailuresRef.current = 0;
+    cueRetryBlockedUntilRef.current = 0;
     setAudioLevel(0);
     setSpeechStreakStartedAtMs(-1);
     setSilenceStreakStartedAtMs(-1);
@@ -1997,10 +2036,13 @@ function App() {
     }
 
     const elapsedMs = generatedCueRequestedAt > 0 ? Date.now() - generatedCueRequestedAt : Infinity;
+    const retryBlockedForMs = Math.max(0, cueRetryBlockedUntilRef.current - Date.now());
     const waitMs =
-      generatedCue && elapsedMs < generatedCue.refreshAfterMs
-        ? Math.max(0, generatedCue.refreshAfterMs - elapsedMs)
-        : 0;
+      retryBlockedForMs > 0
+        ? retryBlockedForMs
+        : generatedCue && elapsedMs < generatedCue.refreshAfterMs
+          ? Math.max(0, generatedCue.refreshAfterMs - elapsedMs)
+          : 0;
 
     const timeoutId = window.setTimeout(() => {
       const recentCueTexts = [
@@ -2030,6 +2072,7 @@ function App() {
         recentCueTexts,
       })
         .then((nextCue) => {
+          cueRetryBlockedUntilRef.current = 0;
           if (nextCue.assist.type !== 'none' && nextCue.assist.text.trim()) {
             setGeneratedCue(nextCue);
           }
@@ -2038,7 +2081,10 @@ function App() {
           if (isMissingApiRouteError(error, '/booth/generate-cue')) {
             setIsCueEndpointAvailable(false);
             setBoothError('Render is missing the /booth/generate-cue route. Redeploy the API service.');
+            return;
           }
+
+          cueRetryBlockedUntilRef.current = Date.now() + GENERATE_CUE_FAILURE_BACKOFF_MS;
         });
     }, waitMs);
 
