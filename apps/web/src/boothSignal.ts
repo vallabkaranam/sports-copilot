@@ -59,8 +59,12 @@ export const STRONG_AUDIO_LEVEL = 0.12;
 
 const FILLER_PATTERNS = [
   { token: 'uh', pattern: /\buh\b/gi },
+  { token: 'uhh', pattern: /\buhh+\b/gi },
   { token: 'um', pattern: /\bum\b/gi },
+  { token: 'umm', pattern: /\bumm+\b/gi },
   { token: 'er', pattern: /\ber\b/gi },
+  { token: 'err', pattern: /\berr+\b/gi },
+  { token: 'erm', pattern: /\berm\b/gi },
   { token: 'ah', pattern: /\bah\b/gi },
   { token: 'you know', pattern: /\byou know\b/gi },
   { token: 'i mean', pattern: /\bi mean\b/gi },
@@ -110,7 +114,9 @@ function detectWakePhrase(texts: string[]) {
 function detectFillerBurst(texts: string[]) {
   const normalized = texts.map(normalizeTranscriptText).join(' ');
 
-  return /\b(?:uh|um|er|ah)\b(?:\s+\w+){0,3}\s+\b(?:uh|um|er|ah)\b/i.test(normalized);
+  return /\b(?:uh|uhh+|um|umm+|er|err+|erm|ah)\b(?:\s+\w+){0,3}\s+\b(?:uh|uhh+|um|umm+|er|err+|erm|ah)\b/i.test(
+    normalized,
+  );
 }
 
 function countTranscriptWords(texts: string[]) {

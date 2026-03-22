@@ -196,6 +196,20 @@ function shouldClearBufferedTranscriptionWarning(currentWarning: string | null) 
   return currentWarning === BUFFERED_TRANSCRIPTION_WARNING;
 }
 
+function formatSignalIndicatorValue(label: 'Pause' | 'Fillers' | 'Wake phrase', boothSignal: BoothSignal) {
+  if (label === 'Pause') {
+    return boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS
+      ? `${Math.round((boothSignal.pauseDurationMs / 100) * 10) / 10}s`
+      : 'Stable';
+  }
+
+  if (label === 'Fillers') {
+    return boothSignal.fillerCount > 0 ? boothSignal.fillerWords.slice(0, 3).join(', ') : 'Clean';
+  }
+
+  return boothSignal.wakePhraseDetected ? 'Detected' : 'Listening';
+}
+
 async function canLoadPresetFeed(url: string) {
   try {
     const response = await fetch(url, {
@@ -1588,6 +1602,26 @@ function App() {
         : coachingTone.tone === 'steady'
           ? 'Confidence is returning. AndOne is backing off.'
           : coachingTone.copy;
+  const boothSignalIndicators = [
+    {
+      label: 'Pause' as const,
+      active: boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS,
+      emphasis: boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS ? coachingTone.tone : 'standby',
+      value: formatSignalIndicatorValue('Pause', boothSignal),
+    },
+    {
+      label: 'Fillers' as const,
+      active: boothSignal.fillerCount > 0,
+      emphasis: boothSignal.fillerCount > 0 ? 'supporting' : 'standby',
+      value: formatSignalIndicatorValue('Fillers', boothSignal),
+    },
+    {
+      label: 'Wake phrase' as const,
+      active: boothSignal.wakePhraseDetected,
+      emphasis: boothSignal.wakePhraseDetected ? 'step-in' : 'standby',
+      value: formatSignalIndicatorValue('Wake phrase', boothSignal),
+    },
+  ];
   const activeAssistSupportCopy = isAssistWeaning
     ? 'Confidence is returning. AndOne is backing off.'
     : activeAssist.whyNow;
@@ -2282,7 +2316,7 @@ function App() {
           <section className={`panel control-panel control-panel--${coachingTone.tone}`}>
             <div className="panel-header panel-header--compact">
               <div>
-                <p className="panel-kicker"><span className="panel-kicker__icon" aria-hidden="true">🎙</span>Live session</p>
+                <p className="panel-kicker">Live session</p>
                 <h2>Booth rail</h2>
                 <p className="panel-copy">One clean operator rail. Monitor delivery, prompt state, and only the cues that matter.</p>
               </div>
@@ -2338,6 +2372,20 @@ function App() {
                   <span>Prompt state</span>
                   <strong>{assistStateLabel}</strong>
                 </div>
+              </div>
+
+              <div className="signal-indicator-row" aria-label="Live booth indicators">
+                {boothSignalIndicators.map((indicator) => (
+                  <div
+                    key={indicator.label}
+                    className={`signal-indicator signal-indicator--${indicator.emphasis} ${
+                      indicator.active ? 'signal-indicator--active' : ''
+                    }`}
+                  >
+                    <span>{indicator.label}</span>
+                    <strong>{indicator.value}</strong>
+                  </div>
+                ))}
               </div>
 
               <div className="reason-list">

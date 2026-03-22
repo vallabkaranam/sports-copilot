@@ -1,5 +1,5 @@
 const OPENAI_REALTIME_CALLS_API_URL = 'https://api.openai.com/v1/realtime/calls';
-const OPENAI_REALTIME_TRANSCRIBE_MODEL = 'gpt-4o-mini-transcribe';
+const OPENAI_REALTIME_TRANSCRIBE_MODEL = 'gpt-4o-transcribe';
 const OPENAI_REALTIME_TRANSCRIBE_LANGUAGE = 'en';
 const OPENAI_REALTIME_NOISE_REDUCTION = 'near_field';
 const OPENAI_REALTIME_VAD_THRESHOLD = 0.35;

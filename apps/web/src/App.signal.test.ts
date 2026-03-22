@@ -99,6 +99,23 @@ describe('booth signal audio activity', () => {
     expect(signal.hesitationReasons.join(' ')).toContain('filler words');
   });
 
+  it('treats err and erm variants as filler words', () => {
+    const signal = buildBoothSignal({
+      boothTranscript: [],
+      interimTranscript: 'err erm this is getting stretched here',
+      isMicListening: true,
+      lastSpeechAtMs: 11_200,
+      lastVoiceActivityAtMs: 11_200,
+      speechStreakStartedAtMs: 10_100,
+      audioLevel: 0.08,
+      nowMs: 11_600,
+    });
+
+    expect(signal.fillerCount).toBeGreaterThanOrEqual(2);
+    expect(signal.fillerWords).toContain('err');
+    expect(signal.fillerWords).toContain('erm');
+  });
+
   it('steps in immediately when the wake phrase is spoken', () => {
     const signal = buildBoothSignal({
       boothTranscript: [],

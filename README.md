@@ -57,7 +57,7 @@ Create one repo-root `.env` file:
 VITE_API_BASE_URL=http://localhost:3001
 API_BASE_URL=http://localhost:3001
 OPENAI_API_KEY=your_openai_api_key
-DATABASE_URL=postgresql://postgres:your_database_password@your_current_supabase_postgres_host:5432/postgres
+DATABASE_URL=postgresql://postgres.your_project_ref:your_database_password@your_supabase_pooler_host:5432/postgres
 SPORTMONKS_API_TOKEN=your_sportmonks_token
 SPORTMONKS_FIXTURE_ID=your_fixture_id
 BLUESKY_SOCIAL_ENABLED=false
@@ -79,7 +79,7 @@ Notes:
 - the worker now exposes a `/health` endpoint so Render can keep it as a web service
 - the API now respects the host platform `PORT`
 - booth session persistence is expected to use hosted Postgres via `DATABASE_URL` on the live stack
-- use the current Postgres connection string from the Supabase dashboard; do not hardcode old `db.<project-ref>.supabase.co` values unless Supabase explicitly gives you that host for the current project
+- use the current Supabase session pooler connection string from the dashboard for hosted deploys; avoid the direct `db.<project-ref>.supabase.co` host on platforms that do not support the IPv6 path cleanly
 
 ## Demo Notes
 - The replay is deterministic and runs from local JSON fixtures in [data/demo_match](/Users/vallabkaranam/Desktop/sports-copilot/data/demo_match).
