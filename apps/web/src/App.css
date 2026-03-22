@@ -122,6 +122,7 @@
 .stage-panel {
   display: grid;
   gap: 22px;
+  align-content: start;
 }
 
 .status-pill,
