@@ -12,6 +12,7 @@ import {
   SocialPost,
   TeamSide,
   TranscriptEntry,
+  UserContextChunk,
   VisionCue,
 } from '@sports-copilot/shared-types';
 import { buildVisionMemory } from './vision.js';
@@ -24,6 +25,7 @@ const LIVE_TIER_WEIGHT = 0.55;
 const SESSION_TIER_WEIGHT = 0.45;
 const STATIC_TIER_WEIGHT = 0.35;
 const PRE_MATCH_TIER_WEIGHT = 0.41;
+const USER_TIER_WEIGHT = 0.52;
 const HOT_EVENT_WINDOW_MS = 12_000;
 const QUIET_STRETCH_WINDOW_MS = 120_000;
 const CONTEXT_LANE_LIMIT = 2;
@@ -93,6 +95,7 @@ export interface RetrievalInput {
   roster: RosterFixture;
   narratives: NarrativeFixture[];
   socialPosts: SocialPost[];
+  userContextChunks?: UserContextChunk[];
   visionCues?: VisionCue[];
   liveMatch?: LiveMatchState;
   preMatch?: PreMatchState;
@@ -130,6 +133,8 @@ function getTierWeight(tier: MemoryTier) {
       return LIVE_TIER_WEIGHT;
     case 'pre_match':
       return PRE_MATCH_TIER_WEIGHT;
+    case 'user':
+      return USER_TIER_WEIGHT;
     case 'session':
       return SESSION_TIER_WEIGHT;
     case 'static':
@@ -461,7 +466,24 @@ function buildPreMatchFacts(preMatch?: PreMatchState): RankableFact[] {
   return facts;
 }
 
-function buildQuery(clockMs: number, events: GameEvent[], transcript: TranscriptEntry[]) {
+function buildUserContextFacts(userContextChunks: UserContextChunk[] = []): RankableFact[] {
+  return userContextChunks.map((chunk) =>
+    createRankableFact({
+      id: `user-context-${chunk.id}`,
+      tier: 'user',
+      text: chunk.text,
+      source: `user-context:${chunk.documentName}`,
+      timestamp: null,
+      metadata: {
+        documentId: chunk.documentId,
+        userProvided: true,
+      },
+      tags: tokenize(chunk.text),
+    }),
+  );
+}
+
+export function buildRetrievalQuery(clockMs: number, events: GameEvent[], transcript: TranscriptEntry[]) {
   const latestEvent = [...events]
     .filter((event) => event.timestamp <= clockMs)
     .sort((a, b) => b.timestamp - a.timestamp)[0];
@@ -569,11 +591,12 @@ export function buildRetrievalState({
   roster,
   narratives,
   socialPosts,
+  userContextChunks = [],
   visionCues = [],
   liveMatch,
   preMatch,
 }: RetrievalInput): RetrievalState {
-  const query = buildQuery(clockMs, events, transcript);
+  const query = buildRetrievalQuery(clockMs, events, transcript);
   const focusTokens = buildFocusTokens(clockMs, events, transcript);
   const matchPhase = determineMatchPhase(clockMs, events, liveMatch);
   const latestEvent = [...events]
@@ -585,12 +608,30 @@ export function buildRetrievalState({
     ...buildLiveMemory(clockMs, socialPosts),
     ...buildSessionMemory(clockMs, events, transcript),
     ...buildPreMatchFacts(preMatch),
+    ...buildUserContextFacts(userContextChunks),
     ...buildStaticMemory(roster, narratives),
   ];
 
-  const supportingFacts = candidateFacts
+  const rankedFacts = candidateFacts
     .map((fact) => {
       const relevance = scoreFact(clockMs, fact, focusTokens, latestEvent, matchPhase);
+      const semanticScore =
+        fact.tier === 'user'
+          ? clamp(
+              (userContextChunks.find((chunk) => `user-context-${chunk.id}` === fact.id)?.score ?? 0) * 1.1,
+              0,
+              1,
+            )
+          : 0;
+      const boostedRelevance = clamp(Math.max(relevance, semanticScore), 0, 1);
+      const tierScore = getTierWeight(fact.tier);
+      const freshnessScore =
+        fact.timestamp === null
+          ? 0
+          : Math.max(
+              0,
+              boostedRelevance - Math.min(0.24, focusTokens.filter((token) => new Set(fact.tags).has(token)).length * 0.08) - tierScore,
+            );
 
       return {
         id: fact.id,
@@ -598,9 +639,17 @@ export function buildRetrievalState({
         text: fact.text,
         source: fact.source,
         timestamp: fact.timestamp,
-        relevance,
+        relevance: boostedRelevance,
         metadata: fact.metadata,
-        sourceChip: buildSourceChip(fact, relevance),
+        scoreBreakdown: {
+          lexical: relevance,
+          semantic: semanticScore,
+          freshness: freshnessScore,
+          tier: tierScore,
+          total: boostedRelevance,
+        },
+        usedByAgents: [],
+        sourceChip: buildSourceChip(fact, boostedRelevance),
       };
     })
     .sort((left, right) => {
@@ -613,12 +662,16 @@ export function buildRetrievalState({
       }
 
       return (right.timestamp ?? -1) - (left.timestamp ?? -1);
-    })
-    .slice(0, MAX_SUPPORTING_FACTS);
+    });
+
+  const supportingFacts = rankedFacts.slice(0, MAX_SUPPORTING_FACTS);
+  const usedFactIds = new Set(supportingFacts.map((fact) => fact.id));
+  const unusedFacts = rankedFacts.filter((fact) => !usedFactIds.has(fact.id)).slice(0, 8);
 
   return {
     query,
     supportingFacts,
+    unusedFacts,
   };
 }
 
@@ -634,6 +687,9 @@ function summarizeFactText(text: string) {
 function pickContextLane(fact: RetrievedFact): ContextBundleItem['lane'] {
   if (fact.tier === 'pre_match') {
     return 'pre-match';
+  }
+  if (fact.tier === 'user') {
+    return 'user-context';
   }
   if (fact.source.startsWith('social:')) {
     return 'social-pulse';

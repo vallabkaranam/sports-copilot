@@ -85,6 +85,7 @@ function makeRetrievalState(): RetrievalState {
         },
       },
     ],
+    unusedFacts: [],
   };
 }
 
@@ -253,6 +254,7 @@ describe('assist pipeline', () => {
         supportingFacts: makeRetrievalState().supportingFacts.filter(
           (fact) => fact.tier === 'pre_match',
         ),
+        unusedFacts: [],
       },
       preferredStyleMode: 'analyst',
       forceIntervention: true,

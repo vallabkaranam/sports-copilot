@@ -73,6 +73,7 @@ describe('booth interpretation', () => {
             shouldSurfaceAssist: false,
             summary: 'Tracking the booth without stepping in.',
             reasons: ['The pause is not yet long enough to justify help.'],
+            confidenceReason: 'Confidence dipped because delivery paused, but the rest of the signal is still mixed.',
             signals: [
               {
                 key: 'pauseDurationMs',
@@ -92,5 +93,10 @@ describe('booth interpretation', () => {
     expect(interpretation.state).toBe('monitoring');
     expect(interpretation.shouldSurfaceAssist).toBe(false);
     expect(interpretation.signals[0]?.key).toBe('pauseDurationMs');
+    expect(interpretation.confidenceReason).toContain('Confidence dipped');
+    expect(interpretation.explainability?.contributingAgents.map((agent) => agent.agentName)).toEqual([
+      'signal-agent',
+      'recovery-agent',
+    ]);
   });
 });

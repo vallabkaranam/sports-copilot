@@ -1,8 +1,10 @@
 import {
+  AgentExplainability,
   BoothFeatureSnapshot,
   BoothInterpretation,
   BoothInterpretationSignal,
   BoothSpeakerProfile,
+  GenerationExplainability,
 } from '@sports-copilot/shared-types';
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/responses';
@@ -184,6 +186,40 @@ function extractResponseText(payload: unknown) {
   );
 }
 
+function buildInterpretationExplainability(params: {
+  result: Pick<BoothInterpretation, 'state' | 'summary' | 'reasons' | 'signals' | 'confidenceReason'>;
+  features: BoothFeatureSnapshot;
+}): GenerationExplainability {
+  const activeSignals = params.result.signals
+    .filter((signal) => typeof signal.value === 'boolean' ? signal.value : signal.value > 0)
+    .slice(0, 6);
+
+  const signalAgent: AgentExplainability = {
+    agentName: 'signal-agent',
+    output: params.result.summary,
+    reasoningTrace: params.result.reasons,
+    sourcesUsed: [],
+    state: params.result.state === 'step-in' ? 'active' : params.result.state === 'monitoring' ? 'ready' : 'quiet',
+  };
+
+  const recoveryAgent: AgentExplainability = {
+    agentName: 'recovery-agent',
+    output: params.result.confidenceReason ?? 'Recovery is being re-evaluated.',
+    reasoningTrace: [
+      `Local confidence ${Math.round(params.features.confidenceScore * 100)}%.`,
+      `Transcript stability ${Math.round(params.features.transcriptStabilityScore * 100)}%.`,
+    ],
+    sourcesUsed: [],
+    state: params.result.state === 'weaning-off' ? 'active' : params.features.confidenceScore > 0.45 ? 'ready' : 'quiet',
+  };
+
+  return {
+    contributingAgents: [signalAgent, recoveryAgent],
+    reasoningTrace: activeSignals.map((signal) => `${signal.label}: ${signal.detail}`),
+    sourcesUsed: [],
+  };
+}
+
 export async function interpretBoothWithOpenAI(
   features: BoothFeatureSnapshot,
   profile?: BoothSpeakerProfile,
@@ -193,7 +229,7 @@ export async function interpretBoothWithOpenAI(
   const prompt = [
     'You are classifying a live sports commentator booth state.',
     'Use only the observed signal data, speaker profile, and supplied live context. Do not invent facts.',
-    'Return strict JSON with keys: state, hesitationScore, recoveryScore, shouldSurfaceAssist, summary, reasons, signals.',
+    'Return strict JSON with keys: state, hesitationScore, recoveryScore, shouldSurfaceAssist, summary, reasons, signals, confidenceReason.',
     'Valid state values: standby, monitoring, step-in, weaning-off.',
     'Interpret hesitation as loss of delivery momentum. Interpret recovery as regained stable speaking.',
     'Use pause after active speech, filler density, repeated ideas, repeated openings, unfinished thought, wake phrase, pace pressure, and context drift as possible signals.',
@@ -241,6 +277,14 @@ export async function interpretBoothWithOpenAI(
       Array.isArray(parsedJson.reasons)
     ) {
       return {
+        confidenceReason:
+          typeof parsedJson.confidenceReason === 'string'
+            ? parsedJson.confidenceReason
+            : parsedJson.state === 'weaning-off'
+              ? 'Confidence is rebuilding because delivery is stabilizing again.'
+              : parsedJson.state === 'step-in'
+                ? 'Confidence dropped because hesitation signals are still clustered.'
+                : 'Confidence is adjusting to the current booth stability.',
         state: parsedJson.state as BoothInterpretation['state'],
         hesitationScore: clamp(parsedJson.hesitationScore),
         recoveryScore: clamp(parsedJson.recoveryScore),
@@ -259,8 +303,32 @@ export async function interpretBoothWithOpenAI(
                       typeof (signal as BoothInterpretationSignal).value === 'boolean'),
                 )
               : observedSignals,
+            explainability: buildInterpretationExplainability({
+              result: {
+                state: parsedJson.state as BoothInterpretation['state'],
+                summary: parsedJson.summary,
+                reasons: parsedJson.reasons.filter((reason): reason is string => typeof reason === 'string'),
+                signals: Array.isArray(parsedJson.signals)
+                  ? parsedJson.signals.filter(
+                      (signal): signal is BoothInterpretationSignal =>
+                        Boolean(signal) &&
+                        typeof signal === 'object' &&
+                        typeof (signal as BoothInterpretationSignal).key === 'string' &&
+                        typeof (signal as BoothInterpretationSignal).label === 'string' &&
+                        typeof (signal as BoothInterpretationSignal).detail === 'string' &&
+                        (typeof (signal as BoothInterpretationSignal).value === 'number' ||
+                          typeof (signal as BoothInterpretationSignal).value === 'boolean'),
+                    )
+                  : observedSignals,
+                confidenceReason:
+                  typeof parsedJson.confidenceReason === 'string'
+                    ? parsedJson.confidenceReason
+                    : undefined,
+              },
+              features,
+            }),
             source: 'openai',
-          };
+      };
     }
 
     throw new Error('OpenAI interpretation returned an invalid JSON shape');

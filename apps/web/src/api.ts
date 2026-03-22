@@ -9,9 +9,12 @@ import {
   BoothSessionsResponse,
   BoothSessionSummary,
   ReplayControlState,
+  RetrieveUserContextResponse,
   ResolveFixtureResponse,
+  ListUserContextResponse,
   StartBoothSessionResponse,
   TranscribeBoothAudioResponse,
+  UploadUserContextResponse,
   WorldState,
 } from '@sports-copilot/shared-types';
 
@@ -129,6 +132,24 @@ export function resolveFixture(screenshotBase64?: string, mimeType?: string, cli
   return requestJson<ResolveFixtureResponse>('/booth/resolve-fixture', {
     method: 'POST',
     body: JSON.stringify({ screenshotBase64, mimeType, clipName }),
+  });
+}
+
+export function listUserContextDocuments() {
+  return requestJson<ListUserContextResponse>('/context-documents');
+}
+
+export function uploadUserContext(fileName: string, text: string, sourceType: 'text' | 'file') {
+  return requestJson<UploadUserContextResponse>('/context-documents', {
+    method: 'POST',
+    body: JSON.stringify({ fileName, text, sourceType }),
+  });
+}
+
+export function retrieveUserContext(queryText: string, limit = 5) {
+  return requestJson<RetrieveUserContextResponse>('/context-documents/retrieve', {
+    method: 'POST',
+    body: JSON.stringify({ queryText, limit }),
   });
 }
 

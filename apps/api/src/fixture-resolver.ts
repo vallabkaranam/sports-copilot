@@ -223,24 +223,37 @@ async function searchSportmonksFixtures(params: {
 
   const start = yesterday.toISOString().slice(0, 10);
   const end = tomorrow.toISOString().slice(0, 10);
-  const url = new URL(`${SPORTMONKS_BASE_URL}/fixtures/between/${start}/${end}`);
-  url.searchParams.set('api_token', params.apiToken);
-  url.searchParams.set('include', 'participants;league;state');
-  url.searchParams.set('filters', `participantSearch:${params.hints.homeTeam}`);
+  const participantQueries = [...new Set([params.hints.homeTeam, params.hints.awayTeam].filter(Boolean))];
+  const fixturesById = new Map<string, SportmonksFixtureCandidate>();
 
-  const response = await fetchImpl(url.toString(), {
-    headers: {
-      Accept: 'application/json',
-    },
-  });
+  for (const participantQuery of participantQueries) {
+    const url = new URL(`${SPORTMONKS_BASE_URL}/fixtures/between/${start}/${end}`);
+    url.searchParams.set('api_token', params.apiToken);
+    url.searchParams.set('include', 'participants;league;state');
+    url.searchParams.set('filters', `participantSearch:${participantQuery}`);
 
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Sportmonks fixture search failed: ${response.status} ${body}`);
+    const response = await fetchImpl(url.toString(), {
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Sportmonks fixture search failed: ${response.status} ${body}`);
+    }
+
+    const payload = (await response.json()) as SportmonksFixtureSearchResponse;
+    for (const fixture of payload.data ?? []) {
+      const fixtureId = String(fixture.id ?? '');
+      if (!fixtureId) {
+        continue;
+      }
+      fixturesById.set(fixtureId, fixture);
+    }
   }
 
-  const payload = (await response.json()) as SportmonksFixtureSearchResponse;
-  const ranked = rankFixtureCandidates(payload.data ?? [], params.hints);
+  const ranked = rankFixtureCandidates([...fixturesById.values()], params.hints);
   return ranked[0] ?? null;
 }
 
