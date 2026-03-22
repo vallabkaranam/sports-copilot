@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  createEmptyContextBundle,
   createEmptyLiveMatchState,
   createEmptyPreMatchState,
   createEmptyRetrievalState,
   RetrievedFact,
   TranscriptEntry,
 } from '@sports-copilot/shared-types';
-import { buildBoothAssist, rankBoothAssistFacts } from './boothAssist';
+import { buildBoothAssist, deriveExcludedCueTexts, rankBoothAssistFacts } from './boothAssist';
 import type { BoothSignal } from './boothSignal';
 
 function makeSignal(overrides: Partial<BoothSignal> = {}): BoothSignal {
@@ -312,59 +313,170 @@ describe('buildBoothAssist', () => {
     });
 
     expect(assist.type).not.toBe('none');
-    expect(assist.text).not.toContain('Reset with one clean scene line');
+    expect(assist.text).toMatch(/setup|scene|weather|Barcelona|Madrid/i);
     expect(assist.sourceChips.length).toBeGreaterThan(0);
   });
 
-  it('uses a neutral stat bridge when the speaker wants numbers but no stat facts exist', () => {
+  it('uses live match stats instead of a generic stat bridge when numbers are needed', () => {
     const assist = buildBoothAssist({
       boothSignal: makeSignal(),
       boothTranscript: makeTranscript('The numbers tell you the story here'),
       interimTranscript: '',
       currentTimestampMs: 1000,
       retrieval: createEmptyRetrievalState(),
-      liveMatch: createEmptyLiveMatchState(),
+      liveMatch: {
+        ...createEmptyLiveMatchState(),
+        homeTeam: {
+          ...createEmptyLiveMatchState().homeTeam,
+          name: 'Barcelona',
+          shortCode: 'BAR',
+        },
+        awayTeam: {
+          ...createEmptyLiveMatchState().awayTeam,
+          name: 'Real Madrid',
+          shortCode: 'RMA',
+        },
+        stats: [
+          { teamSide: 'home', label: 'Possession', value: '58%' },
+        ],
+      },
     });
 
     expect(assist.type).toBe('stat');
-    expect(assist.text.toLowerCase()).toMatch(/number/);
-    expect(assist.text).not.toContain('Fans are already losing it over every Madrid counter');
-    expect(assist.sourceChips).toHaveLength(0);
+    expect(assist.text).toMatch(/Barcelona|58%|Possession/);
+    expect(assist.sourceChips.length).toBeGreaterThan(0);
   });
 
-  it('uses a neutral live-play bridge when the speaker wants the moment but no event facts exist', () => {
+  it('uses context-bundle live items instead of a generic live-play bridge', () => {
     const assist = buildBoothAssist({
       boothSignal: makeSignal(),
       boothTranscript: makeTranscript('That save changes the whole sequence'),
       interimTranscript: '',
       currentTimestampMs: 1000,
       retrieval: createEmptyRetrievalState(),
+      contextBundle: {
+        ...createEmptyContextBundle(),
+        summary: 'Courtois save keeps Madrid alive.',
+        items: [
+          {
+            id: 'bundle-save',
+            lane: 'live-moment',
+            headline: 'Live moment',
+            detail: 'Courtois keeps Madrid alive with a sharp stop from close range.',
+            expiresAt: 10_000,
+            salience: 0.91,
+            sourceChip: {
+              id: 'bundle-save',
+              label: 'Courtois stop',
+              source: 'context:live-moment',
+              relevance: 0.91,
+            },
+          },
+        ],
+      },
       liveMatch: createEmptyLiveMatchState(),
     });
 
-    expect(assist.type).toBe('transition');
-    expect(assist.text.toLowerCase()).toMatch(/moment|effect|clean line/);
-    expect(assist.text).not.toContain('Fans are already losing it over every Madrid counter');
-    expect(assist.sourceChips).toHaveLength(0);
+    expect(assist.type).not.toBe('none');
+    expect(assist.text).toMatch(/Courtois|Madrid|stop|save/i);
+    expect(assist.sourceChips.length).toBeGreaterThan(0);
   });
 
-  it('uses a neutral crowd bridge when the speaker wants reaction but no social facts exist', () => {
+  it('moves to a new grounded angle once the first cue idea has already been said', () => {
+    const assist = buildBoothAssist({
+      boothSignal: makeSignal(),
+      boothTranscript: [
+        {
+          timestamp: 18_000,
+          speaker: 'lead',
+          text: 'Courtois keeps Madrid alive with a sharp stop from close range.',
+        },
+        {
+          timestamp: 25_000,
+          speaker: 'lead',
+          text: 'Now I need the next number or angle here.',
+        },
+      ],
+      interimTranscript: '',
+      currentTimestampMs: 30_000,
+      retrieval: createEmptyRetrievalState(),
+      contextBundle: {
+        ...createEmptyContextBundle(),
+        summary: 'Save plus possession edge.',
+        items: [
+          {
+            id: 'bundle-save',
+            lane: 'live-moment',
+            headline: 'Live moment',
+            detail: 'Courtois keeps Madrid alive with a sharp stop from close range.',
+            expiresAt: 40_000,
+            salience: 0.93,
+            sourceChip: {
+              id: 'bundle-save',
+              label: 'Courtois stop',
+              source: 'context:live-moment',
+              relevance: 0.93,
+            },
+          },
+        ],
+      },
+      liveMatch: {
+        ...createEmptyLiveMatchState(),
+        homeTeam: {
+          ...createEmptyLiveMatchState().homeTeam,
+          name: 'Barcelona',
+          shortCode: 'BAR',
+        },
+        awayTeam: {
+          ...createEmptyLiveMatchState().awayTeam,
+          name: 'Real Madrid',
+          shortCode: 'RMA',
+        },
+        stats: [{ teamSide: 'home', label: 'Possession', value: '58%' }],
+      },
+    });
+
+    expect(assist.type).toBe('stat');
+    expect(assist.text).toMatch(/Barcelona|58%|Possession/);
+    expect(assist.text).not.toMatch(/Courtois|sharp stop/i);
+  });
+
+  it('uses context-bundle social items instead of a generic crowd bridge', () => {
     const assist = buildBoothAssist({
       boothSignal: makeSignal(),
       boothTranscript: makeTranscript('Fans are reacting to this one'),
       interimTranscript: '',
       currentTimestampMs: 1000,
       retrieval: createEmptyRetrievalState(),
+      contextBundle: {
+        ...createEmptyContextBundle(),
+        summary: 'Social pulse is building around the save.',
+        items: [
+          {
+            id: 'bundle-social',
+            lane: 'social-pulse',
+            headline: 'Social pulse',
+            detail: 'Fans are calling the save world class already.',
+            expiresAt: 10_000,
+            salience: 0.88,
+            sourceChip: {
+              id: 'bundle-social',
+              label: 'Fans call it world class',
+              source: 'context:social-pulse',
+              relevance: 0.88,
+            },
+          },
+        ],
+      },
       liveMatch: createEmptyLiveMatchState(),
     });
 
-    expect(assist.type).toBe('context');
-    expect(assist.text.toLowerCase()).toMatch(/audience angle|reaction beat/);
-    expect(assist.text).not.toContain('Fans are already losing it over every Madrid counter');
-    expect(assist.sourceChips).toHaveLength(0);
+    expect(assist.type).not.toBe('none');
+    expect(assist.text).toMatch(/Fans|world class|reaction/i);
+    expect(assist.sourceChips.length).toBeGreaterThan(0);
   });
 
-  it('falls back to a generic bridge when the transcript is stale', () => {
+  it('falls back to the speaker transcript only as a last resort when all context is thin', () => {
     const assist = buildBoothAssist({
       boothSignal: makeSignal(),
       boothTranscript: makeTranscript('Fans are reacting to this one'),
@@ -375,8 +487,35 @@ describe('buildBoothAssist', () => {
     });
 
     expect(assist.type).toBe('transition');
-    expect(assist.text).toContain('Reset with one clean scene line');
+    expect(assist.text).toContain('Pick up from');
     expect(assist.sourceChips).toHaveLength(0);
+  });
+
+  it('derives excluded cue texts only when the transcript has already covered them', () => {
+    const excludedCueTexts = deriveExcludedCueTexts({
+      recentCueTexts: [
+        'Pick up the live moment: Courtois keeps Madrid alive with a sharp stop from close range.',
+        'Use the number: Barcelona possession: 58%.',
+      ],
+      boothTranscript: [
+        {
+          timestamp: 11_000,
+          speaker: 'lead',
+          text: 'Courtois keeps Madrid alive with a sharp stop from close range.',
+        },
+        {
+          timestamp: 22_000,
+          speaker: 'lead',
+          text: 'Still searching for the next layer here.',
+        },
+      ],
+      interimTranscript: '',
+      currentTimestampMs: 30_000,
+    });
+
+    expect(excludedCueTexts).toEqual([
+      'Pick up the live moment: Courtois keeps Madrid alive with a sharp stop from close range.',
+    ]);
   });
 
   it('returns no assist when visibility is gated elsewhere', () => {

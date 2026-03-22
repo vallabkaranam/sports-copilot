@@ -30,6 +30,7 @@ import {
 import {
   buildBoothAssist,
   buildBoothAssistFacts,
+  deriveExcludedCueTexts,
   getBoothAssistQuery,
   rankBoothAssistFacts,
 } from './boothAssist';
@@ -1510,6 +1511,7 @@ function App() {
     (isMicListening || boothHasTranscriptContext);
   const boothAssistFacts = buildBoothAssistFacts({
     retrieval: worldState.retrieval,
+    contextBundle: worldState.contextBundle,
     preMatch: worldState.preMatch,
     liveMatch: worldState.liveMatch,
     socialPosts: worldState.liveSignals.social,
@@ -1521,6 +1523,7 @@ function App() {
     interimTranscript: boothInterimTranscript,
     currentTimestampMs: getCurrentTranscriptTimestamp(),
     retrieval: worldState.retrieval,
+    contextBundle: worldState.contextBundle,
     preMatch: worldState.preMatch,
     liveMatch: worldState.liveMatch,
     socialPosts: worldState.liveSignals.social,
@@ -1530,6 +1533,27 @@ function App() {
     boothTranscript,
     interimTranscript: boothInterimTranscript,
   });
+  const recentCueTexts = useMemo(
+    () =>
+      [
+        generatedCue?.assist.text,
+        latchedAssist.type !== 'none' ? latchedAssist.text : null,
+        ...worldState.sessionMemory.surfacedAssists.slice(-3).map((entry) => entry.text),
+      ].filter((value, index, collection): value is string => {
+        return Boolean(value?.trim()) && collection.indexOf(value) === index;
+      }),
+    [generatedCue?.assist.text, latchedAssist.text, latchedAssist.type, worldState.sessionMemory.surfacedAssists],
+  );
+  const excludedCueTexts = useMemo(
+    () =>
+      deriveExcludedCueTexts({
+        recentCueTexts,
+        boothTranscript,
+        interimTranscript: boothInterimTranscript,
+        currentTimestampMs: getCurrentTranscriptTimestamp(),
+      }),
+    [boothInterimTranscript, boothTranscript, recentCueTexts],
+  );
   const rankedBoothAssistFacts = rankBoothAssistFacts({
     facts: boothAssistFacts,
     boothTranscript,
@@ -1543,8 +1567,9 @@ function App() {
     return JSON.stringify({
       query: normalizedQuery,
       factIds,
+      excludedCueTexts,
     });
-  }, [boothAssistQuery, rankedBoothAssistFacts]);
+  }, [boothAssistQuery, excludedCueTexts, rankedBoothAssistFacts]);
   const currentBoothFeatures = useMemo<BoothFeatureSnapshot>(
     () => ({
       timestamp: boothClockMs,
@@ -2188,14 +2213,6 @@ function App() {
           : 0;
 
     const timeoutId = window.setTimeout(() => {
-      const recentCueTexts = [
-        generatedCue?.assist.text,
-        latchedAssist.type !== 'none' ? latchedAssist.text : null,
-        ...worldState.sessionMemory.surfacedAssists.slice(-3).map((entry) => entry.text),
-      ].filter((value, index, collection): value is string => {
-        return Boolean(value?.trim()) && collection.indexOf(value) === index;
-      });
-
       setGeneratedCueRequestedAt(Date.now());
 
       void generateBoothCue({
@@ -2213,6 +2230,7 @@ function App() {
         preMatchSummary: preMatchCueSummary,
         expectedTopics: currentBoothFeatures.expectedTopics,
         recentCueTexts,
+        excludedCueTexts,
       })
         .then((nextCue) => {
           cueRetryBlockedUntilRef.current = 0;
@@ -2239,6 +2257,7 @@ function App() {
     boothHasTranscriptContext,
     boothInterpretation,
     currentBoothFeatures,
+    excludedCueTexts,
     generatedCue,
     generatedCueRequestedAt,
     hasStartedBroadcast,
@@ -2251,6 +2270,7 @@ function App() {
     boothCueSignature,
     rankedBoothAssistFacts,
     preMatchCueSummary,
+    recentCueTexts,
     worldState.contextBundle,
     worldState.recentEvents,
     worldState.retrieval,

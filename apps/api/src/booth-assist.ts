@@ -60,6 +60,7 @@ function buildPrompt(params: {
   clipName?: string;
   expectedTopics?: string[];
   recentCueTexts?: string[];
+  excludedCueTexts?: string[];
   contextBundle?: ContextBundle;
   retrievedFacts: RetrievedFact[];
   recentEvents?: Array<{ matchTime: string; description: string; highSalience: boolean }>;
@@ -72,6 +73,7 @@ function buildPrompt(params: {
     clipName,
     expectedTopics = [],
     recentCueTexts = [],
+    excludedCueTexts = [],
     contextBundle,
     retrievedFacts,
     recentEvents = [],
@@ -84,8 +86,13 @@ function buildPrompt(params: {
     'Use only the supplied facts and context. Never invent a stat, event, player detail, or narrative.',
     'If the facts are thin, generate a generic bridge line that stays grounded in the current moment instead of hallucinating.',
     'Prefer the rolling context bundle first when it has relevant items, because it represents the freshest session rack.',
+    'When multiple source families are available, blend them naturally: live moment first, then stat/social/setup support when relevant.',
+    'Avoid generic phrasing like "reset with one clean line" or "go back to the moment" unless the supplied facts are truly too thin for anything more specific.',
+    'If you can ground the cue in a live event plus one supporting source, do that instead of producing a vague bridge.',
     'Keep the cue to a single line, ideally 8-18 words, and keep whyNow short.',
     'Prefer a fresh angle if recentCueTexts show you already used the same framing.',
+    'If excludedCueTexts are present, treat them as already-covered ideas from the recent transcript. Do not repeat, paraphrase, or lightly reword them.',
+    'When an idea has already been covered, advance the call with a new grounded angle or a supporting fact from a different source family.',
     'Return strict JSON with keys: type, text, whyNow, confidence, sourceFactIds, refreshAfterMs.',
     'Valid type values: hype, context, stat, narrative, transition, co-host-tossup.',
     'confidence must be 0-1. refreshAfterMs should usually be 1400-3200 depending on urgency.',
@@ -97,6 +104,7 @@ function buildPrompt(params: {
       preMatchSummary,
       expectedTopics,
       recentCueTexts,
+      excludedCueTexts,
       contextBundle,
       features,
       interpretation,
@@ -139,6 +147,7 @@ export async function generateBoothCueWithOpenAI(params: {
   preMatchSummary?: string;
   expectedTopics?: string[];
   recentCueTexts?: string[];
+  excludedCueTexts?: string[];
   contextBundle?: ContextBundle;
 }): Promise<GenerateBoothCueResponse> {
   const retrievedFacts = params.retrievalFacts.slice(0, 8);
@@ -166,6 +175,7 @@ export async function generateBoothCueWithOpenAI(params: {
         clipName: params.clipName,
         expectedTopics: params.expectedTopics,
         recentCueTexts: params.recentCueTexts,
+        excludedCueTexts: params.excludedCueTexts,
         contextBundle: params.contextBundle,
         retrievedFacts,
         recentEvents: params.recentEvents,

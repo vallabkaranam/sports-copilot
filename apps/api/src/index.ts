@@ -257,6 +257,7 @@ server.post('/booth/generate-cue', async (request, reply): Promise<GenerateBooth
     preMatchSummary: parsed.data.preMatchSummary,
     expectedTopics: parsed.data.expectedTopics,
     recentCueTexts: parsed.data.recentCueTexts,
+    excludedCueTexts: parsed.data.excludedCueTexts,
   });
 });
 

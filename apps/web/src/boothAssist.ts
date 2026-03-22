@@ -1,5 +1,6 @@
 import {
   AssistCard,
+  ContextBundle,
   LiveMatchState,
   PreMatchState,
   RetrievedFact,
@@ -35,6 +36,49 @@ const STOP_WORDS = new Set([
   'with',
 ]);
 
+const CUE_INSTRUCTION_PREFIXES = [
+  'bring in the fan reaction:',
+  'go back to the setup:',
+  'use the rivalry context:',
+  'set the scene:',
+  'use the number:',
+  'pick up the live moment:',
+  'bring in the setup:',
+  'use the reaction:',
+  'use the live detail:',
+  'then layer in the reaction:',
+  'then connect it to the number:',
+  'then tie it back to the setup:',
+  'then land the follow-through:',
+  'pick up from',
+];
+
+const SEMANTIC_STOP_WORDS = new Set([
+  ...STOP_WORDS,
+  'back',
+  'bring',
+  'clean',
+  'connect',
+  'detail',
+  'fan',
+  'follow',
+  'go',
+  'into',
+  'land',
+  'layer',
+  'live',
+  'moment',
+  'next',
+  'number',
+  'pick',
+  'reaction',
+  'scene',
+  'setup',
+  'then',
+  'tie',
+  'use',
+]);
+
 function normalizeText(text: string) {
   return text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 }
@@ -43,6 +87,12 @@ function tokenize(text: string) {
   return normalizeText(text)
     .split(' ')
     .filter((token) => token.length > 1 && !STOP_WORDS.has(token));
+}
+
+function semanticTokens(text: string) {
+  return normalizeText(text)
+    .split(' ')
+    .filter((token) => token.length > 2 && !SEMANTIC_STOP_WORDS.has(token));
 }
 
 function clamp(value: number, min = 0, max = 1) {
@@ -62,9 +112,124 @@ function cleanFactText(text: string) {
   return text.replace(/^@[^:]+:\s*/i, '').replace(/\s+/g, ' ').trim();
 }
 
+function stripCueInstruction(text: string) {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  const lowered = normalized.toLowerCase();
+
+  for (const prefix of CUE_INSTRUCTION_PREFIXES) {
+    if (lowered.startsWith(prefix)) {
+      return normalized.slice(prefix.length).trim().replace(/^[:,-]\s*/, '');
+    }
+  }
+
+  return normalized;
+}
+
 const TRANSCRIPT_FRESHNESS_WINDOW_MS = 7_000;
 
 type BoothIntent = 'social' | 'stats' | 'live-play' | 'setup' | 'generic';
+type FactFamily = 'social' | 'stats' | 'event' | 'setup' | 'context';
+
+function buildRecentTranscriptText(params: {
+  boothTranscript: TranscriptEntry[];
+  interimTranscript: string;
+  currentTimestampMs: number;
+  windowMs?: number;
+}) {
+  const { boothTranscript, interimTranscript, currentTimestampMs, windowMs = 30_000 } = params;
+  const cutoff = currentTimestampMs - windowMs;
+  const transcriptParts = boothTranscript
+    .filter((entry) => entry.timestamp >= cutoff)
+    .map((entry) => entry.text.trim())
+    .filter(Boolean);
+
+  if (interimTranscript.trim()) {
+    transcriptParts.push(interimTranscript.trim());
+  }
+
+  return transcriptParts.join(' ').trim();
+}
+
+function getTokenOverlapScore(candidate: string, transcriptText: string) {
+  const candidateTokens = [...new Set(semanticTokens(candidate))];
+  if (candidateTokens.length === 0) {
+    return 0;
+  }
+
+  const transcriptTokenSet = new Set(semanticTokens(transcriptText));
+  if (transcriptTokenSet.size === 0) {
+    return 0;
+  }
+
+  const overlapCount = candidateTokens.filter((token) => transcriptTokenSet.has(token)).length;
+  return overlapCount / candidateTokens.length;
+}
+
+export function isCueCoveredByTranscript(params: {
+  cueText: string;
+  boothTranscript: TranscriptEntry[];
+  interimTranscript: string;
+  currentTimestampMs: number;
+  windowMs?: number;
+}) {
+  const transcriptText = buildRecentTranscriptText(params);
+  if (!transcriptText) {
+    return false;
+  }
+
+  const cuePayload = stripCueInstruction(params.cueText);
+  const normalizedCuePayload = normalizeText(cuePayload);
+  const normalizedTranscriptText = normalizeText(transcriptText);
+
+  if (normalizedCuePayload && normalizedTranscriptText.includes(normalizedCuePayload)) {
+    return true;
+  }
+
+  return getTokenOverlapScore(cuePayload, transcriptText) >= 0.62;
+}
+
+function isFactCoveredByTranscript(params: {
+  fact: RetrievedFact;
+  boothTranscript: TranscriptEntry[];
+  interimTranscript: string;
+  currentTimestampMs: number;
+  windowMs?: number;
+}) {
+  const transcriptText = buildRecentTranscriptText(params);
+  if (!transcriptText) {
+    return false;
+  }
+
+  const normalizedFactText = normalizeText(cleanFactText(params.fact.text));
+  const normalizedTranscriptText = normalizeText(transcriptText);
+  if (normalizedFactText && normalizedTranscriptText.includes(normalizedFactText)) {
+    return true;
+  }
+
+  return getTokenOverlapScore(params.fact.text, transcriptText) >= 0.66;
+}
+
+export function deriveExcludedCueTexts(params: {
+  recentCueTexts: string[];
+  boothTranscript: TranscriptEntry[];
+  interimTranscript: string;
+  currentTimestampMs: number;
+  windowMs?: number;
+}) {
+  return params.recentCueTexts.filter((cueText, index, collection) => {
+    if (!cueText.trim() || collection.indexOf(cueText) !== index) {
+      return false;
+    }
+
+    return isCueCoveredByTranscript({
+      cueText,
+      boothTranscript: params.boothTranscript,
+      interimTranscript: params.interimTranscript,
+      currentTimestampMs: params.currentTimestampMs,
+      windowMs: params.windowMs,
+    });
+  });
+}
 
 function inferBoothIntent(query: string): BoothIntent {
   if (/\b(fans?|reaction|social|online|buzz|crowd)\b/i.test(query)) {
@@ -129,39 +294,157 @@ function factMatchesIntent(fact: RetrievedFact, intent: BoothIntent) {
   }
 }
 
-function buildNeutralHint(intent: BoothIntent) {
-  switch (intent) {
-    case 'social':
-      return {
-        type: 'context' as const,
-        text: 'Reset with the audience angle, then land one clean reaction beat.',
-        whyNow: 'You sounded like you were reaching for reaction, but the live social facts are thin.',
-      };
-    case 'stats':
-      return {
-        type: 'stat' as const,
-        text: 'Reset with one number, then connect it back to the flow of the match.',
-        whyNow: 'You were reaching for a stat, but there is not a strong live number to quote cleanly here.',
-      };
-    case 'live-play':
-      return {
-        type: 'transition' as const,
-        text: 'Go back to the moment itself, then describe its effect in one clean line.',
-        whyNow: 'You were trying to land the live play, but the freshest event detail is thin right now.',
-      };
-    case 'setup':
-      return {
-        type: 'context' as const,
-        text: 'Reframe the setup in one line, then bring it back to what this moment means.',
-        whyNow: 'You were scene-setting, but the supporting setup facts are thin right now.',
-      };
-    case 'generic':
-      return {
-        type: 'transition' as const,
-        text: 'Reset with one clean scene line, then land a single takeaway.',
-        whyNow: 'Use a short bridge to recover the flow without forcing a bigger restart.',
-      };
+function getFactFamily(fact: RetrievedFact): FactFamily {
+  if (fact.source.includes('social:')) {
+    return 'social';
   }
+
+  if (fact.source.includes('stats:')) {
+    return 'stats';
+  }
+
+  if (fact.source.includes('event-feed:')) {
+    return 'event';
+  }
+
+  if (
+    fact.metadata?.chunkCategory === 'recent-form' ||
+    fact.metadata?.chunkCategory === 'trend' ||
+    fact.metadata?.chunkCategory === 'head-to-head' ||
+    fact.metadata?.chunkCategory === 'venue' ||
+    fact.metadata?.chunkCategory === 'weather' ||
+    fact.metadata?.chunkCategory === 'opener' ||
+    fact.source.includes('context-bundle:pre-match')
+  ) {
+    return 'setup';
+  }
+
+  return 'context';
+}
+
+function dedupeFacts(facts: RetrievedFact[]) {
+  const seen = new Set<string>();
+  return facts.filter((fact) => {
+    if (seen.has(fact.id)) {
+      return false;
+    }
+    seen.add(fact.id);
+    return true;
+  });
+}
+
+function selectGroundingFacts(rankedFacts: RetrievedFact[], intent: BoothIntent) {
+  const chosen: RetrievedFact[] = [];
+  const familyOrder: FactFamily[] =
+    intent === 'social'
+      ? ['social', 'event', 'stats', 'setup', 'context']
+      : intent === 'stats'
+        ? ['stats', 'event', 'social', 'setup', 'context']
+        : intent === 'live-play'
+          ? ['event', 'stats', 'social', 'setup', 'context']
+          : intent === 'setup'
+            ? ['setup', 'event', 'stats', 'social', 'context']
+            : ['event', 'stats', 'social', 'setup', 'context'];
+
+  for (const family of familyOrder) {
+    const nextFact = rankedFacts.find(
+      (fact) => getFactFamily(fact) === family && !chosen.some((chosenFact) => chosenFact.id === fact.id),
+    );
+
+    if (nextFact) {
+      chosen.push(nextFact);
+    }
+
+    if (chosen.length >= 2) {
+      break;
+    }
+  }
+
+  if (chosen.length === 0) {
+    return rankedFacts.slice(0, 2);
+  }
+
+  if (chosen.length === 1) {
+    const backup = rankedFacts.find((fact) => !chosen.some((chosenFact) => chosenFact.id === fact.id));
+    if (backup) {
+      chosen.push(backup);
+    }
+  }
+
+  return chosen.slice(0, 2);
+}
+
+function sentenceCase(text: string) {
+  if (!text) {
+    return text;
+  }
+
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function trimFactSentence(text: string) {
+  return cleanFactText(text).replace(/[.]+$/, '').trim();
+}
+
+function buildGroundedFallback(params: {
+  intent: BoothIntent;
+  rankedFacts: RetrievedFact[];
+  currentLine: string;
+}) {
+  const selectedFacts = selectGroundingFacts(params.rankedFacts, params.intent);
+  const [primaryFact, secondaryFact] = selectedFacts;
+
+  if (!primaryFact) {
+    const lineExcerpt = params.currentLine ? quoteExcerpt(params.currentLine) : 'the last live beat';
+    return {
+      type: 'transition' as const,
+      text: `Pick up from ${lineExcerpt} and land the next concrete detail.`,
+      whyNow: 'No strong external fact is ready yet, so use the live thread you already established.',
+      sourceFacts: [] as RetrievedFact[],
+    };
+  }
+
+  const primaryText = trimFactSentence(primaryFact.text);
+  const secondaryText = secondaryFact ? trimFactSentence(secondaryFact.text) : '';
+  const primaryFamily = getFactFamily(primaryFact);
+  const secondaryFamily = secondaryFact ? getFactFamily(secondaryFact) : null;
+
+  const leadText =
+    params.intent === 'stats' && primaryFamily === 'stats'
+      ? `Use the number: ${primaryText}.`
+      : params.intent === 'social' && primaryFamily === 'social'
+        ? `Use the reaction: ${primaryText}.`
+        : params.intent === 'setup' && primaryFamily === 'setup'
+          ? `Bring in the setup: ${primaryText}.`
+          : `Use the live detail: ${primaryText}.`;
+
+  const supportText =
+    secondaryText && secondaryFamily === 'social'
+      ? `Then layer in the reaction: ${secondaryText}.`
+      : secondaryText && secondaryFamily === 'stats'
+        ? `Then connect it to the number: ${secondaryText}.`
+        : secondaryText && secondaryFamily === 'setup'
+          ? `Then tie it back to the setup: ${secondaryText}.`
+          : secondaryText
+            ? `Then land the follow-through: ${secondaryText}.`
+            : '';
+
+  const type: AssistCard['type'] =
+    primaryFamily === 'stats'
+      ? 'stat'
+      : primaryFamily === 'setup' || primaryFamily === 'social'
+        ? 'context'
+        : 'transition';
+  const whyNow = secondaryFact
+    ? `This cue is grounded in the current ${primaryFamily} read and a supporting ${secondaryFamily ?? 'context'} thread.`
+    : `This cue is grounded in the strongest current ${primaryFamily} detail available.`;
+
+  return {
+    type,
+    text: sentenceCase([leadText, supportText].filter(Boolean).join(' ')),
+    whyNow,
+    sourceFacts: selectedFacts,
+  };
 }
 
 export function getBoothAssistQuery({
@@ -191,6 +474,7 @@ function createSyntheticFact(
 
 export function buildBoothAssistFacts(params: {
   retrieval: RetrievalState;
+  contextBundle?: ContextBundle;
   preMatch?: PreMatchState;
   liveMatch?: LiveMatchState;
   socialPosts?: SocialPost[];
@@ -329,7 +613,20 @@ export function buildBoothAssistFacts(params: {
     );
   });
 
-  return facts;
+  (params.contextBundle?.items ?? []).forEach((item, index) => {
+    facts.push(
+      createSyntheticFact({
+        id: `booth-context-bundle-${item.id}-${index}`,
+        tier: item.lane === 'pre-match' ? 'pre_match' : 'session',
+        text: `${item.headline}: ${item.detail}`,
+        source: `context-bundle:${item.lane}`,
+        timestamp: item.expiresAt ?? Date.now(),
+        relevance: item.salience,
+      }),
+    );
+  });
+
+  return dedupeFacts(facts);
 }
 
 function scoreFact(fact: RetrievedFact, queryTokens: string[], fullQuery: string) {
@@ -395,7 +692,7 @@ function buildHintFromFact(fact: RetrievedFact) {
   if (fact.source.includes('social:')) {
     return {
       type: 'context' as const,
-      text: `Bring in the fan reaction: ${cleanText}`,
+      text: `Bring in the fan reaction: ${cleanText}.`,
       whyNow: 'You paused on a crowd-reaction angle, so use the live social pulse.',
     };
   }
@@ -403,7 +700,7 @@ function buildHintFromFact(fact: RetrievedFact) {
   if (fact.metadata?.chunkCategory === 'recent-form' || fact.metadata?.chunkCategory === 'trend') {
     return {
       type: 'context' as const,
-      text: `Go back to the setup: ${cleanText}`,
+      text: `Go back to the setup: ${cleanText}.`,
       whyNow: 'You were leaning into the match setup and left a pause.',
     };
   }
@@ -411,7 +708,7 @@ function buildHintFromFact(fact: RetrievedFact) {
   if (fact.metadata?.chunkCategory === 'head-to-head') {
     return {
       type: 'context' as const,
-      text: `Use the rivalry context: ${cleanText}`,
+      text: `Use the rivalry context: ${cleanText}.`,
       whyNow: 'A short history note can bridge this hesitation cleanly.',
     };
   }
@@ -419,7 +716,7 @@ function buildHintFromFact(fact: RetrievedFact) {
   if (fact.metadata?.chunkCategory === 'venue' || fact.metadata?.chunkCategory === 'weather') {
     return {
       type: 'transition' as const,
-      text: `Set the scene: ${cleanText}`,
+      text: `Set the scene: ${cleanText}.`,
       whyNow: 'You paused while scene-setting, so anchor the environment.',
     };
   }
@@ -427,7 +724,7 @@ function buildHintFromFact(fact: RetrievedFact) {
   if (fact.source.includes('stats:')) {
     return {
       type: 'stat' as const,
-      text: `Use the number: ${cleanText}`,
+      text: `Use the number: ${cleanText}.`,
       whyNow: 'A single stat can rescue the pause without forcing a big reset.',
     };
   }
@@ -435,7 +732,7 @@ function buildHintFromFact(fact: RetrievedFact) {
   if (fact.source.includes('event-feed:')) {
     return {
       type: 'transition' as const,
-      text: `Pick up the live moment: ${cleanText}`,
+      text: `Pick up the live moment: ${cleanText}.`,
       whyNow: 'Tie the call back to the last live action you were describing.',
     };
   }
@@ -453,6 +750,7 @@ export function buildBoothAssist(params: {
   interimTranscript: string;
   currentTimestampMs: number;
   retrieval: RetrievalState;
+  contextBundle?: ContextBundle;
   preMatch?: PreMatchState;
   liveMatch?: LiveMatchState;
   socialPosts?: SocialPost[];
@@ -464,6 +762,7 @@ export function buildBoothAssist(params: {
     interimTranscript,
     currentTimestampMs,
     retrieval,
+    contextBundle,
     preMatch,
     liveMatch,
     socialPosts = [],
@@ -483,6 +782,7 @@ export function buildBoothAssist(params: {
   const intent = hasFreshQuery ? inferBoothIntent(currentLine) : 'generic';
   const candidateFacts = buildBoothAssistFacts({
     retrieval,
+    contextBundle,
     preMatch,
     liveMatch,
     socialPosts,
@@ -493,22 +793,38 @@ export function buildBoothAssist(params: {
     boothTranscript,
     interimTranscript,
   });
+  const novelRankedFacts = rankedFacts.filter(({ fact }) => {
+    return !isFactCoveredByTranscript({
+      fact,
+      boothTranscript,
+      interimTranscript,
+      currentTimestampMs,
+    });
+  });
   const topFact =
-    rankedFacts.find(({ fact }) => factMatchesIntent(fact, intent))?.fact ??
-    (intent === 'generic' ? rankedFacts[0]?.fact : undefined);
+    novelRankedFacts.find(({ fact }) => factMatchesIntent(fact, intent))?.fact ??
+    (intent === 'generic' ? novelRankedFacts[0]?.fact : undefined);
 
   if (!topFact) {
-    const fallback = buildNeutralHint(intent);
+    const groundedFallback = buildGroundedFallback({
+      intent,
+      rankedFacts: novelRankedFacts.map(({ fact }) => fact),
+      currentLine,
+    });
+
+    if (groundedFallback.sourceFacts.length === 0 && rankedFacts.length > 0) {
+      return createEmptyAssistCard();
+    }
 
     return {
       ...createEmptyAssistCard(),
-      type: fallback.type,
-      text: fallback.text,
+      type: groundedFallback.type,
+      text: groundedFallback.text,
       confidence: clamp(0.42 + boothSignal.hesitationScore * 0.3),
       whyNow: currentLine
-        ? `${fallback.whyNow} You paused after ${quoteExcerpt(currentLine)}.`
-        : fallback.whyNow,
-      sourceChips: [],
+        ? `${groundedFallback.whyNow} You paused after ${quoteExcerpt(currentLine)}.`
+        : groundedFallback.whyNow,
+      sourceChips: groundedFallback.sourceFacts.map((fact) => fact.sourceChip),
     };
   }
 
@@ -522,6 +838,6 @@ export function buildBoothAssist(params: {
     whyNow: currentLine
       ? `${grounded.whyNow} You paused after ${quoteExcerpt(currentLine)}.`
       : grounded.whyNow,
-    sourceChips: rankedFacts.slice(0, 2).map(({ fact }) => fact.sourceChip),
+    sourceChips: novelRankedFacts.slice(0, 2).map(({ fact }) => fact.sourceChip),
   };
 }
