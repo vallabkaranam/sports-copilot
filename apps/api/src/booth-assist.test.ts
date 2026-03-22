@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   BoothFeatureSnapshot,
+  createEmptyLiveMatchState,
   RetrievedFact,
 } from '@sports-copilot/shared-types';
 import { generateBoothCueWithOpenAI } from './booth-assist';
@@ -190,5 +191,78 @@ describe('booth cue generation', () => {
     };
 
     expect(promptPayload.retrievedFacts?.map((fact) => fact.id)).toEqual(['fact-b', 'fact-a']);
+  });
+
+  it('includes the retrieval query and live match stats in the OpenAI prompt payload', async () => {
+    process.env.OPENAI_API_KEY = 'test-key';
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        output_text: JSON.stringify({
+          type: 'stat',
+          text: 'Rangers had 62 percent of the ball.',
+          whyNow: 'The query was clearly asking for stats.',
+          confidence: 0.82,
+          sourceFactIds: ['fact-1'],
+          refreshAfterMs: 1700,
+        }),
+      }),
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await generateBoothCueWithOpenAI({
+      features: makeFeatures(),
+      retrievalQuery: 'The numbers tell you Rangers controlled this match because',
+      retrievalFacts: [makeFact()],
+      liveMatch: {
+        ...createEmptyLiveMatchState(),
+        fixtureId: '19428224',
+        homeTeam: {
+          id: '62',
+          name: 'Rangers',
+          shortCode: 'RAN',
+          logoUrl: null,
+        },
+        awayTeam: {
+          id: '273',
+          name: 'Aberdeen',
+          shortCode: 'ABE',
+          logoUrl: null,
+        },
+        stats: [
+          {
+            teamSide: 'home',
+            label: 'Ball Possession %',
+            value: '62',
+          },
+          {
+            teamSide: 'away',
+            label: 'Corners',
+            value: '4',
+          },
+        ],
+      },
+    });
+
+    const requestBody = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body ?? '{}')) as {
+      input?: string;
+    };
+    const promptPayload = JSON.parse(requestBody.input?.split('\n').at(-1) ?? '{}') as {
+      retrievalQuery?: string;
+      liveMatch?: {
+        fixtureId?: string;
+        homeTeam?: string;
+        awayTeam?: string;
+        stats?: Array<{ label: string; value: string }>;
+      };
+    };
+
+    expect(promptPayload.retrievalQuery).toContain('Rangers controlled');
+    expect(promptPayload.liveMatch?.homeTeam).toBe('Rangers');
+    expect(promptPayload.liveMatch?.stats?.[0]).toEqual({
+      teamSide: 'home',
+      label: 'Ball Possession %',
+      value: '62',
+    });
   });
 });

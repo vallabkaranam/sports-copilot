@@ -258,7 +258,9 @@ server.post('/booth/generate-cue', async (request, reply): Promise<GenerateBooth
   return generateBoothCueWithOpenAI({
     features: parsed.data.features,
     interpretation: parsed.data.interpretation,
+    retrievalQuery: parsed.data.retrieval.query,
     retrievalFacts: parsed.data.retrieval.supportingFacts,
+    liveMatch: parsed.data.liveMatch,
     contextBundle: parsed.data.contextBundle,
     recentEvents: parsed.data.recentEvents?.map((event) => ({
       matchTime: event.matchTime,

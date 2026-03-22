@@ -792,6 +792,7 @@ export const GenerateBoothCueInputSchema = z.object({
   features: BoothFeatureSnapshotSchema,
   interpretation: BoothInterpretationSchema.optional(),
   retrieval: RetrievalStateSchema,
+  liveMatch: LiveMatchStateSchema.optional(),
   contextBundle: ContextBundleSchema.optional(),
   recentEvents: z.array(GameEventSchema).optional(),
   liveSignals: z

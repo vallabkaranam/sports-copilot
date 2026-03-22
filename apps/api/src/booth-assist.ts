@@ -5,6 +5,7 @@ import {
   BoothFeatureSnapshot,
   createEmptyAssistCard,
   GenerateBoothCueResponse,
+  LiveMatchState,
   RetrievedFact,
   SourceChip,
 } from '@sports-copilot/shared-types';
@@ -52,9 +53,30 @@ function dedupeSourceChips(facts: RetrievedFact[]) {
   return chips;
 }
 
+function summarizeLiveMatchForPrompt(liveMatch?: LiveMatchState) {
+  if (!liveMatch) {
+    return null;
+  }
+
+  return {
+    fixtureId: liveMatch.fixtureId,
+    status: liveMatch.status,
+    minute: liveMatch.minute,
+    period: liveMatch.period,
+    homeTeam: liveMatch.homeTeam.name,
+    awayTeam: liveMatch.awayTeam.name,
+    stats: liveMatch.stats.slice(0, 16).map((stat) => ({
+      teamSide: stat.teamSide,
+      label: stat.label,
+      value: stat.value,
+    })),
+  };
+}
+
 function buildPrompt(params: {
   features: BoothFeatureSnapshot;
   interpretation?: BoothInterpretation;
+  retrievalQuery?: string;
   contextSummary?: string;
   preMatchSummary?: string;
   clipName?: string;
@@ -62,6 +84,7 @@ function buildPrompt(params: {
   recentCueTexts?: string[];
   excludedCueTexts?: string[];
   contextBundle?: ContextBundle;
+  liveMatch?: LiveMatchState;
   liveSignals?: {
     social: Array<{ timestamp: number; handle: string; text: string; sentiment: string }>;
     vision: Array<{ timestamp: number; tag: string; label: string }>;
@@ -72,6 +95,7 @@ function buildPrompt(params: {
   const {
     features,
     interpretation,
+    retrievalQuery,
     contextSummary,
     preMatchSummary,
     clipName,
@@ -79,6 +103,7 @@ function buildPrompt(params: {
     recentCueTexts = [],
     excludedCueTexts = [],
     contextBundle,
+    liveMatch,
     liveSignals,
     retrievedFacts,
     recentEvents = [],
@@ -105,12 +130,14 @@ function buildPrompt(params: {
     '',
     JSON.stringify({
       clipName,
+      retrievalQuery,
       contextSummary,
       preMatchSummary,
       expectedTopics,
       recentCueTexts,
       excludedCueTexts,
       contextBundle,
+      liveMatch: summarizeLiveMatchForPrompt(liveMatch),
       liveSignals,
       features,
       interpretation,
@@ -146,7 +173,9 @@ function selectAssistModel(params: {
 export async function generateBoothCueWithOpenAI(params: {
   features: BoothFeatureSnapshot;
   interpretation?: BoothInterpretation;
+  retrievalQuery?: string;
   retrievalFacts: RetrievedFact[];
+  liveMatch?: LiveMatchState;
   recentEvents?: Array<{ matchTime: string; description: string; highSalience: boolean }>;
   clipName?: string;
   contextSummary?: string;
@@ -180,6 +209,7 @@ export async function generateBoothCueWithOpenAI(params: {
       input: buildPrompt({
         features: params.features,
         interpretation: params.interpretation,
+        retrievalQuery: params.retrievalQuery,
         contextSummary: params.contextSummary,
         preMatchSummary: params.preMatchSummary,
         clipName: params.clipName,
@@ -187,6 +217,7 @@ export async function generateBoothCueWithOpenAI(params: {
         recentCueTexts: params.recentCueTexts,
         excludedCueTexts: params.excludedCueTexts,
         contextBundle: params.contextBundle,
+        liveMatch: params.liveMatch,
         liveSignals: params.liveSignals,
         retrievedFacts,
         recentEvents: params.recentEvents,

@@ -2447,6 +2447,7 @@ function App() {
           query: boothAssistQuery || worldState.retrieval.query,
           supportingFacts: rankedBoothAssistFacts.map(({ fact }) => fact),
         },
+        liveMatch: worldState.liveMatch,
         contextBundle: worldState.contextBundle,
         recentEvents: worldState.recentEvents.slice(-4),
         liveSignals: worldState.liveSignals,
