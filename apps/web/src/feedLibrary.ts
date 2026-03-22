@@ -1,4 +1,4 @@
-export type ProgramFeedSlotId = 'program-a' | 'program-b';
+export type ProgramFeedSlotId = 'program-a' | 'program-b' | 'program-c';
 
 export type StoredProgramFeed = {
   slotId: ProgramFeedSlotId;

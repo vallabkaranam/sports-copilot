@@ -70,6 +70,10 @@ const PRESET_FEEDS: Record<string, { filePath: string; contentType: string }> = 
     filePath: process.env.AND_ONE_PRESET_BARCA_PATH ?? '/Users/vallabkaranam/Desktop/barca.mov',
     contentType: 'video/quicktime',
   },
+  rangers: {
+    filePath: process.env.AND_ONE_PRESET_RANGERS_PATH ?? '/Users/vallabkaranam/Desktop/rangers.mov',
+    contentType: 'video/quicktime',
+  },
 };
 
 server.addContentTypeParser(['application/sdp', 'text/plain'], { parseAs: 'string' }, (_req, body, done) => {

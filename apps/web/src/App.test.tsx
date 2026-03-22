@@ -567,7 +567,7 @@ describe('App dashboard', () => {
     fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
 
-      if (url.includes('/media/barca-preset.mp4') || url.includes('/preset-feeds/barca')) {
+      if (url.includes('/preset-feeds/barca') || url.includes('/preset-feeds/rangers')) {
         return Promise.resolve({
           ok: true,
           status: 206,
@@ -769,9 +769,11 @@ describe('App dashboard', () => {
     expect(container.textContent).toContain('AndOne');
     expect(container.textContent).toContain('Channel 1');
     expect(container.textContent).toContain('Channel 2');
+    expect(container.textContent).toContain('Channel 3');
     expect(container.textContent).toContain('Monitor');
     expect(container.textContent).toContain('Preset match feed');
     expect(container.textContent).toContain('Barca preset');
+    expect(container.textContent).toContain('Rangers preset');
     expect(container.textContent).not.toContain('Pre-match brief');
   });
 
@@ -1006,7 +1008,7 @@ describe('App dashboard', () => {
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
 
-      if (url.includes('/media/barca-preset.mp4') || url.includes('/preset-feeds/barca')) {
+      if (url.includes('/preset-feeds/barca') || url.includes('/preset-feeds/rangers')) {
         return Promise.resolve({
           ok: true,
           status: 206,
@@ -1143,7 +1145,7 @@ describe('App dashboard', () => {
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
 
-      if (url.includes('/media/barca-preset.mp4') || url.includes('/preset-feeds/barca')) {
+      if (url.includes('/preset-feeds/barca') || url.includes('/preset-feeds/rangers')) {
         return Promise.resolve({
           ok: true,
           status: 206,
@@ -1260,7 +1262,7 @@ describe('App dashboard', () => {
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
 
-      if (url.includes('/media/barca-preset.mp4') || url.includes('/preset-feeds/barca')) {
+      if (url.includes('/preset-feeds/barca') || url.includes('/preset-feeds/rangers')) {
         return Promise.resolve({
           ok: true,
           status: 206,

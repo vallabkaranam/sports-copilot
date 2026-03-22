@@ -81,16 +81,32 @@ const PROGRAM_FEED_SLOTS: ProgramFeedSlot[] = [
     label: 'Channel 1',
     tone: 'Preset match feed',
     source: 'preset',
-    presetUrl: '/media/barca-preset.mp4',
+    presetUrl: `${import.meta.env.VITE_API_BASE_URL ?? ''}/preset-feeds/barca`,
     presetFileName: 'Barca preset',
   },
   {
     id: 'program-b',
     label: 'Channel 2',
+    tone: 'Preset alternate feed',
+    source: 'preset',
+    presetUrl: `${import.meta.env.VITE_API_BASE_URL ?? ''}/preset-feeds/rangers`,
+    presetFileName: 'Rangers preset',
+  },
+  {
+    id: 'program-c',
+    label: 'Channel 3',
     tone: 'Manual backup feed',
     source: 'upload',
   },
 ];
+
+function createEmptyStoredProgramFeeds(): Record<ProgramFeedSlotId, StoredProgramFeed | null> {
+  return {
+    'program-a': null,
+    'program-b': null,
+    'program-c': null,
+  };
+}
 
 function supportsAudioMonitoring() {
   return (
@@ -571,10 +587,9 @@ function App() {
   const [loadedClipName, setLoadedClipName] = useState('');
   const [loadedClipUrl, setLoadedClipUrl] = useState<string | null>(null);
   const [selectedProgramFeedId, setSelectedProgramFeedId] = useState<ProgramFeedSlotId | null>(null);
-  const [storedProgramFeeds, setStoredProgramFeeds] = useState<Record<ProgramFeedSlotId, StoredProgramFeed | null>>({
-    'program-a': null,
-    'program-b': null,
-  });
+  const [storedProgramFeeds, setStoredProgramFeeds] = useState<Record<ProgramFeedSlotId, StoredProgramFeed | null>>(
+    createEmptyStoredProgramFeeds,
+  );
   const [clipPositionMs, setClipPositionMs] = useState(0);
   const [clipDurationMs, setClipDurationMs] = useState(0);
   const [isClipMuted, setIsClipMuted] = useState(true);
@@ -637,10 +652,7 @@ function App() {
         return;
       }
 
-      const nextFeeds: Record<ProgramFeedSlotId, StoredProgramFeed | null> = {
-        'program-a': null,
-        'program-b': null,
-      };
+      const nextFeeds = createEmptyStoredProgramFeeds();
 
       for (const feed of feeds) {
         nextFeeds[feed.slotId] = feed;
@@ -648,28 +660,32 @@ function App() {
 
       setStoredProgramFeeds(nextFeeds);
 
-      const presetSlot = PROGRAM_FEED_SLOTS.find((slot) => slot.source === 'preset');
-      if (presetSlot?.presetUrl && (await canLoadPresetFeed(presetSlot.presetUrl))) {
-        if (!isActive) {
+      const presetSlots = PROGRAM_FEED_SLOTS.filter((slot) => slot.source === 'preset');
+      for (const presetSlot of presetSlots) {
+        if (presetSlot.presetUrl && (await canLoadPresetFeed(presetSlot.presetUrl))) {
+          if (!isActive) {
+            return;
+          }
+          setSelectedProgramFeedId(presetSlot.id);
+          setLoadedClipUrl(presetSlot.presetUrl);
+          setLoadedClipName(presetSlot.presetFileName ?? presetSlot.label);
+          setBoothError(null);
           return;
         }
-        setSelectedProgramFeedId(presetSlot.id);
-        setLoadedClipUrl(presetSlot.presetUrl);
-        setLoadedClipName(presetSlot.presetFileName ?? presetSlot.label);
-      } else {
-        const firstUploadSlot = PROGRAM_FEED_SLOTS.find((slot) => nextFeeds[slot.id]);
-        if (firstUploadSlot && nextFeeds[firstUploadSlot.id]) {
-          const blob = nextFeeds[firstUploadSlot.id]?.blob;
-          if (blob) {
-            if (clipObjectUrlRef.current) {
-              URL.revokeObjectURL(clipObjectUrlRef.current);
-            }
-            const nextUrl = URL.createObjectURL(blob);
-            clipObjectUrlRef.current = nextUrl;
-            setSelectedProgramFeedId(firstUploadSlot.id);
-            setLoadedClipUrl(nextUrl);
-            setLoadedClipName(nextFeeds[firstUploadSlot.id]?.fileName ?? '');
+      }
+
+      const firstUploadSlot = PROGRAM_FEED_SLOTS.find((slot) => nextFeeds[slot.id]);
+      if (firstUploadSlot && nextFeeds[firstUploadSlot.id]) {
+        const blob = nextFeeds[firstUploadSlot.id]?.blob;
+        if (blob) {
+          if (clipObjectUrlRef.current) {
+            URL.revokeObjectURL(clipObjectUrlRef.current);
           }
+          const nextUrl = URL.createObjectURL(blob);
+          clipObjectUrlRef.current = nextUrl;
+          setSelectedProgramFeedId(firstUploadSlot.id);
+          setLoadedClipUrl(nextUrl);
+          setLoadedClipName(nextFeeds[firstUploadSlot.id]?.fileName ?? '');
         }
       }
     });
@@ -1356,7 +1372,7 @@ function App() {
     if (slot?.source === 'preset' && slot.presetUrl) {
       const presetAvailable = await canLoadPresetFeed(slot.presetUrl);
       if (!presetAvailable) {
-        setBoothError('This preset feed is not reachable right now. Switch to the upload channel instead.');
+        setBoothError('This preset feed is not reachable right now. Use Channel 3 or try the other preset.');
         return;
       }
       if (clipObjectUrlRef.current) {
@@ -2644,7 +2660,7 @@ function App() {
                 ? isBroadcastLive
                   ? 'The feed loops while the session is live so the desk behaves like a continuous broadcast.'
                   : 'Load the feed, then go live when you are ready.'
-                : 'Channel 1 uses the Barca preset. Channel 2 can hold your own reel.'}
+                : 'Channel 1 and Channel 2 are presets. Channel 3 can hold your own reel.'}
             </p>
           </div>
         </section>
