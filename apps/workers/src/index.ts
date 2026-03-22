@@ -41,7 +41,24 @@ import {
   createEmptyRetrievalState,
 } from '@sports-copilot/shared-types';
 
-const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3001';
+function requireEnv(name: string) {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+
+  return value;
+}
+
+function assertWorkerEnv() {
+  requireEnv('API_BASE_URL');
+  requireEnv('SPORTMONKS_API_TOKEN');
+  requireEnv('SPORTMONKS_FIXTURE_ID');
+}
+
+assertWorkerEnv();
+
+const API_BASE_URL = requireEnv('API_BASE_URL');
 const API_URL = new URL(API_BASE_URL);
 const API_HOSTNAME = API_URL.hostname;
 const API_PORT = Number(API_URL.port || (API_URL.protocol === 'https:' ? 443 : 80));

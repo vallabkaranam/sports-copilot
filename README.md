@@ -67,9 +67,11 @@ BLUESKY_SOCIAL_ENABLED=true
 Notes:
 - [`.env.example`](/Users/vallabkaranam/Desktop/sports-copilot/.env.example) is the source-of-truth template for teammates
 - the full live stack expects OpenAI, Postgres, Sportmonks, and Bluesky to all be configured explicitly
+- the API now fails fast on startup if `OPENAI_API_KEY`, `SUPABASE_URL`, or `DATABASE_URL` are missing
+- the worker now fails fast on startup if `API_BASE_URL`, `SPORTMONKS_API_TOKEN`, or `SPORTMONKS_FIXTURE_ID` are missing
 - the worker now exposes a `/health` endpoint so Render can keep it as a web service
 - the API now respects the host platform `PORT`
-- booth session persistence now uses hosted Postgres whenever `DATABASE_URL` is present, and falls back to local SQLite only when no database is configured
+- booth session persistence is expected to use hosted Postgres via `DATABASE_URL` on the live stack
 
 ## Demo Notes
 - The replay is deterministic and runs from local JSON fixtures in [data/demo_match](/Users/vallabkaranam/Desktop/sports-copilot/data/demo_match).

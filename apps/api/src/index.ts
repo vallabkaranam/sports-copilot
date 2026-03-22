@@ -35,6 +35,23 @@ import { reviewBoothSessionWithOpenAI } from './booth-review';
 import { createBoothSessionStore } from './booth-session-store';
 import { transcribeBoothAudioWithOpenAI } from './booth-transcription';
 
+function requireEnv(name: string) {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+
+  return value;
+}
+
+function assertApiEnv() {
+  requireEnv('OPENAI_API_KEY');
+  requireEnv('SUPABASE_URL');
+  requireEnv('DATABASE_URL');
+}
+
+assertApiEnv();
+
 const server = fastify({ logger: true });
 const API_PORT = Number(process.env.PORT ?? 3001);
 const API_HOST = process.env.HOST ?? '0.0.0.0';
