@@ -27,12 +27,12 @@ import {
   createEmptyRetrievalState,
   createEmptySessionMemory,
 } from '@sports-copilot/shared-types';
-import { generateBoothCueWithOpenAI } from './booth-assist';
-import { interpretBoothWithOpenAI } from './booth-interpretation';
-import { createRealtimeBoothSdpAnswer } from './booth-realtime';
-import { reviewBoothSessionWithOpenAI } from './booth-review';
-import { createBoothSessionStore } from './booth-session-store';
-import { transcribeBoothAudioWithOpenAI } from './booth-transcription';
+import { generateBoothCueWithOpenAI } from './booth-assist.js';
+import { interpretBoothWithOpenAI } from './booth-interpretation.js';
+import { createRealtimeBoothSdpAnswer } from './booth-realtime.js';
+import { reviewBoothSessionWithOpenAI } from './booth-review.js';
+import { createBoothSessionStore } from './booth-session-store.js';
+import { transcribeBoothAudioWithOpenAI } from './booth-transcription.js';
 
 dotenv.config({
   path: [

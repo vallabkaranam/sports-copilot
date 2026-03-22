@@ -47,7 +47,7 @@ Recommended hosted setup:
 3. Set `API_BASE_URL` on the worker to your Render API URL, for example `https://sports-copilot-api.onrender.com`
 4. Deploy the repo to Vercel with `VITE_API_BASE_URL` set to that same Render API URL
 5. Set the Render API env from [`.env.deployment.example`](/Users/vallabkaranam/Desktop/sports-copilot/.env.deployment.example): `OPENAI_API_KEY`, `DATABASE_URL`, and the OpenAI model/runtime vars
-6. Set the Render worker env from [`.env.deployment.example`](/Users/vallabkaranam/Desktop/sports-copilot/.env.deployment.example): `API_BASE_URL`, `SPORTMONKS_API_TOKEN`, `SPORTMONKS_FIXTURE_ID`, and the Bluesky vars
+6. Set the Render worker env from [`.env.deployment.example`](/Users/vallabkaranam/Desktop/sports-copilot/.env.deployment.example): `API_BASE_URL`, `SPORTMONKS_API_TOKEN`, `SPORTMONKS_FIXTURE_ID`, `BLUESKY_SOCIAL_ENABLED`, `BLUESKY_IDENTIFIER`, `BLUESKY_APP_PASSWORD`, and `BLUESKY_SERVICE_URL`
 
 ## Local Env
 
@@ -61,11 +61,16 @@ DATABASE_URL=postgresql://postgres:your_database_password@your_current_supabase_
 SPORTMONKS_API_TOKEN=your_sportmonks_token
 SPORTMONKS_FIXTURE_ID=your_fixture_id
 BLUESKY_SOCIAL_ENABLED=false
+BLUESKY_IDENTIFIER=your_bluesky_handle
+BLUESKY_APP_PASSWORD=your_bluesky_app_password
+BLUESKY_SERVICE_URL=https://bsky.social
 ```
 
 Notes:
 - [`.env.example`](/Users/vallabkaranam/Desktop/sports-copilot/.env.example) is the source-of-truth template for teammates
 - the full live stack expects OpenAI, Postgres, and Sportmonks to be configured explicitly
+- `OPENAI_API_KEY` and `DATABASE_URL` belong to the API service
+- `API_BASE_URL`, `SPORTMONKS_*`, and all `BLUESKY_*` vars belong to the worker service
 - the API now fails fast on startup if `OPENAI_API_KEY` or `DATABASE_URL` are missing
 - the API now also fails fast if the `DATABASE_URL` hostname does not resolve, with a specific hint when the host looks like a stale Supabase DB hostname
 - the worker now fails fast on startup if `API_BASE_URL`, `SPORTMONKS_API_TOKEN`, or `SPORTMONKS_FIXTURE_ID` are missing
