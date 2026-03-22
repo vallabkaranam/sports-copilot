@@ -15,11 +15,7 @@
     "better-sqlite3": "^12.8.0",
     "dotenv": "^17.3.1",
     "fastify": "^4.26.0",
-<<<<<<< HEAD
-    "pg": "^8.16.3",
-=======
     "pg": "^8.20.0",
->>>>>>> 76fd437 (fixed bluesky errors)
     "zod": "^3.22.0"
   },
   "devDependencies": {
