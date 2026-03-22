@@ -262,6 +262,20 @@ function getErrorMessage(error: unknown) {
   return 'Unknown error';
 }
 
+function getFixtureResolutionErrorMessage(error: unknown) {
+  const message = getErrorMessage(error);
+
+  if (message.includes('SPORTMONKS_API_TOKEN is required')) {
+    return 'Match linking is unavailable until SPORTMONKS_API_TOKEN is set on the API service.';
+  }
+
+  if (message.includes('Invalid fixture resolution payload')) {
+    return 'The resolver did not receive enough match hints yet.';
+  }
+
+  return `The system could not identify this match yet. ${message}`;
+}
+
 type ComparableAssistCard = Pick<GenerateBoothCueResponse['assist'], 'type' | 'text' | 'whyNow'>;
 
 export function areAssistCardsEquivalent(
@@ -930,10 +944,11 @@ function App() {
           setBoothError(null);
         })
         .catch((error) => {
-          setFixtureResolutionLabel(null);
+          lastResolvedFeedKeyRef.current = feedKey;
+          setFixtureResolutionLabel('Match link unavailable');
           setBoothError((current) =>
             current ??
-            `The system could not identify this match yet. ${getErrorMessage(error)}`,
+            getFixtureResolutionErrorMessage(error),
           );
         })
         .finally(() => {
