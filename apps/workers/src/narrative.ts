@@ -4,7 +4,7 @@ import {
   NarrativeState,
   createEmptyNarrativeState,
 } from '@sports-copilot/shared-types';
-import type { NarrativeFixture } from './retrieval';
+import type { NarrativeFixture } from './retrieval.js';
 
 const RECENT_NARRATIVE_WINDOW_MS = 20_000;
 

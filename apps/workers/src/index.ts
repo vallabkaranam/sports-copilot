@@ -1,26 +1,26 @@
 import dotenv from 'dotenv';
 import fs from 'fs/promises';
 import http from 'http';
-import { buildAssistCard } from './assist';
-import { BlueskyPostCache, ingestBlueskySocialPosts } from './bluesky';
-import { analyzeCommentary } from './commentator';
-import { buildNarrativeState } from './narrative';
-import { buildPreMatchContext, createDegradedPreMatchState } from './pre-match';
+import { buildAssistCard } from './assist.js';
+import { BlueskyPostCache, ingestBlueskySocialPosts } from './bluesky.js';
+import { analyzeCommentary } from './commentator.js';
+import { buildNarrativeState } from './narrative.js';
+import { buildPreMatchContext, createDegradedPreMatchState } from './pre-match.js';
 import {
   buildContextBundle,
   buildRetrievalState,
   ingestLiveSocialPosts,
   NarrativeFixture,
-} from './retrieval';
-import { createSessionMemoryTracker } from './session-memory';
+} from './retrieval.js';
+import { createSessionMemoryTracker } from './session-memory.js';
 import {
   buildLiveGameStateSummary,
   buildPossessionLabel,
   buildRosterFromLiveMatch,
   fetchSportmonksFixture,
   normalizeSportmonksFixture,
-} from './sportmonks';
-import { getActiveVisionCues, ingestVisionFrames } from './vision';
+} from './sportmonks.js';
+import { getActiveVisionCues, ingestVisionFrames } from './vision.js';
 import {
   CommentatorState,
   GameEvent,
@@ -65,6 +65,7 @@ const API_PORT = Number(API_URL.port || (API_URL.protocol === 'https:' ? 443 : 8
 const HEALTH_PORT = Number(process.env.PORT ?? 0);
 const POLL_INTERVAL_MS = 15_000;
 const ENABLE_BLUESKY_SOCIAL = true;
+const BLUESKY_WARNING_COOLDOWN_MS = 5 * 60_000;
 
 async function loadFixture<T>(fixturePath: string) {
   const data = await fs.readFile(fixturePath, 'utf8');
@@ -193,6 +194,8 @@ async function run() {
   let lastHandledRestartToken = 0;
   let lastPreMatchFixtureId = '';
   let blueskyCache: BlueskyPostCache = {};
+  let lastBlueskyWarningAt = 0;
+  let lastBlueskyWarningMessage = '';
   let lastWorldState: Partial<WorldState> = {
     matchId: 'sportmonks-live',
     clock: '00:00',
@@ -302,10 +305,16 @@ async function run() {
             (left, right) => left.timestamp - right.timestamp,
           );
         } catch (error) {
-          console.warn(
-            'Bluesky social ingest failed:',
-            error instanceof Error ? error.message : String(error),
-          );
+          const message = error instanceof Error ? error.message : String(error);
+          const now = Date.now();
+          if (
+            message !== lastBlueskyWarningMessage ||
+            now - lastBlueskyWarningAt >= BLUESKY_WARNING_COOLDOWN_MS
+          ) {
+            console.warn('Bluesky social ingest failed:', message);
+            lastBlueskyWarningAt = now;
+            lastBlueskyWarningMessage = message;
+          }
         }
       }
       const commentator = applyForcedHesitation(

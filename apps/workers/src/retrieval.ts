@@ -14,7 +14,7 @@ import {
   TranscriptEntry,
   VisionCue,
 } from '@sports-copilot/shared-types';
-import { buildVisionMemory } from './vision';
+import { buildVisionMemory } from './vision.js';
 
 const SESSION_EVENT_WINDOW_MS = 30_000;
 const SESSION_TRANSCRIPT_WINDOW_MS = 20_000;
