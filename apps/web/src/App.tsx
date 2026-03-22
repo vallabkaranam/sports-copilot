@@ -1578,7 +1578,7 @@ function App() {
           ? 'Confidence is returning. AndOne is backing off.'
           : coachingTone.copy;
   const activeAssistSupportCopy = isAssistWeaning
-    ? 'Confidence is returning. AndOne is slipping the prompt away.'
+    ? 'Confidence is returning. AndOne is backing off.'
     : activeAssist.whyNow;
   const micBars = Array.from({ length: 14 }, (_, index) => {
     const threshold = (index + 1) / 14;
