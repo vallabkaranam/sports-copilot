@@ -610,7 +610,7 @@ function App() {
       return;
     }
 
-    if (controls.playbackStatus === 'playing') {
+    if (hasStartedBroadcast && controls.playbackStatus === 'playing') {
       safelyPlayVideo(videoRef.current, () => {
         setBoothError('Press play on the loaded clip if the browser blocks autoplay.');
       });
@@ -618,7 +618,7 @@ function App() {
     }
 
     videoRef.current.pause();
-  }, [controls.playbackStatus, loadedClipUrl]);
+  }, [controls.playbackStatus, hasStartedBroadcast, loadedClipUrl]);
 
   useEffect(() => {
     if (controls.restartToken === lastRestartTokenRef.current) {
@@ -642,12 +642,12 @@ function App() {
 
     videoRef.current.currentTime = 0;
 
-    if (controls.playbackStatus === 'playing') {
+    if (hasStartedBroadcast && controls.playbackStatus === 'playing') {
       safelyPlayVideo(videoRef.current, () => {
         setBoothError('Press play on the loaded clip if the browser blocks autoplay.');
       });
     }
-  }, [controls.playbackStatus, controls.restartToken]);
+  }, [controls.playbackStatus, controls.restartToken, hasStartedBroadcast]);
 
   useEffect(() => {
     return () => {
@@ -1958,6 +1958,24 @@ function App() {
             ) : null}
           </div>
 
+          <div className="stage-primary-bar">
+            <button
+              type="button"
+              className={`stage-primary-button ${isBroadcastLive ? 'stage-primary-button--live' : ''}`}
+              disabled={primaryActionDisabled}
+              onClick={() => void (isBroadcastLive ? stopBroadcast() : startBroadcast())}
+            >
+              {primaryActionLabel}
+            </button>
+            <p className="stage-primary-copy">
+              {loadedClipUrl
+                ? isBroadcastLive
+                  ? 'You are live. AndOne will only step in when delivery slips.'
+                  : 'Start the session when you are ready to call the action.'
+                : 'Load a reel first, then go live.'}
+            </p>
+          </div>
+
           <div className={`replay-stage ${loadedClipUrl ? 'replay-stage--video' : ''}`}>
             {loadedClipUrl ? (
               <video
@@ -2047,17 +2065,6 @@ function App() {
                   </div>
                 </div>
               ))}
-            </div>
-
-            <div className="setup-actions">
-              <button
-                type="button"
-                className={isBroadcastLive ? 'is-active' : ''}
-                disabled={primaryActionDisabled}
-                onClick={() => void (isBroadcastLive ? stopBroadcast() : startBroadcast())}
-              >
-                {primaryActionLabel}
-              </button>
             </div>
 
             {boothError ? <p className="inline-warning">{boothError}</p> : null}
