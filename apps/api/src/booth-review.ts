@@ -36,6 +36,8 @@ export async function reviewBoothSessionWithOpenAI(
     'Return strict JSON with keys: headline, summary, strengths, watchouts, coachingNotes.',
     'Focus on hesitation and recovery only. Do not suggest new hint content.',
     'Call out which hesitation signals seemed strongest, whether recovery/weaning happened clearly, and what the speaker should watch next time.',
+    'Look for individualized behavior patterns such as filler clusters, repeated ideas, pace pressure, long-pause habits, and the way confidence rebuilds.',
+    'If the data supports it, describe what kind of hesitation this speaker tends to show instead of giving generic advice.',
     'Keep each array concise: 1-3 items each.',
     '',
     JSON.stringify({ session, profile }),

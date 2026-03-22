@@ -69,6 +69,9 @@ function createEmptySpeakerProfile(): BoothSpeakerProfile {
     averageFillerDensity: 0,
     averageRepeatedOpenings: 0,
     averageTranscriptStability: 1,
+    averageWordsPerMinute: 0,
+    averagePacePressure: 0,
+    averageRepeatedIdeas: 0,
     wakePhrase: 'line',
   };
 }
@@ -489,6 +492,9 @@ async function createPostgresBoothSessionStore(connectionString: string): Promis
         average_filler_density: number | string;
         average_repeated_openings: number | string;
         average_transcript_stability: number | string;
+        average_words_per_minute: number | string;
+        average_pace_pressure: number | string;
+        average_repeated_ideas: number | string;
       }>(`
         SELECT
           COUNT(DISTINCT s.id) AS total_sessions,
@@ -499,7 +505,10 @@ async function createPostgresBoothSessionStore(connectionString: string): Promis
           COALESCE(AVG(COALESCE((ss.feature_snapshot->>'speechStreakMs')::double precision, 0)), 0) AS average_speech_streak_ms,
           COALESCE(AVG(COALESCE((ss.feature_snapshot->>'fillerDensity')::double precision, 0)), 0) AS average_filler_density,
           COALESCE(AVG(COALESCE((ss.feature_snapshot->>'repeatedOpeningCount')::double precision, 0)), 0) AS average_repeated_openings,
-          COALESCE(AVG(COALESCE((ss.feature_snapshot->>'transcriptStabilityScore')::double precision, 1)), 1) AS average_transcript_stability
+          COALESCE(AVG(COALESCE((ss.feature_snapshot->>'transcriptStabilityScore')::double precision, 1)), 1) AS average_transcript_stability,
+          COALESCE(AVG(COALESCE((ss.feature_snapshot->>'wordsPerMinute')::double precision, 0)), 0) AS average_words_per_minute,
+          COALESCE(AVG(COALESCE((ss.feature_snapshot->>'pacePressureScore')::double precision, 0)), 0) AS average_pace_pressure,
+          COALESCE(AVG(COALESCE((ss.feature_snapshot->>'repeatedIdeaCount')::double precision, 0)), 0) AS average_repeated_ideas
         FROM booth_sessions s
         LEFT JOIN booth_session_samples ss ON ss.session_id = s.id
       `);
@@ -519,6 +528,9 @@ async function createPostgresBoothSessionStore(connectionString: string): Promis
         averageFillerDensity: toNumber(row.average_filler_density),
         averageRepeatedOpenings: toNumber(row.average_repeated_openings),
         averageTranscriptStability: toNumber(row.average_transcript_stability),
+        averageWordsPerMinute: toNumber(row.average_words_per_minute),
+        averagePacePressure: toNumber(row.average_pace_pressure),
+        averageRepeatedIdeas: toNumber(row.average_repeated_ideas),
         wakePhrase: 'line',
       };
     },
@@ -775,6 +787,12 @@ function createSqliteBoothSessionStore(databaseFile?: string): BoothSessionStore
           sum(numericFeature('repeatedOpeningCount')) / Math.max(1, samples.length),
         averageTranscriptStability:
           sum(numericFeature('transcriptStabilityScore', 1)) / Math.max(1, samples.length),
+        averageWordsPerMinute:
+          sum(numericFeature('wordsPerMinute')) / Math.max(1, samples.length),
+        averagePacePressure:
+          sum(numericFeature('pacePressureScore')) / Math.max(1, samples.length),
+        averageRepeatedIdeas:
+          sum(numericFeature('repeatedIdeaCount')) / Math.max(1, samples.length),
         wakePhrase: 'line',
       };
     },

@@ -252,11 +252,11 @@ test('renders the live booth shell and can enter live mode', async ({ page }) =>
   await page.goto('/');
 
   await expect(page.getByText('Commentary sidekick', { exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Booth rail' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Monitor' })).toBeVisible();
   await expect(page.getByText('System linked')).toBeVisible();
 
   await page.getByRole('button', { name: 'Go live' }).click();
 
-  await expect(page.getByRole('button', { name: 'Reset live session' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'End live session' })).toBeVisible();
   await expect(page.getByText('Listening')).toBeVisible();
 });

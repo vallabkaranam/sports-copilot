@@ -3,5 +3,6 @@ export const BRAND = {
   surfaceName: 'AndOne',
   eyebrow: 'Commentary sidekick',
   heroTitle: 'AndOne',
-  heroCopy: 'A live commentary sidekick that stays quiet until delivery slips, then offers just enough to keep the call moving.',
+  heroCopy:
+    'A live commentary sidekick that stays out of the way until hesitation shows up, then offers just enough to help you keep your rhythm.',
 } as const;

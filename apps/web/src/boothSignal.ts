@@ -21,6 +21,10 @@ export type BoothSignal = {
   unfinishedPhrase: boolean;
   transcriptWordCount: number;
   transcriptStabilityScore: number;
+  wordsPerMinute: number;
+  pacePressureScore: number;
+  repeatedIdeaCount: number;
+  repeatedIdeaPhrases: string[];
   wakePhraseDetected: boolean;
   isSpeaking: boolean;
   audioLevel: number;
@@ -33,12 +37,21 @@ export type BoothSignalContributor = {
     | 'pause'
     | 'filler'
     | 'repeat-start'
+    | 'repeat-idea'
     | 'unfinished'
     | 'wake-phrase'
+    | 'pace-pressure'
     | 'speech-recovery'
     | 'audio-presence';
   label: string;
   score: number;
+};
+
+export type BoothGuidanceScoreResolution = {
+  effectiveHesitationScore: number;
+  effectiveRecoveryScore: number;
+  rawHesitationScore: number;
+  rawRecoveryScore: number;
 };
 
 export type BoothActivityState = {
@@ -66,13 +79,79 @@ const FILLER_PATTERNS = [
   { token: 'err', pattern: /\berr+\b/gi },
   { token: 'erm', pattern: /\berm\b/gi },
   { token: 'ah', pattern: /\bah\b/gi },
+  { token: 'kind of', pattern: /\bkind of\b/gi },
+  { token: 'sort of', pattern: /\bsort of\b/gi },
+  { token: 'basically', pattern: /\bbasically\b/gi },
   { token: 'you know', pattern: /\byou know\b/gi },
   { token: 'i mean', pattern: /\bi mean\b/gi },
 ] as const;
-const WAKE_PHRASES = ['line', 'but um'] as const;
+const WAKE_PHRASES = ['line', 'need a line', 'give me a line', 'what is the line', 'what’s the line', 'feed me a line', 'but um'] as const;
+const MIN_SPEAKING_WPM = 105;
+const HIGH_PRESSURE_WPM = 220;
+const IDEA_STOP_WORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'are',
+  'have',
+  'i',
+  'is',
+  'just',
+  'now',
+  'of',
+  'or',
+  'really',
+  'the',
+  'this',
+  'to',
+]);
 
 function clamp(value: number, minimum = 0, maximum = 1) {
   return Math.min(maximum, Math.max(minimum, value));
+}
+
+export function resolveBoothGuidanceScores(params: {
+  localHesitationScore: number;
+  localConfidenceScore: number;
+  interpretedHesitationScore?: number;
+  interpretedRecoveryScore?: number;
+  interpretationState?: 'standby' | 'monitoring' | 'step-in' | 'weaning-off';
+}): BoothGuidanceScoreResolution {
+  const rawHesitationScore = clamp(
+    Math.max(params.localHesitationScore, params.interpretedHesitationScore ?? 0),
+  );
+  const rawRecoveryScore = clamp(
+    Math.max(params.localConfidenceScore, params.interpretedRecoveryScore ?? 0),
+  );
+
+  const reductionWeight =
+    params.interpretationState === 'weaning-off'
+      ? 0.92
+      : rawHesitationScore >= 0.6
+        ? 0.68
+        : rawHesitationScore >= LIVE_HESITATION_GATE
+          ? 0.8
+          : 0.9;
+  const recoveryReduction = rawRecoveryScore * reductionWeight;
+  let effectiveHesitationScore = clamp(rawHesitationScore - recoveryReduction);
+
+  if (rawRecoveryScore >= 0.72 && rawHesitationScore <= 0.32) {
+    effectiveHesitationScore = clamp(effectiveHesitationScore - 0.12);
+  }
+
+  const effectiveRecoveryScore = clamp(
+    Math.max(
+      rawRecoveryScore,
+      rawHesitationScore > 0 ? 1 - effectiveHesitationScore - 0.12 : rawRecoveryScore,
+    ),
+  );
+
+  return {
+    effectiveHesitationScore,
+    effectiveRecoveryScore,
+    rawHesitationScore,
+    rawRecoveryScore,
+  };
 }
 
 function countMatches(text: string, pattern: RegExp) {
@@ -172,6 +251,68 @@ function findRepeatedPhrases(texts: string[]) {
   return repeatedPhrases;
 }
 
+function tokenize(text: string) {
+  return normalizeTranscriptText(text).split(' ').filter(Boolean);
+}
+
+function tokenizeIdea(text: string) {
+  return tokenize(text).filter((word) => word.length > 2 && !IDEA_STOP_WORDS.has(word));
+}
+
+function findRepeatedIdeas(texts: string[]) {
+  const repeatedIdeas: string[] = [];
+
+  for (let index = 1; index < texts.length; index += 1) {
+    const previousWords = tokenizeIdea(texts[index - 1] ?? '');
+    const nextWords = tokenizeIdea(texts[index] ?? '');
+
+    if (previousWords.length < 3 || nextWords.length < 3) {
+      continue;
+    }
+
+    const previousSet = new Set(previousWords);
+    const nextSet = new Set(nextWords);
+    const intersectionSize = [...nextSet].filter((word) => previousSet.has(word)).length;
+    const overlap = intersectionSize / Math.max(previousSet.size, nextSet.size);
+    const containsPrevious = previousWords.every((word) => nextSet.has(word));
+    const containsNext = nextWords.every((word) => previousSet.has(word));
+
+    if (overlap >= 0.6 || containsPrevious || containsNext) {
+      const excerpt = nextWords.slice(0, Math.min(6, nextWords.length)).join(' ');
+      if (excerpt && !repeatedIdeas.includes(excerpt)) {
+        repeatedIdeas.push(excerpt);
+      }
+    }
+  }
+
+  return repeatedIdeas;
+}
+
+function deriveWordsPerMinute({
+  transcriptWordCount,
+  transcriptEntries,
+  speechStreakMs,
+  nowMs,
+  isSpeaking,
+}: {
+  transcriptWordCount: number;
+  transcriptEntries: TranscriptEntry[];
+  speechStreakMs: number;
+  nowMs: number;
+  isSpeaking: boolean;
+}) {
+  if (!isSpeaking || transcriptWordCount <= 0) {
+    return 0;
+  }
+
+  const firstTimestamp = transcriptEntries[0]?.timestamp ?? nowMs;
+  const lastTimestamp = transcriptEntries[transcriptEntries.length - 1]?.timestamp ?? nowMs;
+  const transcriptSpanMs = Math.max(0, lastTimestamp - firstTimestamp);
+  const effectiveWindowMs = Math.max(2_500, transcriptSpanMs + 1_200, speechStreakMs);
+
+  return Math.round((transcriptWordCount / (effectiveWindowMs / 60_000)) * 10) / 10;
+}
+
 export function deriveBoothActivity({
   interimTranscript,
   isMicListening,
@@ -232,11 +373,13 @@ export function buildBoothSignal({
   const fillerBurstDetected = detectFillerBurst(analysisTexts);
   const repeatedPhrases = findRepeatedPhrases(analysisTexts);
   const repeatedOpeningCount = repeatedPhrases.length;
+  const repeatedIdeaPhrases = findRepeatedIdeas(analysisTexts);
+  const repeatedIdeaCount = repeatedIdeaPhrases.length;
   const lastLine = interimText || recentTranscript[recentTranscript.length - 1]?.text.trim() || '';
   const unfinishedPhrase = /(?:\.\.\.|-)\s*$/.test(lastLine);
   const wakePhrase = detectWakePhrase(analysisTexts);
-  const transcriptWordCount = Math.max(1, countTranscriptWords(analysisTexts));
-  const fillerDensity = clamp(fillerCount / transcriptWordCount);
+  const transcriptWordCount = countTranscriptWords(analysisTexts);
+  const fillerDensity = clamp(fillerCount / Math.max(1, transcriptWordCount));
   const activity = deriveBoothActivity({
     interimTranscript,
     isMicListening,
@@ -261,7 +404,27 @@ export function buildBoothSignal({
   let fillerContribution = 0;
   let unfinishedContribution = 0;
   let repeatedContribution = 0;
+  let repeatedIdeaContribution = 0;
   let wakePhraseContribution = 0;
+  let pacePressureContribution = 0;
+  const wordsPerMinute = deriveWordsPerMinute({
+    transcriptWordCount,
+    transcriptEntries: recentTranscript,
+    speechStreakMs,
+    nowMs,
+    isSpeaking,
+  });
+
+  if (repeatedIdeaCount > 0) {
+    repeatedIdeaContribution = Math.min(0.22, repeatedIdeaCount * 0.11);
+    hesitationScore += repeatedIdeaContribution;
+    hesitationReasons.push(`Repeated idea: "${repeatedIdeaPhrases[0]}".`);
+    hesitationContributors.push({
+      key: 'repeat-idea',
+      label: 'Repeated idea',
+      score: repeatedIdeaContribution,
+    });
+  }
 
   if (silenceStreakMs >= LONG_PAUSE_START_MS) {
     const pauseSeconds = Math.round((silenceStreakMs / 1_000) * 10) / 10;
@@ -332,10 +495,42 @@ export function buildBoothSignal({
     });
   }
 
+  const slowPaceScore =
+    isSpeaking && wordsPerMinute > 0 && wordsPerMinute < MIN_SPEAKING_WPM
+      ? clamp((MIN_SPEAKING_WPM - wordsPerMinute) / MIN_SPEAKING_WPM)
+      : 0;
+  const rushedPaceScore =
+    isSpeaking && wordsPerMinute > HIGH_PRESSURE_WPM
+      ? clamp((wordsPerMinute - HIGH_PRESSURE_WPM) / 120)
+      : 0;
+  const pacePressureScore = clamp(
+    slowPaceScore * 0.68 +
+      rushedPaceScore * 0.38 +
+      (fillerBurstDetected ? 0.14 : 0) +
+      (repeatedIdeaCount > 0 ? 0.08 : 0),
+  );
+
+  if (pacePressureScore >= 0.12) {
+    pacePressureContribution = Math.min(0.2, pacePressureScore * 0.4);
+    hesitationScore += pacePressureContribution;
+    hesitationReasons.push(
+      slowPaceScore > rushedPaceScore
+        ? `Delivery pace dropped to ${Math.round(wordsPerMinute)} WPM while you were still searching for the next beat.`
+        : `Delivery pace spiked to ${Math.round(wordsPerMinute)} WPM and sounds rushed.`,
+    );
+    hesitationContributors.push({
+      key: 'pace-pressure',
+      label: 'Pace pressure',
+      score: pacePressureContribution,
+    });
+  }
+
   const transcriptInstabilityPenalty = clamp(
     fillerDensity * 0.45 +
       repeatedOpeningCount * 0.18 +
+      repeatedIdeaCount * 0.16 +
       (unfinishedPhrase ? 0.2 : 0) +
+      pacePressureScore * 0.18 +
       (fillerBurstDetected ? 0.14 : 0) +
       (interimText.length > 0 && !isSpeaking ? 0.12 : 0),
   );
@@ -352,9 +547,14 @@ export function buildBoothSignal({
       0,
       0.65,
     );
+    const pacePenalty = clamp(
+      pacePressureContribution + repeatedIdeaContribution,
+      0,
+      0.65,
+    );
 
     confidenceScore = clamp(
-      recoveryContribution * 0.65 + audioContribution * 0.35 - deliveryPenalty,
+      recoveryContribution * 0.6 + audioContribution * 0.28 + (wordsPerMinute >= MIN_SPEAKING_WPM ? 0.12 : 0) - deliveryPenalty - pacePenalty,
       RECOVERY_CONFIDENCE_FLOOR,
       1,
     );
@@ -377,6 +577,9 @@ export function buildBoothSignal({
 
     if (deliveryPenalty > 0) {
       confidenceReasons.push('Transcript instability is still holding confidence down.');
+    }
+    if (pacePenalty > 0) {
+      confidenceReasons.push('Delivery pace still looks uneven, so AndOne stays close.');
     }
   } else if (lastActivityAtMs >= 0) {
     confidenceReasons.push('Confidence is inactive while the call is silent.');
@@ -401,6 +604,10 @@ export function buildBoothSignal({
     unfinishedPhrase,
     transcriptWordCount,
     transcriptStabilityScore,
+    wordsPerMinute,
+    pacePressureScore,
+    repeatedIdeaCount,
+    repeatedIdeaPhrases,
     wakePhraseDetected: Boolean(wakePhrase),
     isSpeaking,
     audioLevel,
