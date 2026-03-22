@@ -449,7 +449,10 @@ describe('App dashboard', () => {
   let mediaRecorders: Array<{
     mimeType: string;
     ondataavailable: ((event: { data: Blob }) => void) | null;
+    state?: string;
   }>;
+  let speechSynthesisSpeakMock: any;
+  let speechSynthesisCancelMock: any;
   let currentBoothInterpretation: {
     state: string;
     hesitationScore: number;
@@ -463,6 +466,7 @@ describe('App dashboard', () => {
   };
   let currentContextDocuments: UserContextDocument[];
   let queuedTranscriptResponses: Array<{ transcript: string; source: 'openai' | 'unavailable' }>;
+  let storageState: Record<string, string>;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -543,6 +547,7 @@ describe('App dashboard', () => {
         }
 
         mimeType: string;
+        state = 'inactive';
         ondataavailable: ((event: { data: Blob }) => void) | null = null;
         onerror: (() => void) | null = null;
         onstop: (() => void) | null = null;
@@ -551,13 +556,57 @@ describe('App dashboard', () => {
           mediaRecorders.push(this);
         }
 
-        start() {}
+        start() {
+          this.state = 'recording';
+        }
 
         stop() {
+          this.state = 'inactive';
+          this.ondataavailable?.({
+            data: new Blob(['sample-audio'], { type: this.mimeType }),
+          });
           this.onstop?.();
         }
       } as unknown as typeof MediaRecorder,
     );
+    speechSynthesisSpeakMock = vi.fn((utterance?: { onstart?: () => void }) => {
+      utterance?.onstart?.();
+    });
+    speechSynthesisCancelMock = vi.fn();
+    vi.stubGlobal(
+      'SpeechSynthesisUtterance',
+      class FakeSpeechSynthesisUtterance {
+        text: string;
+        rate = 1;
+        pitch = 1;
+        onstart: (() => void) | null = null;
+        onend: (() => void) | null = null;
+        onerror: (() => void) | null = null;
+        constructor(text: string) {
+          this.text = text;
+        }
+      } as unknown as typeof SpeechSynthesisUtterance,
+    );
+    vi.stubGlobal('speechSynthesis', {
+      speak: speechSynthesisSpeakMock,
+      cancel: speechSynthesisCancelMock,
+    });
+    storageState = {};
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storageState[key] ?? null,
+        setItem: (key: string, value: string) => {
+          storageState[key] = value;
+        },
+        removeItem: (key: string) => {
+          delete storageState[key];
+        },
+        clear: () => {
+          storageState = {};
+        },
+      },
+    });
     vi.stubGlobal(
       'RTCPeerConnection',
       class FakeRTCPeerConnection {
@@ -801,10 +850,13 @@ describe('App dashboard', () => {
   });
 
   afterEach(async () => {
-    await act(async () => {
-      root.unmount();
-    });
-    container.remove();
+    if (root) {
+      await act(async () => {
+        root.unmount();
+      });
+    }
+    container?.remove();
+    window.localStorage?.clear?.();
     delete import.meta.env.VITE_API_BASE_URL;
     vi.unstubAllGlobals();
     vi.useRealTimers();
@@ -862,6 +914,77 @@ describe('App dashboard', () => {
     expect(playButton?.hasAttribute('disabled')).toBe(false);
     expect(container.textContent).toContain('Channel 1 · Barca preset');
     expect(container.textContent).toContain('Feed and microphone are armed. Start speaking when you are ready to call the action.');
+  });
+
+  it('shows the standby voice setup inline on the live desk', async () => {
+    await renderApp();
+
+    expect(container.textContent).toContain('Sub Me In');
+    expect(container.textContent).toContain('Standby voice off');
+    expect(container.textContent).toContain('Record sample');
+  });
+
+  it('records a standby sample, subs the synthetic voice in, and restores the live mic', async () => {
+    await renderApp();
+
+    const recordButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Record sample'),
+    );
+
+    await act(async () => {
+      recordButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(6_000);
+      await vi.advanceTimersByTimeAsync(900);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Standby voice ready');
+
+    const goLiveButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Go live'),
+    );
+
+    await act(async () => {
+      goLiveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const subMeInButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Sub Me In'),
+    );
+
+    await act(async () => {
+      subMeInButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(3_100);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Standby voice is on air.');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(speechSynthesisSpeakMock).toHaveBeenCalled();
+
+    const subMeBackInButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Sub Me Back In'),
+    );
+
+    await act(async () => {
+      subMeBackInButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(3_100);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(speechSynthesisCancelMock).toHaveBeenCalled();
+    expect(container.textContent).toContain('Live mic');
   });
 
   it('holds a visible assist while the minimum display lock is active', () => {

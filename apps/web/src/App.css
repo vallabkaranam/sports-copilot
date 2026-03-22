@@ -146,6 +146,12 @@
   background: var(--bg-panel-strong);
 }
 
+.panel-tag--success {
+  color: var(--signal-green);
+  border-color: rgba(63, 141, 95, 0.2);
+  background: rgba(63, 141, 95, 0.08);
+}
+
 .status-pill--live {
   background: rgba(174, 189, 173, 0.12);
   border-color: rgba(174, 189, 173, 0.18);
@@ -1219,6 +1225,49 @@
   display: grid;
   align-content: start;
   gap: 14px;
+}
+
+.standby-voice-card {
+  gap: 12px;
+}
+
+.standby-voice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.standby-voice-actions--split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.handoff-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.handoff-strip__meta {
+  padding: 11px 12px;
+  border: 1px solid rgba(31, 42, 51, 0.08);
+  border-radius: 10px;
+  background: rgba(249, 245, 239, 0.94);
+  display: grid;
+  gap: 4px;
+}
+
+.handoff-strip__meta span {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--copy-soft);
+}
+
+.handoff-strip__meta strong {
+  color: var(--copy-strong);
+  font-size: 0.88rem;
 }
 
 .booth-card--compact {
