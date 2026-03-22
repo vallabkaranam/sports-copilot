@@ -2276,13 +2276,23 @@ function App() {
                 className="replay-video"
                 src={loadedClipUrl}
                 playsInline
-                controls
+                loop
                 muted={isClipMuted}
                 onLoadedMetadata={(event) => {
                   setClipDurationMs(Math.round(event.currentTarget.duration * 1_000));
                 }}
                 onTimeUpdate={(event) => {
                   setClipPositionMs(Math.round(event.currentTarget.currentTime * 1_000));
+                }}
+                onEnded={(event) => {
+                  if (!hasStartedBroadcast || controls.playbackStatus !== 'playing') {
+                    return;
+                  }
+
+                  event.currentTarget.currentTime = 0;
+                  safelyPlayVideo(event.currentTarget, () => {
+                    setBoothError('Press play on the loaded clip if the browser blocks autoplay.');
+                  });
                 }}
                 onError={() => {
                   setBoothError('The selected video feed could not be loaded. Try the other channel or reload the reel.');
