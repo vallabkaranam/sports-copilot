@@ -313,6 +313,41 @@ export function hasRecoveredFromAssistEpisode(params: {
   );
 }
 
+function isGroundedAssistCard(assist: GenerateBoothCueResponse['assist'] | null | undefined) {
+  return Boolean(assist && assist.type !== 'none' && assist.sourceChips.length > 0);
+}
+
+function isGenericBridgeAssistText(text: string) {
+  return /\b(reset with|go back to|reframe|bridge|one clean scene line|single takeaway|keep it moving|connect it back)\b/i.test(
+    text,
+  );
+}
+
+export function selectPreferredTriggeredAssist(params: {
+  localAssist: GenerateBoothCueResponse['assist'];
+  generatedAssist: GenerateBoothCueResponse['assist'] | null | undefined;
+}) {
+  const { localAssist, generatedAssist } = params;
+
+  if (!generatedAssist || generatedAssist.type === 'none') {
+    return localAssist;
+  }
+
+  if (localAssist.type === 'none') {
+    return generatedAssist;
+  }
+
+  if (isGroundedAssistCard(localAssist) && !isGroundedAssistCard(generatedAssist)) {
+    return localAssist;
+  }
+
+  if (isGroundedAssistCard(localAssist) && isGenericBridgeAssistText(generatedAssist.text)) {
+    return localAssist;
+  }
+
+  return generatedAssist;
+}
+
 function formatSignalIndicatorValue(label: 'Pause' | 'Fillers' | 'Wake phrase', boothSignal: BoothSignal) {
   if (label === 'Pause') {
     return boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS
@@ -1686,6 +1721,7 @@ function App() {
     facts: boothAssistFacts,
     boothTranscript,
     interimTranscript: boothInterimTranscript,
+    liveMatch: worldState.liveMatch,
     limit: 8,
   });
   const boothCueSignature = useMemo(() => {
@@ -1781,7 +1817,10 @@ function App() {
     liveBoothShouldSurfaceAssist &&
     ((generatedCue?.assist.type ?? 'none') !== 'none' || boothAssist.type !== 'none');
   const nextTriggeredAssist = boothAssistShouldSurface
-    ? generatedCue?.assist ?? boothAssist
+    ? selectPreferredTriggeredAssist({
+        localAssist: boothAssist,
+        generatedAssist: generatedCue?.assist,
+      })
     : workerAssistShouldSurface
       ? assist
       : null;

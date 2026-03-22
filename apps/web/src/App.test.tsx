@@ -16,7 +16,11 @@ import {
   createEmptyRetrievalState,
   createEmptySessionMemory,
 } from '@sports-copilot/shared-types';
-import App, { hasRecoveredFromAssistEpisode, shouldHoldLockedAssist } from './App.tsx';
+import App, {
+  hasRecoveredFromAssistEpisode,
+  selectPreferredTriggeredAssist,
+  shouldHoldLockedAssist,
+} from './App.tsx';
 
 function createWorldState(overrides: Partial<WorldState> = {}): WorldState {
   return {
@@ -878,6 +882,107 @@ describe('App dashboard', () => {
         interpretationState: 'weaning-off',
       }),
     ).toBe(true);
+  });
+
+  it('prefers a grounded local assist over an ungrounded generated cue', () => {
+    const preferred = selectPreferredTriggeredAssist({
+      localAssist: {
+        ...createEmptyAssistCard(),
+        type: 'stat',
+        text: 'Use the number: Rangers Ball Possession %: 62',
+        whyNow: 'A single stat can rescue the pause.',
+        sourceChips: [
+          {
+            id: 'fact-possession',
+            label: 'Rangers Ball Possession %: 62',
+            source: 'live:stats:ball-possession',
+            relevance: 0.92,
+          },
+        ],
+      },
+      generatedAssist: {
+        ...createEmptyAssistCard(),
+        type: 'context',
+        text: 'Reset with one clean scene line, then land a takeaway.',
+        whyNow: 'Keep it moving.',
+        sourceChips: [],
+      },
+    });
+
+    expect(preferred.type).toBe('stat');
+    expect(preferred.text).toContain('Rangers');
+  });
+
+  it('still prefers a grounded generated cue when it carries sources', () => {
+    const preferred = selectPreferredTriggeredAssist({
+      localAssist: {
+        ...createEmptyAssistCard(),
+        type: 'stat',
+        text: 'Use the number: Rangers Ball Possession %: 62',
+        whyNow: 'A single stat can rescue the pause.',
+        sourceChips: [
+          {
+            id: 'fact-possession',
+            label: 'Rangers Ball Possession %: 62',
+            source: 'live:stats:ball-possession',
+            relevance: 0.92,
+          },
+        ],
+      },
+      generatedAssist: {
+        ...createEmptyAssistCard(),
+        type: 'transition',
+        text: 'Rangers had 62 percent of the ball and dictated this spell.',
+        whyNow: 'The numbers support your control point.',
+        sourceChips: [
+          {
+            id: 'fact-possession',
+            label: 'Rangers Ball Possession %: 62',
+            source: 'live:stats:ball-possession',
+            relevance: 0.92,
+          },
+        ],
+      },
+    });
+
+    expect(preferred.type).toBe('transition');
+    expect(preferred.text).toContain('62 percent');
+  });
+
+  it('prefers a grounded local assist over a generic reset-style generated cue even when sourced', () => {
+    const preferred = selectPreferredTriggeredAssist({
+      localAssist: {
+        ...createEmptyAssistCard(),
+        type: 'stat',
+        text: 'Use the number: Rangers Ball Possession %: 62',
+        whyNow: 'A single stat can rescue the pause.',
+        sourceChips: [
+          {
+            id: 'fact-possession',
+            label: 'Rangers Ball Possession %: 62',
+            source: 'live:stats:ball-possession',
+            relevance: 0.92,
+          },
+        ],
+      },
+      generatedAssist: {
+        ...createEmptyAssistCard(),
+        type: 'context',
+        text: 'Reset with one clean scene line, then land a single takeaway.',
+        whyNow: 'Keep it moving.',
+        sourceChips: [
+          {
+            id: 'fact-possession',
+            label: 'Rangers Ball Possession %: 62',
+            source: 'live:stats:ball-possession',
+            relevance: 0.92,
+          },
+        ],
+      },
+    });
+
+    expect(preferred.type).toBe('stat');
+    expect(preferred.text).toContain('Rangers');
   });
 
   it('commits buffered transcription into the transcript rail', async () => {

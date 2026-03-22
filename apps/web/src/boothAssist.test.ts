@@ -121,6 +121,66 @@ describe('buildBoothAssist', () => {
     expect(ranked[0]?.fact.source).toContain('stats:');
   });
 
+  it('prefers the queried team control stats over the other team corners', () => {
+    const liveMatch = {
+      ...createEmptyLiveMatchState(),
+      homeTeam: {
+        id: '62',
+        name: 'Rangers',
+        shortCode: 'RAN',
+        logoUrl: null,
+      },
+      awayTeam: {
+        id: '273',
+        name: 'Aberdeen',
+        shortCode: 'ABE',
+        logoUrl: null,
+      },
+    };
+
+    const ranked = rankBoothAssistFacts({
+      facts: [
+        makeFact({
+          id: 'away-corners',
+          tier: 'live',
+          text: 'Aberdeen Corners: 4',
+          source: 'stats:corners',
+          relevance: 0.84,
+          metadata: {
+            teamSide: 'away',
+          },
+        }),
+        makeFact({
+          id: 'home-possession',
+          tier: 'live',
+          text: 'Rangers Ball Possession %: 62',
+          source: 'stats:ball-possession',
+          relevance: 0.69,
+          metadata: {
+            teamSide: 'home',
+          },
+        }),
+        makeFact({
+          id: 'home-goals',
+          tier: 'live',
+          text: 'Rangers Goals: 4',
+          source: 'stats:goals',
+          relevance: 0.69,
+          metadata: {
+            teamSide: 'home',
+          },
+        }),
+      ],
+      boothTranscript: makeTranscript('The numbers tell you Rangers controlled this match because'),
+      interimTranscript: '',
+      liveMatch,
+      limit: 3,
+    });
+
+    expect(ranked[0]?.fact.text).toContain('Rangers');
+    expect(ranked[0]?.fact.source).not.toContain('corners');
+  });
+
   it('ranks live event facts first when the transcript is about the play', () => {
     const ranked = rankBoothAssistFacts({
       facts: [
@@ -253,6 +313,54 @@ describe('buildBoothAssist', () => {
 
     expect(assist.type).toBe('stat');
     expect(assist.text.toLowerCase()).toMatch(/number|stat|metric/);
+  });
+
+  it('uses control stats for a Rangers control line instead of away corners', () => {
+    const liveMatch = {
+      ...createEmptyLiveMatchState(),
+      homeTeam: {
+        id: '62',
+        name: 'Rangers',
+        shortCode: 'RAN',
+        logoUrl: null,
+      },
+      awayTeam: {
+        id: '273',
+        name: 'Aberdeen',
+        shortCode: 'ABE',
+        logoUrl: null,
+      },
+      stats: [
+        {
+          teamSide: 'away' as const,
+          label: 'Corners',
+          value: '4',
+        },
+        {
+          teamSide: 'home' as const,
+          label: 'Ball Possession %',
+          value: '62',
+        },
+        {
+          teamSide: 'home' as const,
+          label: 'Goals',
+          value: '4',
+        },
+      ],
+    };
+
+    const assist = buildBoothAssist({
+      boothSignal: makeSignal(),
+      boothTranscript: makeTranscript('The numbers tell you Rangers controlled this match because'),
+      interimTranscript: '',
+      currentTimestampMs: 1000,
+      retrieval: createEmptyRetrievalState(),
+      liveMatch,
+    });
+
+    expect(assist.type).toBe('stat');
+    expect(assist.text).toContain('Rangers');
+    expect(assist.text).not.toContain('Aberdeen Corners');
   });
 
   it('still produces a grounded pre-match hint when retrieval is empty', () => {

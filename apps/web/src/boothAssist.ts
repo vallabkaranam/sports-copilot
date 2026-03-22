@@ -127,6 +127,7 @@ function stripCueInstruction(text: string) {
 }
 
 const TRANSCRIPT_FRESHNESS_WINDOW_MS = 7_000;
+const MAX_LIVE_STAT_FACTS = 10;
 
 type BoothIntent = 'social' | 'stats' | 'live-play' | 'setup' | 'generic';
 type FactFamily = 'social' | 'stats' | 'event' | 'setup' | 'context';
@@ -473,6 +474,95 @@ function createSyntheticFact(
   };
 }
 
+function normalizeStatLabel(label: string) {
+  return normalizeText(label).replace(/\s+/g, '-');
+}
+
+function getStatPriority(label: string) {
+  const normalized = normalizeText(label);
+
+  if (/\b(expected goals|xg)\b/.test(normalized)) {
+    return 1;
+  }
+  if (/\b(possession)\b/.test(normalized)) {
+    return 0.98;
+  }
+  if (/\b(shots on target)\b/.test(normalized)) {
+    return 0.96;
+  }
+  if (/\b(total shots|shots)\b/.test(normalized)) {
+    return 0.94;
+  }
+  if (/\b(big chances)\b/.test(normalized)) {
+    return 0.92;
+  }
+  if (/\b(goals)\b/.test(normalized)) {
+    return 0.9;
+  }
+  if (/\b(passes|touches|attacks)\b/.test(normalized)) {
+    return 0.78;
+  }
+  if (/\b(corners)\b/.test(normalized)) {
+    return 0.46;
+  }
+  if (/\b(cards|yellow|red|fouls)\b/.test(normalized)) {
+    return 0.3;
+  }
+
+  return 0.62;
+}
+
+function inferQueryTeamSide(fullQuery: string, liveMatch?: LiveMatchState) {
+  if (!liveMatch) {
+    return null;
+  }
+
+  const normalizedQuery = normalizeText(fullQuery);
+  const homeTokens = [
+    normalizeText(liveMatch.homeTeam.name),
+    normalizeText(liveMatch.homeTeam.shortCode),
+    'home',
+  ].filter(Boolean);
+  const awayTokens = [
+    normalizeText(liveMatch.awayTeam.name),
+    normalizeText(liveMatch.awayTeam.shortCode),
+    'away',
+  ].filter(Boolean);
+
+  if (homeTokens.some((token) => token && normalizedQuery.includes(token))) {
+    return 'home' as const;
+  }
+  if (awayTokens.some((token) => token && normalizedQuery.includes(token))) {
+    return 'away' as const;
+  }
+
+  return null;
+}
+
+function isControlQuery(fullQuery: string) {
+  return /\b(control|controlled|controlling|dominat|dictat|bossing|on top|ran the game|owned)\b/i.test(
+    fullQuery,
+  );
+}
+
+function isControlStatFact(fact: RetrievedFact) {
+  if (!fact.source.includes('stats:')) {
+    return false;
+  }
+
+  return /\b(possession|expected-goals|xg|shots-on-target|total-shots|shots|big-chances|goals)\b/i.test(
+    fact.source,
+  );
+}
+
+function isPeripheralStatFact(fact: RetrievedFact) {
+  if (!fact.source.includes('stats:')) {
+    return false;
+  }
+
+  return /\b(corners|yellowcards|redcards|cards|fouls|dribbles)\b/i.test(fact.source);
+}
+
 export function buildBoothAssistFacts(params: {
   retrieval: RetrievalState;
   contextBundle?: ContextBundle;
@@ -575,18 +665,24 @@ export function buildBoothAssistFacts(params: {
   }
 
   if (params.liveMatch) {
-    params.liveMatch.stats.slice(0, 4).forEach((stat, index) => {
+    [...params.liveMatch.stats]
+      .sort((left, right) => getStatPriority(right.label) - getStatPriority(left.label))
+      .slice(0, MAX_LIVE_STAT_FACTS)
+      .forEach((stat, index) => {
       facts.push(
         createSyntheticFact({
           id: `booth-live-stat-${stat.teamSide}-${index}`,
           tier: 'live',
           text: `${stat.teamSide === 'home' ? params.liveMatch?.homeTeam.name : params.liveMatch?.awayTeam.name} ${stat.label}: ${stat.value}`,
-          source: `stats:${stat.label.toLowerCase().replace(/\s+/g, '-')}`,
+          source: `stats:${normalizeStatLabel(stat.label)}`,
           timestamp: params.liveMatch?.lastUpdatedAt ?? Date.now(),
           relevance: 0.69,
+          metadata: {
+            teamSide: stat.teamSide,
+          },
         }),
       );
-    });
+      });
   }
 
   (params.recentEvents ?? []).slice(0, 4).forEach((event) => {
@@ -644,11 +740,18 @@ export function buildBoothAssistFacts(params: {
   return dedupeFacts(facts);
 }
 
-function scoreFact(fact: RetrievedFact, queryTokens: string[], fullQuery: string) {
+function scoreFact(
+  fact: RetrievedFact,
+  queryTokens: string[],
+  fullQuery: string,
+  liveMatch?: LiveMatchState,
+) {
   let score = fact.relevance;
   const factTokens = new Set(tokenize(fact.text));
   const overlap = queryTokens.filter((token) => factTokens.has(token)).length;
   const isPlayQuery = /\b(save|chance|play|shot|sequence|move|moment|attack|counter)\b/i.test(fullQuery);
+  const queryTeamSide = inferQueryTeamSide(fullQuery, liveMatch);
+  const controlQuery = isControlQuery(fullQuery);
 
   score += overlap * 0.12;
 
@@ -671,6 +774,18 @@ function scoreFact(fact: RetrievedFact, queryTokens: string[], fullQuery: string
   if (fact.source.includes('stats:') && /\b(stat|number|possession|shots|corners)\b/i.test(fullQuery)) {
     score += 0.24;
   }
+  if (fact.source.includes('stats:') && queryTeamSide && fact.metadata?.teamSide === queryTeamSide) {
+    score += 0.26;
+  }
+  if (fact.source.includes('stats:') && queryTeamSide && fact.metadata?.teamSide && fact.metadata.teamSide !== queryTeamSide) {
+    score -= 0.18;
+  }
+  if (fact.source.includes('stats:') && controlQuery && isControlStatFact(fact)) {
+    score += 0.22;
+  }
+  if (fact.source.includes('stats:') && controlQuery && isPeripheralStatFact(fact)) {
+    score -= 0.16;
+  }
   if (fact.source.includes('event-feed:') && isPlayQuery) {
     score += 0.28;
   }
@@ -682,11 +797,13 @@ export function rankBoothAssistFacts({
   facts,
   boothTranscript,
   interimTranscript,
+  liveMatch,
   limit = facts.length,
 }: {
   facts: RetrievedFact[];
   boothTranscript: TranscriptEntry[];
   interimTranscript: string;
+  liveMatch?: LiveMatchState;
   limit?: number;
 }) {
   const fullQuery = getBoothAssistQuery({ boothTranscript, interimTranscript });
@@ -695,7 +812,7 @@ export function rankBoothAssistFacts({
   return facts
     .map((fact) => ({
       fact,
-      score: scoreFact(fact, queryTokens, fullQuery),
+      score: scoreFact(fact, queryTokens, fullQuery, liveMatch),
     }))
     .sort((left, right) => right.score - left.score)
     .slice(0, limit);
@@ -810,6 +927,7 @@ export function buildBoothAssist(params: {
     facts: candidateFacts,
     boothTranscript,
     interimTranscript,
+    liveMatch,
   });
   const novelRankedFacts = rankedFacts.filter(({ fact }) => {
     return !isFactCoveredByTranscript({
