@@ -1454,6 +1454,19 @@
   margin-top: 16px;
 }
 
+.review-workspace {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.review-rail {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+
 .review-lead {
   padding: 16px 18px;
   border-radius: 18px;
@@ -1461,9 +1474,81 @@
   background: rgba(255, 255, 255, 0.04);
 }
 
+.review-lead__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.review-lead h3 {
+  margin: 4px 0 0;
+  font-size: 1.2rem;
+  color: var(--copy-strong);
+}
+
+.review-lead--trace,
+.review-lead--ai,
+.review-loading-card,
+.review-metric-card {
+  border-radius: 18px;
+  border: 1px solid rgba(163, 198, 228, 0.12);
+  background: linear-gradient(180deg, rgba(13, 24, 37, 0.94), rgba(10, 20, 31, 0.97));
+}
+
+.review-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.review-metric-card {
+  padding: 16px 18px;
+}
+
+.review-metric-card strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 1.2rem;
+  font-family: 'Sora', 'Avenir Next', sans-serif;
+  color: var(--copy-strong);
+}
+
 .review-section {
   display: grid;
   gap: 10px;
+}
+
+.review-loading-card {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 18px;
+}
+
+.review-loading-card strong {
+  display: block;
+  color: var(--copy-strong);
+}
+
+.review-loading-card p {
+  margin: 6px 0 0;
+  color: var(--copy-muted);
+}
+
+.review-loading-card--idle {
+  align-items: center;
+}
+
+.review-loading-spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 2px solid rgba(142, 196, 228, 0.18);
+  border-top-color: var(--teal-deep);
+  animation: review-spin 900ms linear infinite;
+  flex: 0 0 auto;
+  margin-top: 2px;
 }
 
 .field-copy--tight {
@@ -1638,6 +1723,16 @@
   }
 }
 
+@keyframes review-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (max-width: 1180px) {
   .main-grid,
   .bottom-grid {
@@ -1692,7 +1787,9 @@
   .commentary-metadata,
   .signal-duo,
   .signal-meta,
-  .setup-actions {
+  .setup-actions,
+  .review-workspace,
+  .review-metric-grid {
     grid-template-columns: 1fr;
   }
 

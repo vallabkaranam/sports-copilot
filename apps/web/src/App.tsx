@@ -1676,17 +1676,6 @@ function App() {
       ? 'Standby'
       : 'Waiting';
   const postSessionReview = derivePostSessionReview(latestCompletedSession);
-  const resolvedPostSessionReview =
-    latestCompletedSessionReview ??
-    (postSessionReview
-      ? {
-          headline: postSessionReview.headline,
-          summary: postSessionReview.summary,
-          strengths: [postSessionReview.learningNotes[0] ?? 'Session data is available for review.'],
-          watchouts: [postSessionReview.learningNotes[1] ?? 'No major watchouts recorded.'],
-          coachingNotes: [postSessionReview.learningNotes[2] ?? 'Review the saved session before the next run.'],
-        }
-      : null);
   const completedReviewSessions = useMemo(
     () =>
       recentBoothSessions
@@ -2619,48 +2608,109 @@ function App() {
                   </button>
                 </div>
 
-                {resolvedPostSessionReview ? (
-                  <div className="review-stack">
-                    <div className="review-lead">
-                      <p className="field-copy field-copy--tight">{resolvedPostSessionReview.summary}</p>
-                    </div>
-
-                    <div className="review-section">
-                      <p className="memory-title">What went well</p>
-                      <div className="reason-list">
-                      {resolvedPostSessionReview.strengths.map((note) => (
-                        <p key={`strength-${note}`}>{note}</p>
-                      ))}
+                <div className="review-workspace">
+                  {postSessionReview ? (
+                    <section className="review-rail">
+                      <div className="review-lead review-lead--trace">
+                        <div className="review-lead__header">
+                          <div>
+                            <p className="memory-title">Saved trace</p>
+                            <h3>{postSessionReview.headline}</h3>
+                          </div>
+                          <span className="panel-tag">Session data</span>
+                        </div>
+                        <p className="field-copy field-copy--tight">{postSessionReview.summary}</p>
                       </div>
-                    </div>
 
-                    <div className="review-section">
-                      <p className="memory-title">Watchouts</p>
-                      <div className="reason-list">
-                      {resolvedPostSessionReview.watchouts.map((note) => (
-                        <p key={`watchout-${note}`}>{note}</p>
-                      ))}
+                      <div className="review-metric-grid">
+                        {postSessionReview.metrics.map((metric) => (
+                          <article className="review-metric-card" key={metric.label}>
+                            <p className="control-label">{metric.label}</p>
+                            <strong>{metric.value}</strong>
+                          </article>
+                        ))}
                       </div>
+
+                      <div className="review-section">
+                        <p className="memory-title">Signal takeaways</p>
+                        <div className="reason-list">
+                          {postSessionReview.learningNotes.map((note) => (
+                            <p key={`trace-${note}`}>{note}</p>
+                          ))}
+                        </div>
+                      </div>
+                    </section>
+                  ) : null}
+
+                  <section className="review-rail">
+                    <div className="review-lead review-lead--ai">
+                      <div className="review-lead__header">
+                        <div>
+                          <p className="memory-title">AI review</p>
+                          <h3>
+                            {latestCompletedSessionReview?.headline ??
+                              (isLoadingReview ? 'Analyzing hesitation trace' : 'Awaiting AI review')}
+                          </h3>
+                        </div>
+                        <span className="panel-tag">
+                          {latestCompletedSessionReview ? 'OpenAI' : isLoadingReview ? 'Loading' : 'Pending'}
+                        </span>
+                      </div>
+                      <p className="field-copy field-copy--tight">
+                        {latestCompletedSessionReview?.summary ??
+                          (isLoadingReview
+                            ? 'AndOne is generating a grounded review from the saved booth session record.'
+                            : 'Reload the session review to fetch the latest OpenAI analysis.')}
+                      </p>
                     </div>
 
-                    <div className="review-section">
-                      <p className="memory-title">Coaching notes</p>
-                      <div className="reason-list">
-                      {resolvedPostSessionReview.coachingNotes.map((note) => (
-                        <p key={`coach-${note}`}>{note}</p>
-                      ))}
-                    </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="reason-list">
-                    <p>
-                      {isLoadingReview
-                        ? 'AndOne is generating the AI review from the saved session trace.'
-                        : 'The saved session trace is ready. Reload this session to retry the AI review.'}
-                    </p>
-                  </div>
-                )}
+                    {isLoadingReview ? (
+                      <div className="review-loading-card" aria-live="polite">
+                        <div className="review-loading-spinner" aria-hidden="true" />
+                        <div>
+                          <strong>OpenAI analysis in progress</strong>
+                          <p>The saved session trace is already here. The model review will slot in as soon as it returns.</p>
+                        </div>
+                      </div>
+                    ) : latestCompletedSessionReview ? (
+                      <div className="review-stack">
+                        <div className="review-section">
+                          <p className="memory-title">What went well</p>
+                          <div className="reason-list">
+                            {latestCompletedSessionReview.strengths.map((note) => (
+                              <p key={`strength-${note}`}>{note}</p>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="review-section">
+                          <p className="memory-title">Watchouts</p>
+                          <div className="reason-list">
+                            {latestCompletedSessionReview.watchouts.map((note) => (
+                              <p key={`watchout-${note}`}>{note}</p>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="review-section">
+                          <p className="memory-title">Coaching notes</p>
+                          <div className="reason-list">
+                            {latestCompletedSessionReview.coachingNotes.map((note) => (
+                              <p key={`coach-${note}`}>{note}</p>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="review-loading-card review-loading-card--idle">
+                        <div>
+                          <strong>No AI review loaded yet</strong>
+                          <p>The session metrics are real and saved. Use “Reload AI review” to fetch the model-written analysis.</p>
+                        </div>
+                      </div>
+                    )}
+                  </section>
+                </div>
               </>
             ) : (
               <p className="transcript-line transcript-line--muted">
