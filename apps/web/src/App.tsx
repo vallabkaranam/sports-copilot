@@ -915,9 +915,7 @@ function App() {
           setLastVoiceActivityAtMs(now);
           setBoothClockMs(now);
         })
-        .catch(() => {
-          setBoothError('Buffered OpenAI transcription failed for the booth mic.');
-        });
+        .catch(() => undefined);
     };
 
     recorder.onstop = () => {
@@ -1783,9 +1781,7 @@ function App() {
             setGeneratedCue(nextCue);
           }
         })
-        .catch(() => {
-          setBoothError('Live cue generation failed.');
-        });
+        .catch(() => undefined);
     }, waitMs);
 
     return () => {
@@ -1988,18 +1984,12 @@ function App() {
             <div className="replay-stage__overlay" />
 
             <div className="replay-stage__content">
-              <div className="replay-copy">
-                <span className="live-chip">{loadedClipUrl ? 'Clip ready' : 'Ready for upload'}</span>
-                <h3>
-                  {loadedClipUrl
-                    ? hasStartedBroadcast
-                      ? coachingTone.headline
-                      : resolvedPostSessionReview
-                        ? 'Session complete. Review it from Sessions.'
-                      : 'Go live and AndOne will request microphone access if needed.'
-                    : 'Load a reel into Channel 1 or Channel 2 to begin.'}
-                </h3>
-              </div>
+              {!loadedClipUrl ? (
+                <div className="replay-copy">
+                  <span className="live-chip">Ready for upload</span>
+                  <h3>Load a reel into Channel 1 or Channel 2 to begin.</h3>
+                </div>
+              ) : null}
 
               {shouldSurfaceAssist ? (
                 <article
@@ -2014,17 +2004,15 @@ function App() {
                 </article>
               ) : null}
 
-              <div className="replay-tags">
-                {activeTriggerBadges.length > 0 ? (
-                  activeTriggerBadges.map((badge) => (
+              {activeTriggerBadges.length > 0 ? (
+                <div className="replay-tags">
+                  {activeTriggerBadges.map((badge) => (
                     <span className="scene-chip" key={badge}>
                       {badge}
                     </span>
-                  ))
-                ) : (
-                  <span className="scene-chip scene-chip--muted">Watching for a real hesitation cue</span>
-                )}
-              </div>
+                  ))}
+                </div>
+              ) : null}
 
               <div className="replay-footer">
                 <div className={`coach-lane coach-lane--${coachingTone.tone}`}>
