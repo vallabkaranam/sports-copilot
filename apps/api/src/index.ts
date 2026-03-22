@@ -67,12 +67,16 @@ const API_HOST = process.env.HOST ?? '0.0.0.0';
 let boothSessionStore: Awaited<ReturnType<typeof createBoothSessionStore>> | null = null;
 const PRESET_FEEDS: Record<string, { filePath: string; contentType: string }> = {
   barca: {
-    filePath: process.env.AND_ONE_PRESET_BARCA_PATH ?? '/Users/vallabkaranam/Desktop/barca.mov',
-    contentType: 'video/quicktime',
+    filePath:
+      process.env.AND_ONE_PRESET_BARCA_PATH ??
+      path.resolve(process.cwd(), 'data/preset_feeds/barca-preset.mp4'),
+    contentType: 'video/mp4',
   },
   rangers: {
-    filePath: process.env.AND_ONE_PRESET_RANGERS_PATH ?? '/Users/vallabkaranam/Desktop/rangers.mov',
-    contentType: 'video/quicktime',
+    filePath:
+      process.env.AND_ONE_PRESET_RANGERS_PATH ??
+      path.resolve(process.cwd(), 'data/preset_feeds/rangers-preset.mp4'),
+    contentType: 'video/mp4',
   },
 };
 

@@ -63,8 +63,8 @@ BLUESKY_SOCIAL_ENABLED=false
 BLUESKY_IDENTIFIER=your_bluesky_handle
 BLUESKY_APP_PASSWORD=your_bluesky_app_password
 BLUESKY_SERVICE_URL=https://bsky.social
-AND_ONE_PRESET_BARCA_PATH=/Users/your_user/Desktop/barca.mov
-AND_ONE_PRESET_RANGERS_PATH=/Users/your_user/Desktop/rangers.mov
+AND_ONE_PRESET_BARCA_PATH=/absolute/path/to/custom-barca-preset.mp4
+AND_ONE_PRESET_RANGERS_PATH=/absolute/path/to/custom-rangers-preset.mp4
 ```
 
 Notes:
@@ -72,7 +72,8 @@ Notes:
 - the full live stack expects OpenAI, Postgres, and Sportmonks to be configured explicitly
 - `OPENAI_API_KEY` and `DATABASE_URL` belong to the API service
 - `SPORTMONKS_API_TOKEN` should also be available to the API if you want dynamic fixture resolution from the live feed
-- `AND_ONE_PRESET_BARCA_PATH` and `AND_ONE_PRESET_RANGERS_PATH` are optional API vars that let the hosted preset channels point at your chosen local/render-mounted preset files
+- repo-backed preset clips now live in [data/preset_feeds](/Users/vallabkaranam/Desktop/sports-copilot/data/preset_feeds) and work out of the box
+- `AND_ONE_PRESET_BARCA_PATH` and `AND_ONE_PRESET_RANGERS_PATH` are optional API overrides if you want to point the preset channels at different files
 - `API_BASE_URL`, `SPORTMONKS_*`, and all `BLUESKY_*` vars belong to the worker service
 - the API now fails fast on startup if `OPENAI_API_KEY` or `DATABASE_URL` are missing
 - the API now also fails fast if the `DATABASE_URL` hostname does not resolve, with a specific hint when the host looks like a stale Supabase DB hostname
