@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import fastify from 'fastify';
 import fsSync from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import {
   AppendBoothSessionSampleInputSchema,
   BoothInterpretation,
@@ -65,17 +66,19 @@ const server = fastify({ logger: true });
 const API_PORT = Number(process.env.PORT ?? 3001);
 const API_HOST = process.env.HOST ?? '0.0.0.0';
 let boothSessionStore: Awaited<ReturnType<typeof createBoothSessionStore>> | null = null;
+const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(moduleDir, '../../..');
 const PRESET_FEEDS: Record<string, { filePath: string; contentType: string }> = {
   barca: {
     filePath:
       process.env.AND_ONE_PRESET_BARCA_PATH ??
-      path.resolve(process.cwd(), 'data/preset_feeds/barca-preset.mp4'),
+      path.resolve(repoRoot, 'data/preset_feeds/barca-preset.mp4'),
     contentType: 'video/mp4',
   },
   rangers: {
     filePath:
       process.env.AND_ONE_PRESET_RANGERS_PATH ??
-      path.resolve(process.cwd(), 'data/preset_feeds/rangers-preset.mp4'),
+      path.resolve(repoRoot, 'data/preset_feeds/rangers-preset.mp4'),
     contentType: 'video/mp4',
   },
 };
