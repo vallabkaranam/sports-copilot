@@ -9,6 +9,9 @@
     "build": "tsc",
     "test": "vitest run --passWithNoTests"
   },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
   "devDependencies": {
     "@types/node": "^25.5.0",
     "typescript": "^5.3.0"
