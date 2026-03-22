@@ -4,5 +4,5 @@ export const BRAND = {
   eyebrow: 'Commentary sidekick',
   heroTitle: 'AndOne',
   heroCopy:
-    'A live commentary sidekick that stays out of the way until hesitation shows up, then offers just enough to help you keep your rhythm.',
+    'A quiet sidekick for live commentary that protects your rhythm without taking over the desk.',
 } as const;

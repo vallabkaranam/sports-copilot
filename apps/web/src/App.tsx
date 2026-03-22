@@ -2301,8 +2301,7 @@ function App() {
               className={appView === 'live' ? 'ghost-button ghost-button--active' : 'ghost-button'}
               onClick={() => setAppView('live')}
             >
-              <span className="tab-icon" aria-hidden="true">●</span>
-              Live Desk
+              Live
             </button>
             <button
               type="button"
@@ -2311,8 +2310,7 @@ function App() {
               className={appView === 'reviews' ? 'ghost-button ghost-button--active' : 'ghost-button'}
               onClick={() => setAppView('reviews')}
             >
-              <span className="tab-icon" aria-hidden="true">▤</span>
-              Session Archive
+              Archive
             </button>
           </div>
         </div>
@@ -2325,9 +2323,9 @@ function App() {
         <section className="panel replay-panel stage-panel">
             <div className="panel-header panel-header--stage">
               <div>
-                <p className="panel-kicker"><span className="panel-kicker__icon" aria-hidden="true">🎛</span>Live desk</p>
+                <p className="panel-kicker">Live desk</p>
                 <h2>{feedHeading}</h2>
-                <p className="panel-copy">Keep the feed in view. The prompt only appears when hesitation shows up.</p>
+                <p className="panel-copy">Keep the program feed in view. The prompt only appears when delivery slips.</p>
               </div>
               <div className="panel-chip-row">
                 <span className="panel-tag">{loadedClipUrl ? `${clipClockLabel} / ${clipDurationLabel}` : 'No feed live'}</span>
@@ -2406,7 +2404,7 @@ function App() {
               <span className="meta-pill">
                 {selectedProgramSlot ? `${selectedProgramSlot.label}` : 'Choose a feed'}
               </span>
-              <span className="meta-pill">{loadedClipName || 'Preset feed or uploaded reel'}</span>
+              {loadedClipName ? <span className="meta-pill">{loadedClipName}</span> : null}
               {loadedClipUrl ? (
                 <button
                   type="button"
@@ -2430,12 +2428,12 @@ function App() {
             </button>
             <p className="stage-primary-copy">
               {isFinalizingSession
-                ? 'Saving the live session and preparing the review workspace.'
+                ? 'Saving the session and building the review.'
                 : loadedClipUrl
                 ? isBroadcastLive
-                  ? 'You are live. AndOne will only step in when delivery slips.'
-                  : 'Start the session when you are ready to call the action.'
-                : 'Load a reel first, then go live.'}
+                  ? 'You are live. AndOne will stay quiet until you need support.'
+                  : 'Start when you are ready.'
+                : 'Load a feed, then go live.'}
             </p>
           </div>
 
@@ -2478,7 +2476,7 @@ function App() {
               {!loadedClipUrl ? (
                 <div className="replay-copy">
                   <span className="live-chip">Ready for upload</span>
-                  <h3>Load a reel into Channel 1 or Channel 2 to begin.</h3>
+                  <h3>Load a feed into Channel 1 or Channel 2 to begin.</h3>
                 </div>
               ) : null}
             </div>
@@ -2501,7 +2499,7 @@ function App() {
             <p className="stage-footnote">
               {loadedClipUrl
                 ? isBroadcastLive
-                  ? 'The reel loops while the session is live so the desk behaves like a continuous broadcast feed.'
+                  ? 'The feed loops while the session is live so the desk behaves like a continuous broadcast.'
                   : 'Load the feed, then go live when you are ready.'
                 : 'Channel 1 uses the Barca preset. Channel 2 can hold your own reel.'}
             </p>
@@ -2638,12 +2636,12 @@ function App() {
             <div className="panel-header">
               <div>
                 <p className="panel-kicker"><span className="panel-kicker__icon" aria-hidden="true">🗂</span>Saved sessions</p>
-                <h2>Completed runs</h2>
+                <h2>Completed sessions</h2>
                 <p className="panel-copy">
-                  Real sessions saved in the backend. Open or abandoned live runs stay out of this review list.
+                  Saved sessions only. Open live runs stay out of the archive until they are finished.
                 </p>
               </div>
-              <span className="panel-tag">{completedReviewSessions.length} runs</span>
+              <span className="panel-tag">{completedReviewSessions.length} sessions</span>
             </div>
 
             <div className="commentary-metadata commentary-metadata--review">
@@ -2713,8 +2711,8 @@ function App() {
                 <h2>{latestCompletedSession?.clipName ?? 'No session selected'}</h2>
                 <p className="panel-copy">
                   {latestCompletedSession
-                    ? 'Real data from the saved session record and AI review path.'
-                    : 'Choose a completed run to inspect its saved signals and review.'}
+                    ? 'Saved trace and model review, side by side.'
+                    : 'Choose a completed session to inspect its saved signals and review.'}
                 </p>
               </div>
               <span className="panel-tag">{reviewStatusLabel}</span>
