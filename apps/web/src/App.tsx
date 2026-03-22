@@ -69,6 +69,9 @@ type CoachingTone = 'standby' | 'steady' | 'supporting' | 'step-in';
 type AssistVisibilityPhase = 'hidden' | 'live' | 'weaning';
 type AppRoute = 'live' | 'archive' | 'debug';
 type SidebarAgentState = 'idle' | 'active' | 'contributing' | 'blocked';
+type DeliverySource = 'live-mic' | 'synthetic-standby';
+type HandoffState = 'idle' | 'preparing_sub_in' | 'subbed_in' | 'preparing_sub_back' | 'restoring_live';
+type StandbyVoiceStatus = 'disabled' | 'recording' | 'processing' | 'ready' | 'failed';
 type SidebarAgent = AgentExplainability & {
   displayState: SidebarAgentState;
   origin: 'interpretation' | 'orchestration' | 'generation';
@@ -84,6 +87,11 @@ const BUFFERED_TRANSCRIPTION_WARNING_THRESHOLD = 3;
 const BUFFERED_TRANSCRIPTION_WARNING =
   'Live transcription is not producing usable text yet. Keep speaking or check the OpenAI mic path.';
 const GENERATE_CUE_FAILURE_BACKOFF_MS = 4_000;
+const HANDOFF_COUNTDOWN_START = 3;
+const MIN_STANDBY_SAMPLE_MS = 4_000;
+const STANDBY_SAMPLE_CAPTURE_MS = 6_000;
+const SUBBED_CUE_FLOOR_MS = 3_500;
+const STANDBY_VOICE_STORAGE_KEY = 'andone-standby-voice-profile';
 const PROGRAM_FEED_SLOTS: ProgramFeedSlot[] = [
   {
     id: 'program-a',
@@ -131,6 +139,21 @@ function getAppRouteFromLocation(): AppRoute {
   }
 
   return 'live';
+}
+
+function formatStandbyVoiceStatus(status: StandbyVoiceStatus) {
+  switch (status) {
+    case 'recording':
+      return 'Recording sample';
+    case 'processing':
+      return 'Processing sample';
+    case 'ready':
+      return 'Standby voice ready';
+    case 'failed':
+      return 'Standby voice unavailable';
+    default:
+      return 'Standby voice off';
+  }
 }
 
 function setAppRouteHash(route: AppRoute) {
@@ -218,6 +241,14 @@ function supportsAudioMonitoring() {
     typeof navigator !== 'undefined' &&
     Boolean(navigator.mediaDevices?.getUserMedia) &&
     typeof window.AudioContext !== 'undefined'
+  );
+}
+
+function supportsSpeechSynthesis() {
+  return (
+    typeof window !== 'undefined' &&
+    'speechSynthesis' in window &&
+    typeof window.SpeechSynthesisUtterance !== 'undefined'
   );
 }
 
@@ -791,6 +822,17 @@ function App() {
   const [boothInterpretation, setBoothInterpretation] = useState<BoothInterpretation | null>(null);
   const [generatedCue, setGeneratedCue] = useState<GenerateBoothCueResponse | null>(null);
   const [generatedCueRequestedAt, setGeneratedCueRequestedAt] = useState(0);
+  const [standbyVoiceEnabled, setStandbyVoiceEnabled] = useState(false);
+  const [standbyVoiceStatus, setStandbyVoiceStatus] = useState<StandbyVoiceStatus>('disabled');
+  const [standbyVoiceSampleDurationMs, setStandbyVoiceSampleDurationMs] = useState(0);
+  const [standbyVoiceReadyAt, setStandbyVoiceReadyAt] = useState<string | null>(null);
+  const [activeDeliverySource, setActiveDeliverySource] = useState<DeliverySource>('live-mic');
+  const [handoffState, setHandoffState] = useState<HandoffState>('idle');
+  const [handoffCountdown, setHandoffCountdown] = useState<number | null>(null);
+  const [handoffNote, setHandoffNote] = useState<string | null>(null);
+  const [subbedCue, setSubbedCue] = useState<GenerateBoothCueResponse | null>(null);
+  const [subbedCueRequestedAt, setSubbedCueRequestedAt] = useState(0);
+  const [isSyntheticSpeaking, setIsSyntheticSpeaking] = useState(false);
   const [assistLockExpiresAt, setAssistLockExpiresAt] = useState(0);
   const [assistEpisodeId, setAssistEpisodeId] = useState(0);
   const [isAssistEpisodeActive, setIsAssistEpisodeActive] = useState(false);
@@ -809,6 +851,7 @@ function App() {
   const bufferedTranscriptionQueueRef = useRef(Promise.resolve());
   const consecutiveBufferedTranscriptFailuresRef = useRef(0);
   const cueRetryBlockedUntilRef = useRef(0);
+  const subbedCueRetryBlockedUntilRef = useRef(0);
   const realtimeTranscriptItemRef = useRef<{ itemId: string | null; text: string }>({
     itemId: null,
     text: '',
@@ -820,6 +863,13 @@ function App() {
   const clipObjectUrlRef = useRef<string | null>(null);
   const lastRestartTokenRef = useRef(controls.restartToken);
   const lastResolvedFeedKeyRef = useRef('');
+  const standbySampleRecorderRef = useRef<MediaRecorder | null>(null);
+  const standbySampleStopTimerRef = useRef<number | null>(null);
+  const standbySampleChunksRef = useRef<Blob[]>([]);
+  const standbySampleStartedAtRef = useRef(0);
+  const handoffTimerRef = useRef<number | null>(null);
+  const syntheticUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const spokenSyntheticCueTextsRef = useRef<string[]>([]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -844,9 +894,109 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      const rawProfile = window.localStorage.getItem(STANDBY_VOICE_STORAGE_KEY);
+      if (!rawProfile) {
+        return;
+      }
+
+      const parsed = JSON.parse(rawProfile) as {
+        enabled?: boolean;
+        status?: StandbyVoiceStatus;
+        sampleDurationMs?: number;
+        readyAt?: string | null;
+      };
+
+      if (parsed.enabled && parsed.status === 'ready') {
+        setStandbyVoiceEnabled(true);
+        setStandbyVoiceStatus('ready');
+        setStandbyVoiceSampleDurationMs(parsed.sampleDurationMs ?? 0);
+        setStandbyVoiceReadyAt(parsed.readyAt ?? null);
+      }
+    } catch (_error) {
+      window.localStorage.removeItem(STANDBY_VOICE_STORAGE_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (handoffTimerRef.current !== null) {
+        window.clearInterval(handoffTimerRef.current);
+      }
+      if (standbySampleStopTimerRef.current !== null) {
+        window.clearTimeout(standbySampleStopTimerRef.current);
+      }
+      if (supportsSpeechSynthesis()) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
+
   function navigateToRoute(route: AppRoute) {
     setAppRoute(route);
     setAppRouteHash(route);
+  }
+
+  function persistStandbyVoiceProfile(nextState: {
+    enabled: boolean;
+    status: StandbyVoiceStatus;
+    sampleDurationMs: number;
+    readyAt: string | null;
+  }) {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (!nextState.enabled || nextState.status !== 'ready') {
+      window.localStorage.removeItem(STANDBY_VOICE_STORAGE_KEY);
+      return;
+    }
+
+    window.localStorage.setItem(STANDBY_VOICE_STORAGE_KEY, JSON.stringify(nextState));
+  }
+
+  function cancelSyntheticSpeech() {
+    if (!supportsSpeechSynthesis()) {
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    syntheticUtteranceRef.current = null;
+    setIsSyntheticSpeaking(false);
+  }
+
+  function buildStandbyFallbackText() {
+    const latestCueText =
+      generatedCue?.assist.type !== 'none' && generatedCue?.assist.text.trim()
+        ? generatedCue.assist.text.trim()
+        : activeAssist.type !== 'none' && activeAssist.text.trim()
+          ? activeAssist.text.trim()
+          : null;
+
+    if (latestCueText) {
+      return latestCueText;
+    }
+
+    const recentMoment = worldState.recentEvents[worldState.recentEvents.length - 1]?.description?.trim();
+    if (recentMoment) {
+      return `${recentMoment} Stay with the live moment and keep the call moving.`;
+    }
+
+    const contextHeadline = worldState.contextBundle.items[0]?.detail?.trim();
+    if (contextHeadline) {
+      return contextHeadline;
+    }
+
+    if (preMatchCueSummary.trim()) {
+      return preMatchCueSummary.trim();
+    }
+
+    return null;
   }
 
   useEffect(() => {
@@ -1158,6 +1308,11 @@ function App() {
     setSelectedProgramFeedId(null);
     lastResolvedFeedKeyRef.current = '';
     consecutiveBufferedTranscriptFailuresRef.current = 0;
+    cancelSyntheticSpeech();
+    setActiveDeliverySource('live-mic');
+    setHandoffState('idle');
+    setHandoffCountdown(null);
+    setHandoffNote(null);
   }
 
   async function handleContextTextUpload() {
@@ -1783,6 +1938,196 @@ function App() {
     setAudioLevel(0);
   }
 
+  async function recordStandbyVoiceSample() {
+    if (!supportsAudioMonitoring()) {
+      setStandbyVoiceStatus('failed');
+      setBoothError('This browser cannot capture a standby voice sample.');
+      return;
+    }
+
+    const mimeType = getSupportedRecorderMimeType();
+    if (typeof window === 'undefined' || typeof window.MediaRecorder === 'undefined' || !mimeType) {
+      setStandbyVoiceStatus('failed');
+      setBoothError('This browser cannot record a standby voice sample.');
+      return;
+    }
+
+    setStandbyVoiceEnabled(true);
+    setStandbyVoiceStatus('recording');
+    setBoothError(null);
+    standbySampleChunksRef.current = [];
+    standbySampleStartedAtRef.current = Date.now();
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+
+      const recorder = new window.MediaRecorder(stream, { mimeType });
+      standbySampleRecorderRef.current = recorder;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          standbySampleChunksRef.current.push(event.data);
+        }
+      };
+      recorder.onstop = () => {
+        if (standbySampleStopTimerRef.current !== null) {
+          window.clearTimeout(standbySampleStopTimerRef.current);
+          standbySampleStopTimerRef.current = null;
+        }
+        stream.getTracks().forEach((track) => track.stop());
+        standbySampleRecorderRef.current = null;
+
+        const sampleDurationMs = Date.now() - standbySampleStartedAtRef.current;
+        setStandbyVoiceStatus('processing');
+
+        window.setTimeout(() => {
+          const sampleBytes = standbySampleChunksRef.current.reduce((total, blob) => total + blob.size, 0);
+          if (sampleDurationMs < MIN_STANDBY_SAMPLE_MS || sampleBytes === 0) {
+            setStandbyVoiceStatus('failed');
+            setStandbyVoiceSampleDurationMs(0);
+            setStandbyVoiceReadyAt(null);
+            persistStandbyVoiceProfile({
+              enabled: false,
+              status: 'failed',
+              sampleDurationMs: 0,
+              readyAt: null,
+            });
+            setBoothError('Standby voice sample was too short. Record at least four seconds of clean speech.');
+            return;
+          }
+
+          const readyAt = new Date().toISOString();
+          setStandbyVoiceStatus('ready');
+          setStandbyVoiceSampleDurationMs(sampleDurationMs);
+          setStandbyVoiceReadyAt(readyAt);
+          persistStandbyVoiceProfile({
+            enabled: true,
+            status: 'ready',
+            sampleDurationMs,
+            readyAt,
+          });
+        }, 900);
+      };
+
+      recorder.start();
+      standbySampleStopTimerRef.current = window.setTimeout(() => {
+        if (recorder.state !== 'inactive') {
+          recorder.stop();
+        }
+      }, STANDBY_SAMPLE_CAPTURE_MS);
+    } catch (_error) {
+      setStandbyVoiceStatus('failed');
+      setStandbyVoiceEnabled(false);
+      setBoothError('Microphone access is required to prepare the standby voice.');
+    }
+  }
+
+  function disableStandbyVoice() {
+    setStandbyVoiceEnabled(false);
+    setStandbyVoiceStatus('disabled');
+    setStandbyVoiceSampleDurationMs(0);
+    setStandbyVoiceReadyAt(null);
+    persistStandbyVoiceProfile({
+      enabled: false,
+      status: 'disabled',
+      sampleDurationMs: 0,
+      readyAt: null,
+    });
+  }
+
+  function speakStandbyNarration(text: string) {
+    if (!supportsSpeechSynthesis() || !text.trim()) {
+      return;
+    }
+
+    cancelSyntheticSpeech();
+    const utterance = new window.SpeechSynthesisUtterance(text);
+    utterance.rate = 1.02;
+    utterance.pitch = 0.96;
+    utterance.onstart = () => setIsSyntheticSpeaking(true);
+    utterance.onend = () => setIsSyntheticSpeaking(false);
+    utterance.onerror = () => {
+      setIsSyntheticSpeaking(false);
+      setActiveDeliverySource('live-mic');
+      setHandoffState('idle');
+      setHandoffCountdown(null);
+      setHandoffNote(null);
+      if (!isMicListening && isMicSupported) {
+        startMicrophone();
+      }
+      setBoothError('Standby voice playback failed, so AndOne returned control to the live mic.');
+    };
+
+    syntheticUtteranceRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function beginHandoff(direction: 'sub_in' | 'sub_back') {
+    if (handoffTimerRef.current !== null) {
+      return;
+    }
+
+    if (direction === 'sub_in') {
+      if (!hasStartedBroadcast || standbyVoiceStatus !== 'ready' || activeDeliverySource !== 'live-mic') {
+        return;
+      }
+      setHandoffState('preparing_sub_in');
+      setHandoffNote('Standby voice takes over in');
+    } else {
+      if (!hasStartedBroadcast || activeDeliverySource !== 'synthetic-standby') {
+        return;
+      }
+      setHandoffState('preparing_sub_back');
+      setHandoffNote('Returning you to air in');
+    }
+
+    let remaining = HANDOFF_COUNTDOWN_START;
+    setHandoffCountdown(remaining);
+    handoffTimerRef.current = window.setInterval(() => {
+      remaining -= 1;
+
+      if (remaining <= 0) {
+        if (handoffTimerRef.current !== null) {
+          window.clearInterval(handoffTimerRef.current);
+          handoffTimerRef.current = null;
+        }
+        setHandoffCountdown(null);
+
+        if (direction === 'sub_in') {
+          stopMicrophone();
+          setActiveDeliverySource('synthetic-standby');
+          setHandoffState('subbed_in');
+          setHandoffNote('Standby voice is on air.');
+          setSubbedCue(null);
+          setSubbedCueRequestedAt(0);
+          spokenSyntheticCueTextsRef.current = [];
+        } else {
+          setHandoffState('restoring_live');
+          cancelSyntheticSpeech();
+          setActiveDeliverySource('live-mic');
+          setSubbedCue(null);
+          setSubbedCueRequestedAt(0);
+          if (!isMicListening && isMicSupported) {
+            startMicrophone();
+          }
+          window.setTimeout(() => {
+            setHandoffState('idle');
+            setHandoffNote(null);
+          }, 450);
+        }
+
+        return;
+      }
+
+      setHandoffCountdown(remaining);
+    }, 1_000);
+  }
+
   function clearBoothTranscript() {
     setBoothTranscript([]);
     setBoothInterimTranscript('');
@@ -1798,12 +2143,26 @@ function App() {
   }
 
   function clearLiveBoothState() {
+    if (handoffTimerRef.current !== null) {
+      window.clearInterval(handoffTimerRef.current);
+      handoffTimerRef.current = null;
+    }
     clearBoothTranscript();
     setBoothInterpretation(null);
     setGeneratedCue(null);
+    setSubbedCue(null);
     setGeneratedCueRequestedAt(0);
+    setSubbedCueRequestedAt(0);
     setLatchedAssist(createEmptyAssistCard());
     setAssistVisibilityPhase('hidden');
+    spokenSyntheticCueTextsRef.current = [];
+    cueRetryBlockedUntilRef.current = 0;
+    subbedCueRetryBlockedUntilRef.current = 0;
+    cancelSyntheticSpeech();
+    setActiveDeliverySource('live-mic');
+    setHandoffState('idle');
+    setHandoffCountdown(null);
+    setHandoffNote(null);
   }
 
   async function startBroadcast() {
@@ -2138,6 +2497,14 @@ function App() {
       detail: isSystemReady ? 'The hosted backend is reachable.' : 'Waiting for the backend connection.',
     },
   ];
+  const isStandbyVoiceAvailable =
+    standbyVoiceEnabled && standbyVoiceStatus === 'ready' && supportsSpeechSynthesis();
+  const standbyVoiceStatusLabel =
+    standbyVoiceStatus === 'ready' && !supportsSpeechSynthesis()
+      ? 'Browser voice unavailable'
+      : formatStandbyVoiceStatus(standbyVoiceStatus);
+  const activeDeliverySourceLabel =
+    activeDeliverySource === 'synthetic-standby' ? 'Standby voice' : 'Live mic';
   const clipClockLabel = formatDurationMs(clipPositionMs);
   const clipDurationLabel = clipDurationMs > 0 ? formatDurationMs(clipDurationMs) : '--:--';
   const isBroadcastLive =
@@ -2214,6 +2581,8 @@ function App() {
       : 'none';
   const railSystemNote = isAssistWeaning
     ? 'Recovery is strong, so the cue is shrinking and handing the call back to you.'
+    : activeDeliverySource === 'synthetic-standby'
+      ? 'Standby voice is reading grounded cue text while the live mic stays off-air.'
     : shouldSurfaceAssist
       ? 'A cue is live because delivery slipped. Use the prompt card, then keep moving.'
       : boothHasLiveInput
@@ -2749,6 +3118,111 @@ function App() {
     worldState.sessionMemory.surfacedAssists,
   ]);
 
+  useEffect(() => {
+    if (!hasStartedBroadcast || handoffState !== 'subbed_in' || activeDeliverySource !== 'synthetic-standby') {
+      return;
+    }
+
+    if (isSyntheticSpeaking) {
+      return;
+    }
+
+    const spokenCueTexts = spokenSyntheticCueTextsRef.current;
+    const hasSpokenCue = (text: string) =>
+      spokenCueTexts.some((spoken) => spoken.trim().toLowerCase() === text.trim().toLowerCase());
+
+    const liveCueText =
+      subbedCue?.assist.type !== 'none' && subbedCue?.assist.text.trim()
+        ? subbedCue.assist.text.trim()
+        : generatedCue?.assist.type !== 'none' && generatedCue?.assist.text.trim()
+          ? generatedCue.assist.text.trim()
+          : activeAssist.type !== 'none' && activeAssist.text.trim()
+            ? activeAssist.text.trim()
+            : null;
+
+    if (liveCueText && !hasSpokenCue(liveCueText)) {
+      spokenSyntheticCueTextsRef.current = [...spokenSyntheticCueTextsRef.current, liveCueText].slice(-8);
+      speakStandbyNarration(liveCueText);
+      return;
+    }
+
+    const fallbackNarration = buildStandbyFallbackText();
+    if (fallbackNarration && !hasSpokenCue(fallbackNarration)) {
+      spokenSyntheticCueTextsRef.current = [...spokenSyntheticCueTextsRef.current, fallbackNarration].slice(-8);
+      speakStandbyNarration(fallbackNarration);
+      return;
+    }
+
+    const elapsedMs = subbedCueRequestedAt > 0 ? Date.now() - subbedCueRequestedAt : Infinity;
+    const retryBlockedForMs = Math.max(0, subbedCueRetryBlockedUntilRef.current - Date.now());
+    const waitMs =
+      retryBlockedForMs > 0
+        ? retryBlockedForMs
+        : subbedCue && elapsedMs < subbedCue.refreshAfterMs
+          ? Math.max(0, subbedCue.refreshAfterMs - elapsedMs)
+          : SUBBED_CUE_FLOOR_MS;
+
+    const timeoutId = window.setTimeout(() => {
+      setSubbedCueRequestedAt(Date.now());
+
+      void generateBoothCue({
+        features: currentBoothFeatures,
+        interpretation: boothInterpretation ?? undefined,
+        retrieval: {
+          ...worldState.retrieval,
+          query: boothAssistQuery || worldState.retrieval.query,
+          supportingFacts: rankedBoothAssistFacts.map(({ fact }) => fact),
+        },
+        liveMatch: worldState.liveMatch,
+        contextBundle: worldState.contextBundle,
+        recentEvents: worldState.recentEvents.slice(-4),
+        liveSignals: worldState.liveSignals,
+        clipName: loadedClipName,
+        contextSummary: currentBoothFeatures.contextSummary,
+        preMatchSummary: preMatchCueSummary,
+        expectedTopics: currentBoothFeatures.expectedTopics,
+        recentCueTexts: [...recentCueTexts, ...spokenSyntheticCueTextsRef.current].slice(-8),
+        excludedCueTexts: [...excludedCueTexts, ...spokenSyntheticCueTextsRef.current].slice(-12),
+      })
+        .then((nextCue) => {
+          subbedCueRetryBlockedUntilRef.current = 0;
+          if (nextCue.assist.type !== 'none' && nextCue.assist.text.trim()) {
+            setSubbedCue(nextCue);
+          }
+        })
+        .catch(() => {
+          subbedCueRetryBlockedUntilRef.current = Date.now() + GENERATE_CUE_FAILURE_BACKOFF_MS;
+        });
+    }, waitMs);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    activeAssist,
+    activeDeliverySource,
+    boothAssistQuery,
+    boothInterpretation,
+    cueGenerationBlocked,
+    currentBoothFeatures,
+    excludedCueTexts,
+    generatedCue,
+    handoffState,
+    hasStartedBroadcast,
+    isSyntheticSpeaking,
+    loadedClipName,
+    preMatchCueSummary,
+    rankedBoothAssistFacts,
+    recentCueTexts,
+    subbedCue,
+    subbedCueRequestedAt,
+    worldState.contextBundle,
+    worldState.liveMatch,
+    worldState.liveSignals,
+    worldState.recentEvents,
+    worldState.retrieval,
+  ]);
+
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -3047,6 +3521,94 @@ function App() {
                     </div>
                   ))}
                 </div>
+
+                <article className="booth-card booth-card--compact booth-card--steady standby-voice-card">
+                  <div className="booth-card__header">
+                    <div>
+                      <p className="control-label">Sub Me In</p>
+                      <strong>{activeDeliverySourceLabel}</strong>
+                    </div>
+                    <span
+                      className={`panel-tag ${
+                        isStandbyVoiceAvailable ? 'panel-tag--success' : ''
+                      }`}
+                    >
+                      {standbyVoiceStatusLabel}
+                    </span>
+                  </div>
+
+                  <p className="field-copy field-copy--tight">
+                    {isStandbyVoiceAvailable
+                      ? `A ${Math.round(standbyVoiceSampleDurationMs / 1000)}s voice sample is ready for the standby handoff.`
+                      : 'Capture a short sample first so the standby voice can take over cleanly during a break.'}
+                  </p>
+
+                  <div className="standby-voice-actions">
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      disabled={standbyVoiceStatus === 'recording' || standbyVoiceStatus === 'processing'}
+                      onClick={() => void recordStandbyVoiceSample()}
+                    >
+                      {standbyVoiceStatus === 'ready' ? 'Re-record sample' : 'Record sample'}
+                    </button>
+                    {standbyVoiceEnabled ? (
+                      <button
+                        type="button"
+                        className="text-button"
+                        disabled={standbyVoiceStatus === 'recording' || standbyVoiceStatus === 'processing'}
+                        onClick={disableStandbyVoice}
+                      >
+                        Disable
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="handoff-strip">
+                    <div className="handoff-strip__meta">
+                      <span>On-air source</span>
+                      <strong>{activeDeliverySourceLabel}</strong>
+                    </div>
+                    <div className="handoff-strip__meta">
+                      <span>Handoff</span>
+                      <strong>{handoffCountdown ? `${handoffNote} ${handoffCountdown}` : handoffNote ?? 'Ready'}</strong>
+                    </div>
+                  </div>
+
+                  <div className="standby-voice-actions standby-voice-actions--split">
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      disabled={
+                        !isBroadcastLive ||
+                        !isStandbyVoiceAvailable ||
+                        handoffState !== 'idle' ||
+                        activeDeliverySource !== 'live-mic'
+                      }
+                      onClick={() => beginHandoff('sub_in')}
+                    >
+                      Sub Me In
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      disabled={
+                        !isBroadcastLive ||
+                        (handoffState !== 'subbed_in' && handoffState !== 'preparing_sub_back') ||
+                        activeDeliverySource !== 'synthetic-standby'
+                      }
+                      onClick={() => beginHandoff('sub_back')}
+                    >
+                      Sub Me Back In
+                    </button>
+                  </div>
+
+                  {standbyVoiceReadyAt ? (
+                    <p className="field-copy field-copy--tight">
+                      Ready since {new Date(standbyVoiceReadyAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.
+                    </p>
+                  ) : null}
+                </article>
 
                 {boothError ? <p className="inline-warning">{boothError}</p> : null}
 
