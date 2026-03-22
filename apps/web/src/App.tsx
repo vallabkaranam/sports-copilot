@@ -1632,15 +1632,6 @@ function App() {
       : 'Go live';
   const primaryActionDisabled =
     isFinalizingSession || (!isBroadcastLive && (!isBroadcastReady || isUpdatingControls));
-  const guidanceSummary = isAssistWeaning
-    ? 'You are back in rhythm. The cue is fading out.'
-    : shouldSurfaceAssist
-      ? activeAssist.whyNow
-      : boothInterpretation?.summary
-        ? boothInterpretation.summary
-        : coachingTone.tone === 'steady'
-          ? 'Confidence is returning. AndOne is backing off.'
-          : coachingTone.copy;
   const boothSignalIndicators = [
     {
       label: 'Pause' as const,
@@ -2316,8 +2307,12 @@ function App() {
           <div className="stage-support">
             <div className="stage-support__status">
               <div className={`coach-lane coach-lane--${coachingTone.tone}`}>
-                <strong>{coachingTone.headline}</strong>
-                <p>{guidanceSummary}</p>
+                <strong>{isAssistWeaning ? 'Backing off now' : coachingTone.headline}</strong>
+                <p>
+                  {isAssistWeaning
+                    ? 'Momentum is back, so the prompt is stepping out and returning control to you.'
+                    : coachingTone.copy}
+                </p>
               </div>
 
               <div className="stage-support__progress">
@@ -2383,12 +2378,16 @@ function App() {
             <article className={`booth-card booth-card--${coachingTone.tone}`}>
               <div className="booth-card__header">
                 <div>
-                  <p className="control-label">Status</p>
-                  <strong>{coachingTone.headline}</strong>
+                  <p className="control-label">System note</p>
+                  <strong>{isAssistWeaning ? 'Prompt is fading out' : assistStateLabel}</strong>
                 </div>
               </div>
 
-              <p className="field-copy field-copy--tight">{guidanceSummary}</p>
+              <p className="field-copy field-copy--tight">
+                {isAssistWeaning
+                  ? 'AndOne sees enough recovery to shrink the cue and step away.'
+                  : coachingTone.copy}
+              </p>
 
               <div className="metric-card">
                 <div className="meter-label-row">

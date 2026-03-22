@@ -683,6 +683,12 @@
   color: var(--copy-strong);
   animation: assist-pop 420ms ease;
   min-height: 146px;
+  transition:
+    opacity 240ms ease,
+    transform 240ms ease,
+    box-shadow 240ms ease,
+    background-color 240ms ease,
+    border-color 240ms ease;
 }
 
 .replay-toast--live {
@@ -712,6 +718,16 @@
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.replay-toast--weaning h3 {
+  font-size: 1.06rem;
+  color: var(--signal-green);
+}
+
+.replay-toast--weaning .assist-type,
+.replay-toast--weaning p {
+  color: #9cd3be;
 }
 
 .replay-toast--hint {
@@ -1149,7 +1165,7 @@
 .booth-card {
   padding: 20px;
   background: linear-gradient(180deg, rgba(13, 24, 37, 0.96), rgba(10, 20, 31, 0.98));
-  min-height: 388px;
+  min-height: 320px;
   display: grid;
   align-content: start;
   gap: 14px;
