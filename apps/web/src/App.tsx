@@ -3429,7 +3429,7 @@ function App() {
                     className="ghost-button ghost-button--subtle"
                     onClick={() => setIsClipMuted((current) => !current)}
                   >
-                    {isClipMuted ? 'Muted' : 'Audio on'}
+                    {isClipMuted ? 'Feed audio off' : 'Feed audio on'}
                   </button>
                 ) : null}
               </div>
