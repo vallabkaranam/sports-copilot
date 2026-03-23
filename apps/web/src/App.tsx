@@ -5119,14 +5119,6 @@ function App() {
                 </div>
               </details>
 
-              <div className="inline-actions inline-actions--compact inline-actions--spread">
-                <button type="button" className="text-button" onClick={() => navigateToRoute('live-desk')}>
-                  Return to live
-                </button>
-                <button type="button" className="text-button" onClick={() => navigateToRoute('analyze')}>
-                  Open Analyze
-                </button>
-              </div>
             </div>
           </section>
 
