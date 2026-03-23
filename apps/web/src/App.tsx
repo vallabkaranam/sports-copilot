@@ -3653,8 +3653,7 @@ function App() {
 
                 {boothError ? <p className="inline-warning">{boothError}</p> : null}
 
-                <div className="live-sidebar-grid">
-                  <article className={`booth-card booth-card--compact booth-card--${coachingTone.tone} live-card live-card--system`}>
+                <article className={`booth-card booth-card--compact booth-card--${coachingTone.tone} live-card live-overview-card`}>
                     <div className="booth-card__header">
                       <div>
                         <p className="control-label">System note</p>
@@ -3693,34 +3692,63 @@ function App() {
                       </>
                     ) : null}
                   </article>
+              </section>
+            </aside>
+          </div>
 
-                  <article className="booth-card booth-card--compact booth-card--steady booth-card--transcript live-card">
-                    <div className="booth-card__header">
-                      <div>
-                        <p className="control-label">Live transcript</p>
-                        <strong>{boothHasTranscriptContext ? 'Mic copy is flowing' : 'Waiting for speech'}</strong>
-                      </div>
-                    </div>
+          <section className="panel live-workspace">
+            <div className="live-workspace-grid">
+              <article className="booth-card booth-card--compact booth-card--steady booth-card--transcript live-workspace-card">
+                <div className="booth-card__header">
+                  <div>
+                    <p className="control-label">Live transcript</p>
+                    <strong>
+                      {hasStartedMonitoring
+                        ? boothHasTranscriptContext
+                          ? 'Mic copy is flowing'
+                          : 'Waiting for speech'
+                        : 'Session not started'}
+                    </strong>
+                  </div>
+                </div>
 
-                    <div className="transcript-list" aria-live="polite">
-                      {transcriptWindow.length > 0 ? (
-                        transcriptWindow.map((entry) => (
-                          <p className="transcript-line" key={`${entry.timestamp}-${entry.text}`}>
-                            {entry.text}
-                          </p>
-                        ))
-                      ) : (
-                        <p className="transcript-line transcript-line--muted">
-                          Once the booth mic produces usable text, the latest lines will appear here.
+                <div className="transcript-list" aria-live="polite">
+                  {hasStartedMonitoring ? (
+                    transcriptWindow.length > 0 ? (
+                      transcriptWindow.map((entry) => (
+                        <p className="transcript-line" key={`${entry.timestamp}-${entry.text}`}>
+                          {entry.text}
                         </p>
-                      )}
+                      ))
+                    ) : (
+                      <p className="transcript-line transcript-line--muted">
+                        Once the booth mic produces usable text, the latest lines will appear here.
+                      </p>
+                    )
+                  ) : (
+                    <p className="transcript-line transcript-line--muted">
+                      Start a live session to stream transcript context into the desk.
+                    </p>
+                  )}
 
-                      {boothInterimTranscript.trim() ? (
-                        <p className="transcript-line transcript-line--interim">{boothInterimTranscript.trim()}</p>
-                      ) : null}
-                    </div>
-                  </article>
+                  {hasStartedMonitoring && boothInterimTranscript.trim() ? (
+                    <p className="transcript-line transcript-line--interim">{boothInterimTranscript.trim()}</p>
+                  ) : null}
+                </div>
 
+                <div className="inline-actions inline-actions--compact inline-actions--spread">
+                  <button
+                    type="button"
+                    className="text-button"
+                    disabled={isFinalizingSession || !hasStartedMonitoring}
+                    onClick={clearBoothTranscript}
+                  >
+                    Clear transcript
+                  </button>
+                </div>
+              </article>
+
+              <div className="live-workspace-stack">
                 <details className="booth-card booth-card--compact details-card live-card live-card--wide" open>
                   <summary className="details-card__summary">
                     <div>
@@ -3813,9 +3841,8 @@ function App() {
                     </p>
                   )}
                 </details>
-                </div>
 
-                <details className="booth-card booth-card--compact details-card">
+                <details className="booth-card booth-card--compact details-card live-card live-card--wide">
                   <summary className="details-card__summary">
                     <div>
                       <p className="control-label">Context drawer</p>
@@ -3932,20 +3959,9 @@ function App() {
                     </div>
                   </div>
                 </details>
-
-                <div className="inline-actions inline-actions--compact inline-actions--spread">
-                  <button
-                    type="button"
-                    className="text-button"
-                    disabled={isFinalizingSession}
-                    onClick={clearBoothTranscript}
-                  >
-                    Clear transcript
-                  </button>
-                </div>
-              </section>
-            </aside>
-          </div>
+              </div>
+            </div>
+          </section>
         </>
       ) : appRoute === 'archive' ? (
         <div className="main-grid main-grid--reviews">
