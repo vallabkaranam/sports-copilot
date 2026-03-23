@@ -965,7 +965,7 @@ describe('App dashboard', () => {
     expect(playButton?.hasAttribute('disabled')).toBe(false);
     expect(container.textContent).toContain('Channel 1 · Barca preset');
     expect(container.textContent).toContain(
-      'The sidekick will watch hesitation signals, live transcript flow, and confidence recovery once the session begins.',
+      'AndOne stays silent while you’re in rhythm, surfaces a cue when it senses hesitation, then fades once you’re back in flow.',
     );
   });
 
@@ -1401,7 +1401,7 @@ describe('App dashboard', () => {
 
     expect(container.textContent).toContain('Sidekick Console');
     expect(container.textContent).toContain('Current session');
-    expect(container.textContent).toContain('What the hint engine will use');
+    expect(container.textContent).toContain('What the cue engine will use');
 
     await act(async () => {
       await Promise.resolve();
@@ -1812,7 +1812,7 @@ describe('App dashboard', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('Saved 3 live samples and 2 prompts for this run.');
+    expect(container.textContent).toContain('Saved 3 live samples and 2 cues for this run.');
     expect(container.textContent).toContain('Your most common filler was "um".');
     expect(container.textContent).not.toContain('could not be finalized in the saved session store');
   });

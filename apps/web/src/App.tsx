@@ -757,7 +757,7 @@ function derivePostSessionReview(session: BoothSessionRecord | null) {
 
   return {
     headline: 'Session analysis is ready.',
-    summary: `Saved ${session.sampleCount} live samples and ${session.assistCount} prompt${
+    summary: `Saved ${session.sampleCount} live samples and ${session.assistCount} cue${
       session.assistCount === 1 ? '' : 's'
     } for this run.`,
     metrics: [
@@ -818,15 +818,15 @@ function getCoachingTone({
       tone: 'standby' as CoachingTone,
       label: 'Standby',
       headline: 'AndOne is standing by.',
-      copy: 'Prompts stay off-screen until you go live.',
+      copy: 'Cue cards stay off-screen until you go live.',
     };
   }
 
   if (shouldSurfaceAssist) {
     return {
       tone: 'step-in' as CoachingTone,
-      label: 'Prompt live',
-      headline: 'A prompt is live.',
+      label: 'Cue live',
+      headline: 'A cue card is live.',
       copy: 'AndOne is stepping in because your delivery slipped.',
     };
   }
@@ -845,7 +845,7 @@ function getCoachingTone({
       tone: 'steady' as CoachingTone,
       label: 'Backing off',
       headline: 'You are back in rhythm.',
-      copy: 'The prompt is fading because your delivery is stable again.',
+      copy: 'The cue card is fading because your delivery is stable again.',
     };
   }
 
@@ -853,7 +853,7 @@ function getCoachingTone({
     tone: 'supporting' as CoachingTone,
     label: 'Monitoring',
     headline: 'AndOne is following your delivery.',
-    copy: 'The live feed is active, but the hesitation signal is not strong enough to prompt yet.',
+    copy: 'The live feed is active, but the hesitation signal is not strong enough to surface a cue yet.',
   };
 }
 
@@ -3062,7 +3062,7 @@ function App() {
         : 'Feed and microphone are ready. The Sidekick starts once you begin calling the action.';
   const overviewCopy = hasStartedMonitoring
     ? railSystemNote
-    : 'AndOne stays silent while you’re in rhythm, surfaces a prompt when it senses hesitation, then fades once you’re back in flow.';
+    : 'AndOne stays silent while you’re in rhythm, surfaces a cue when it senses hesitation, then fades once you’re back in flow.';
   const overviewReason = hasStartedMonitoring
     ? visibleReasons[0] ?? confidenceReason
     : '';
@@ -3073,8 +3073,7 @@ function App() {
     : coachingTone.tone === 'steady'
       ? 'Watching'
       : 'Silent';
-  const overviewBadgeLabel = hasStartedMonitoring ? boothRhythmPercent : '--';
-  const overviewRhythmWidth = hasStartedMonitoring ? boothRhythmPercent : '0%';
+  const overviewBadgeLabel = hasStartedMonitoring ? assistStateLabel : 'Idle';
   const overviewHesitationLabel = hasStartedMonitoring ? formatPercent(effectiveHesitationScore) : '--';
   const overviewRecoveryLabel = hasStartedMonitoring ? formatPercent(effectiveRecoveryScore) : '--';
   const overviewHesitationWidth = hasStartedMonitoring ? `${Math.round(effectiveHesitationScore * 100)}%` : '0%';
@@ -3926,7 +3925,7 @@ function App() {
                     ? 'Saving the session and building the analysis.'
                     : loadedClipUrl
                       ? isBroadcastLive
-                        ? 'The desk is live. AndOne stays silent while you’re in rhythm, only surfacing prompts when it senses hesitation.'
+                        ? 'The desk is live. AndOne stays silent while you’re in rhythm, only surfacing cues when it senses hesitation.'
                         : !isSystemReady || isUploadingContext
                           ? 'The feed is loaded. AndOne is still arming the backend or context before the session can start.'
                           : 'The feed is loaded and muted. Go live when you are ready.'
@@ -4056,7 +4055,7 @@ function App() {
                 <article className={`booth-card booth-card--compact booth-card--${coachingTone.tone} live-card live-overview-card`}>
                     <div className="booth-card__header">
                       <div>
-                        <p className="control-label">Assist engine</p>
+                        <p className="control-label">Cue engine</p>
                         <strong>{hasStartedMonitoring ? (isAssistWeaning ? 'Sidekick is receding' : assistStateLabel) : 'Monitoring preview'}</strong>
                       </div>
                       <span className="metric-badge">{overviewBadgeLabel}</span>
@@ -4080,27 +4079,6 @@ function App() {
                           <strong>{signal.detail}</strong>
                         </div>
                       ))}
-                    </div>
-
-                    <div className="signal-meta" aria-label="Booth guidance scores">
-                      <div className="signal-meta__item">
-                        <span>Hesitation</span>
-                        <strong>{overviewHesitationLabel}</strong>
-                      </div>
-                      <div className="signal-meta__item">
-                        <span>Recovery</span>
-                        <strong>{overviewRecoveryLabel}</strong>
-                      </div>
-                    </div>
-
-                    <div className="metric-card">
-                      <div className="meter-label-row">
-                        <span>Broadcast Rhythm</span>
-                        <strong>{overviewBadgeLabel}</strong>
-                      </div>
-                      <div className={`meter-track meter-track--${coachingTone.tone}`}>
-                        <span style={{ width: overviewRhythmWidth }} />
-                      </div>
                     </div>
 
                     <div className="signal-meta signal-meta--meters" aria-label="Hesitation and recovery meters">
@@ -4402,7 +4380,7 @@ function App() {
                 <strong>{formatDurationMs(Math.round(sessionWorkspaceInsights.averageLongestPauseMs))}</strong>
               </div>
               <div>
-                <p className="control-label">Prompts / run</p>
+                <p className="control-label">Cues / run</p>
                 <strong>{sessionWorkspaceInsights.averageAssistRate.toFixed(1)}</strong>
               </div>
             </div>
@@ -4430,7 +4408,7 @@ function App() {
                     <div className="analyze-session-card__metrics">
                       <span>Peak {formatPercent(session.maxHesitationScore)}</span>
                       <span>Longest pause {formatDurationMs(session.longestPauseMs)}</span>
-                      <span>{session.assistCount} prompt{session.assistCount === 1 ? '' : 's'}</span>
+                      <span>{session.assistCount} cue{session.assistCount === 1 ? '' : 's'}</span>
                     </div>
                     <div className="analyze-session-card__actions">
                       <button
@@ -4481,7 +4459,7 @@ function App() {
                     <strong>{latestCompletedSession.sampleCount}</strong>
                   </div>
                   <div>
-                    <p className="control-label">Prompts</p>
+                    <p className="control-label">Cues</p>
                     <strong>{latestCompletedSession.assistCount}</strong>
                   </div>
                 </div>
@@ -4717,7 +4695,7 @@ function App() {
               <div>
                 <p className="panel-kicker">Current session</p>
                 <h2>{loadedClipName || 'Session pack'}</h2>
-                <p className="panel-copy">Choose what this broadcast will feed into the hint engine before you go live.</p>
+                <p className="panel-copy">Choose what this broadcast will feed into the cue engine before you go live.</p>
               </div>
               <span className="panel-tag">{activeSessionContextCount} items armed</span>
             </div>
@@ -4859,10 +4837,10 @@ function App() {
               </div>
 
               <div className="review-section">
-                <p className="memory-title">What the hint engine will use</p>
+                <p className="memory-title">What the cue engine will use</p>
                 <div className="reason-list">
                   <p>
-                    The cue model receives the live match state, the auto-generated match artifacts, the armed global docs, and any session-only additions shown here.
+                    The cue engine receives the live match state, the auto-generated match artifacts, the armed global docs, and any session-only additions shown here.
                   </p>
                   <p>
                     Armed topics: {sessionExpectedTopics.slice(0, 10).join(' · ') || 'Waiting for match context'}
