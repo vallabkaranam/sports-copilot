@@ -82,6 +82,7 @@ const MIN_AUDIO_ACTIVITY_THRESHOLD = 0.012;
 const MAX_AUDIO_ACTIVITY_THRESHOLD = 0.08;
 const ASSIST_WEAN_OFF_MS = 2600;
 const MIN_ASSIST_DISPLAY_MS = 2400;
+const MIN_RECOVERY_COMMIT_MS = 900;
 const BUFFERED_TRANSCRIPTION_CHUNK_MS = 2_500;
 const BUFFERED_TRANSCRIPTION_WARNING_THRESHOLD = 3;
 const BUFFERED_TRANSCRIPTION_WARNING =
@@ -249,6 +250,38 @@ function mergeAgentRuns(
     };
     return displayRank[right.displayState] - displayRank[left.displayState];
   });
+}
+
+function formatSidebarAgentStateLabel(agent: SidebarAgent) {
+  if (agent.displayState === 'blocked') {
+    return 'Blocked';
+  }
+
+  if (agent.displayState === 'contributing') {
+    return 'Driving cue';
+  }
+
+  if (agent.state === 'active') {
+    return agent.origin === 'generation' ? 'Drafting' : 'Live';
+  }
+
+  if (agent.state === 'ready') {
+    return 'Ready';
+  }
+
+  if (agent.state === 'waiting') {
+    return 'Watching';
+  }
+
+  return 'Idle';
+}
+
+function normalizeMonitorCopy(text: string) {
+  return text
+    .replace(/no supporting facts were selected\.?/gi, 'Grounding is leaning on live booth state while retrieval facts are thin.')
+    .replace(/falling back to the live booth state because explicit retrieval facts were thin\.?/gi, 'Grounding is leaning on live booth state while retrieval facts are thin.')
+    .replace(/model .* generated the final cue from 0 selected facts\.?/gi, 'The cue was assembled from live booth state because explicit retrieval facts were thin.')
+    .replace(/0 selected facts/gi, 'live booth state');
 }
 
 function supportsAudioMonitoring() {
@@ -2321,6 +2354,16 @@ function App() {
       return;
     }
 
+    if (!isSystemReady) {
+      setBoothError('AndOne is still linking the hosted backend. Wait for the system link to turn ready before going live.');
+      return;
+    }
+
+    if (isUploadingContext) {
+      setBoothError('AndOne is still indexing your context notes. Wait for that upload to finish before going live.');
+      return;
+    }
+
     if (!isMicPrepared) {
       const prepared = await prepareMicrophone();
       await flushMicrotasks();
@@ -2575,6 +2618,7 @@ function App() {
   );
   const generationExplainability =
     generatedCue?.explainability ?? worldState.orchestration?.lastGeneration ?? null;
+  const generationAgents = generationExplainability?.contributingAgents ?? [];
   const usedContextFacts = worldState.retrieval.supportingFacts;
   const unusedContextFacts = worldState.retrieval.unusedFacts ?? [];
   const fixtureLinkBlocked =
@@ -2674,13 +2718,39 @@ function App() {
     boothSignal.wakePhraseDetected ? 'line' : null,
   ].filter(Boolean) as string[];
   const monitoredSignalLabels = ['Pause', 'Fillers', 'Repeat start', 'Wake phrase', 'Confidence'];
+  const standbySetupSummary =
+    standbyVoiceStatus === 'ready'
+      ? `A ${Math.round(standbyVoiceSampleDurationMs / 1000)}s standby sample is armed for takeover.`
+      : standbyVoiceStatus === 'recording'
+        ? 'Capturing your standby voice sample now.'
+        : standbyVoiceStatus === 'processing'
+          ? 'Processing the standby voice sample for takeover.'
+          : standbyVoiceStatus === 'failed'
+            ? 'The last standby sample did not complete cleanly. Capture a fresh one in Sidekick Console.'
+            : 'Prepare a standby voice sample in Sidekick Console before using takeover on the live desk.';
+  const liveActivityHeadline =
+    activeAgentNames.length > 0
+      ? `${activeAgentNames.length} live stream${activeAgentNames.length === 1 ? '' : 's'} are shaping this beat`
+      : 'No live stream is shaping the current beat';
+  const cueAssemblyHeadline =
+    generationExplainability
+      ? generationAgents.length > 0
+        ? `${generationAgents.length} stream${generationAgents.length === 1 ? '' : 's'} shaped this cue`
+        : 'Cue reasoning is active for the current line'
+      : 'No cue stream is shaping a line right now';
+  const cueAssemblySummary = generationExplainability?.reasoningTrace[0] ?? null;
+  const cueAssemblySupportCopy = generationExplainability
+    ? generationExplainability.sourcesUsed.length > 0
+      ? `${generationExplainability.sourcesUsed.length} grounded source${generationExplainability.sourcesUsed.length === 1 ? '' : 's'} fed this cue.`
+      : 'The cue leaned on live booth state because explicit retrieval facts were thin.'
+    : 'When a grounded cue appears, the streams and source facts behind it will show here.';
   const primaryActionLabel = isFinalizingSession
     ? 'Saving session...'
     : isBroadcastLive
       ? 'End live session'
       : 'Go live';
   const primaryActionDisabled =
-    isFinalizingSession || (!isBroadcastLive && (!isBroadcastReady || isUpdatingControls));
+    isFinalizingSession || (!isBroadcastLive && (!isBroadcastReady || isUpdatingControls || !isSystemReady || isUploadingContext));
   const hasStartedMonitoring = hasStartedBroadcast;
   const activeAssistSupportCopy = isAssistWeaning
     ? 'Confidence is returning. AndOne is backing off.'
@@ -2844,7 +2914,13 @@ function App() {
     }
 
     if (isAssistEpisodeActive && speakerHasRecovered) {
-      setIsAssistEpisodeActive(false);
+      const timeoutId = window.setTimeout(() => {
+        setIsAssistEpisodeActive(false);
+      }, MIN_RECOVERY_COMMIT_MS);
+
+      return () => {
+        window.clearTimeout(timeoutId);
+      };
     }
   }, [
     assistEpisodeId,
@@ -3562,7 +3638,9 @@ function App() {
                     : loadedClipUrl
                       ? isBroadcastLive
                         ? 'The desk is live. AndOne stays silent while you’re in rhythm, only surfacing prompts when it senses hesitation.'
-                        : 'The feed is loaded and muted. Go live when you are ready.'
+                        : !isSystemReady || isUploadingContext
+                          ? 'The feed is loaded. AndOne is still arming the backend or context before the session can start.'
+                          : 'The feed is loaded and muted. Go live when you are ready.'
                       : 'Pick a preset above or add an input to Channel 3.'}
                 </p>
               </div>
@@ -3761,31 +3839,7 @@ function App() {
                     </span>
                   </summary>
                   <div className="details-card__body">
-                    <p className="field-copy field-copy--tight">
-                      {isStandbyVoiceAvailable
-                        ? `A ${Math.round(standbyVoiceSampleDurationMs / 1000)}s voice sample is ready for the standby handoff.`
-                        : 'Capture a short sample first so the standby voice can take over cleanly during a break.'}
-                    </p>
-                    <div className="standby-voice-actions">
-                      <button
-                        type="button"
-                        className="ghost-button"
-                        disabled={standbyVoiceStatus === 'recording' || standbyVoiceStatus === 'processing'}
-                        onClick={() => void recordStandbyVoiceSample()}
-                      >
-                        {standbyVoiceStatus === 'ready' ? 'Re-record sample' : 'Record sample'}
-                      </button>
-                      {standbyVoiceEnabled ? (
-                        <button
-                          type="button"
-                          className="text-button"
-                          disabled={standbyVoiceStatus === 'recording' || standbyVoiceStatus === 'processing'}
-                          onClick={disableStandbyVoice}
-                        >
-                          Disable
-                        </button>
-                      ) : null}
-                    </div>
+                    <p className="field-copy field-copy--tight">{standbySetupSummary}</p>
                     <div className="handoff-strip">
                       <div className="handoff-strip__meta">
                         <span>On Air</span>
@@ -3797,6 +3851,15 @@ function App() {
                       </div>
                     </div>
                     <div className="standby-voice-actions">
+                      {!isStandbyVoiceAvailable ? (
+                        <button
+                          type="button"
+                          className="text-button"
+                          onClick={() => navigateToRoute('debug')}
+                        >
+                          Open Sidekick Console
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className="ghost-button"
@@ -3868,12 +3931,8 @@ function App() {
                 <details className="booth-card booth-card--compact details-card live-card live-card--wide" open>
                   <summary className="details-card__summary">
                     <div>
-                      <p className="control-label">Agent activity</p>
-                      <strong>
-                        {activeAgentNames.length > 0
-                          ? `Active agents: ${activeAgentNames.join(', ')}`
-                          : 'No relevant live contributors right now'}
-                      </strong>
+                      <p className="control-label">Assist streams</p>
+                      <strong>{liveActivityHeadline}</strong>
                     </div>
                     <span className="panel-tag">{liveAgents.length} observed</span>
                   </summary>
@@ -3887,16 +3946,16 @@ function App() {
                             key={`${agent.origin}-${agent.agentName}`}
                           >
                             <summary className="agent-trace-item__summary">
-                              <div>
+                              <div className="agent-trace-item__content">
                                 <span className="agent-trace-item__label">{agent.agentName}</span>
-                                <p className="agent-trace-item__detail">{agent.output}</p>
+                                <p className="agent-trace-item__detail">{normalizeMonitorCopy(agent.output)}</p>
                               </div>
-                              <span className="agent-trace-item__state">{agent.displayState}</span>
+                              <span className="agent-trace-item__state">{formatSidebarAgentStateLabel(agent)}</span>
                             </summary>
                             <div className="details-card__body">
                               <div className="reason-list">
                                 {agent.reasoningTrace.map((traceLine) => (
-                                  <p key={`${agent.agentName}-${traceLine}`}>{traceLine}</p>
+                                  <p key={`${agent.agentName}-${traceLine}`}>{normalizeMonitorCopy(traceLine)}</p>
                                 ))}
                               </div>
                               {agent.sourcesUsed.length > 0 ? (
@@ -3915,7 +3974,7 @@ function App() {
                     </div>
                   ) : (
                     <p className="transcript-line transcript-line--muted">
-                      Relevant specialist streams will appear here only when they matter for the current beat.
+                      Relevant live streams will appear here only when they change the current beat.
                     </p>
                   )}
                 </details>
@@ -3926,20 +3985,57 @@ function App() {
                 >
                   <summary className="details-card__summary">
                     <div>
-                      <p className="control-label">Generation explainability</p>
-                      <strong>Cue contributors</strong>
+                      <p className="control-label">Cue assembly</p>
+                      <strong>{cueAssemblyHeadline}</strong>
                     </div>
-                    <span className="panel-tag">
-                      {generationExplainability?.contributingAgents.length ?? 0} agents
-                    </span>
+                    <span className="panel-tag">{generationAgents.length} streams</span>
                   </summary>
 
                   {generationExplainability ? (
                     <div className="details-card__body">
-                      <div className="reason-list">
-                        {generationExplainability.reasoningTrace.map((line) => (
-                          <p key={line}>{line}</p>
-                        ))}
+                      {generationAgents.length > 0 ? (
+                        <div className="agent-trace-list">
+                          {generationAgents.map((agent) => (
+                            <details
+                              className={`agent-trace-item agent-trace-item--${agent.state === 'waiting' ? 'idle' : 'contributing'}`}
+                              key={`generation-${agent.agentName}`}
+                            >
+                              <summary className="agent-trace-item__summary">
+                                <div className="agent-trace-item__content">
+                                  <span className="agent-trace-item__label">{agent.agentName}</span>
+                                  <p className="agent-trace-item__detail">{normalizeMonitorCopy(agent.output)}</p>
+                                </div>
+                                <span className="agent-trace-item__state">
+                                  {formatSidebarAgentStateLabel({
+                                    ...agent,
+                                    origin: 'generation',
+                                    displayState: agent.state === 'waiting' ? 'idle' : 'contributing',
+                                  })}
+                                </span>
+                              </summary>
+                              <div className="details-card__body">
+                                <div className="reason-list">
+                                  {agent.reasoningTrace.map((line) => (
+                                    <p key={`generation-${agent.agentName}-${line}`}>{normalizeMonitorCopy(line)}</p>
+                                  ))}
+                                </div>
+                                {agent.sourcesUsed.length > 0 ? (
+                                  <div className="source-chip-row">
+                                    {agent.sourcesUsed.map((chip) => (
+                                      <span className="source-chip" key={`generation-agent-${agent.agentName}-${chip.id}`}>
+                                        {chip.label}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </div>
+                            </details>
+                          ))}
+                        </div>
+                      ) : null}
+                      <div className="monitor-summary-note">
+                        {cueAssemblySummary ? <strong>{normalizeMonitorCopy(cueAssemblySummary)}</strong> : null}
+                        <p>{cueAssemblySupportCopy}</p>
                       </div>
                       {generationExplainability.sourcesUsed.length > 0 ? (
                         <div className="source-chip-row">
@@ -3953,7 +4049,7 @@ function App() {
                     </div>
                   ) : (
                     <p className="transcript-line transcript-line--muted">
-                      Relevant cue contributors will appear here once a grounded cue is active.
+                      When a grounded cue appears, the streams and source facts behind it will show here.
                     </p>
                   )}
                 </details>
@@ -4213,6 +4309,39 @@ function App() {
               <span className="panel-tag">{usedContextFacts.length} used</span>
             </div>
 
+            <div className="setup-card standby-voice-card">
+              <div className="setup-card__header">
+                <div>
+                  <p className="control-label">Standby voice</p>
+                  <strong>{standbyVoiceStatusLabel}</strong>
+                </div>
+                <span className={`panel-tag ${isStandbyVoiceAvailable ? 'panel-tag--success' : ''}`}>
+                  {isStandbyVoiceAvailable ? 'Armed' : 'Setup'}
+                </span>
+              </div>
+              <p className="field-copy field-copy--tight">{standbySetupSummary}</p>
+              <div className="standby-voice-actions">
+                <button
+                  type="button"
+                  className="ghost-button"
+                  disabled={standbyVoiceStatus === 'recording' || standbyVoiceStatus === 'processing'}
+                  onClick={() => void recordStandbyVoiceSample()}
+                >
+                  {standbyVoiceStatus === 'ready' ? 'Capture again' : 'Capture sample'}
+                </button>
+                {standbyVoiceEnabled ? (
+                  <button
+                    type="button"
+                    className="text-button"
+                    disabled={standbyVoiceStatus === 'recording' || standbyVoiceStatus === 'processing'}
+                    onClick={disableStandbyVoice}
+                  >
+                    Clear sample
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
             <div className="context-upload">
               <textarea
                 className="context-textarea"
@@ -4296,47 +4425,7 @@ function App() {
 
             <div className="review-stack">
               <div className="review-section">
-                <p className="memory-title">Agent runs</p>
-                <div className="agent-trace-list">
-                  {liveAgents.length > 0 ? (
-                    liveAgents.map((agent) => (
-                      <details
-                        className={`agent-trace-item agent-trace-item--${agent.displayState}`}
-                        key={`debug-${agent.origin}-${agent.agentName}`}
-                      >
-                        <summary className="agent-trace-item__summary">
-                          <div>
-                            <span className="agent-trace-item__label">{agent.agentName}</span>
-                            <p className="agent-trace-item__detail">{agent.output}</p>
-                          </div>
-                          <span className="agent-trace-item__state">{agent.displayState}</span>
-                        </summary>
-                        <div className="details-card__body">
-                          <div className="reason-list">
-                            {agent.reasoningTrace.map((traceLine) => (
-                              <p key={`debug-${agent.agentName}-${traceLine}`}>{traceLine}</p>
-                            ))}
-                          </div>
-                          {agent.sourcesUsed.length > 0 ? (
-                            <div className="source-chip-row">
-                              {agent.sourcesUsed.map((chip) => (
-                                <span className="source-chip" key={`debug-${agent.agentName}-${chip.id}`}>
-                                  {chip.label}
-                                </span>
-                              ))}
-                            </div>
-                          ) : null}
-                        </div>
-                      </details>
-                    ))
-                  ) : (
-                    <p className="transcript-line transcript-line--muted">No agent runs have been recorded for the current state yet.</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="review-section">
-                <p className="memory-title">Agent activity</p>
+                <p className="memory-title">Assist streams</p>
                 <div className="agent-trace-list">
                   {liveAgents.length > 0 ? (
                     liveAgents.map((agent) => (
@@ -4345,16 +4434,16 @@ function App() {
                         key={`${agent.origin}-${agent.agentName}`}
                       >
                         <summary className="agent-trace-item__summary">
-                          <div>
+                          <div className="agent-trace-item__content">
                             <span className="agent-trace-item__label">{agent.agentName}</span>
-                            <p className="agent-trace-item__detail">{agent.output}</p>
+                            <p className="agent-trace-item__detail">{normalizeMonitorCopy(agent.output)}</p>
                           </div>
-                          <span className="agent-trace-item__state">{agent.displayState}</span>
+                          <span className="agent-trace-item__state">{formatSidebarAgentStateLabel(agent)}</span>
                         </summary>
                         <div className="details-card__body">
                           <div className="reason-list">
                             {agent.reasoningTrace.map((traceLine) => (
-                              <p key={`${agent.agentName}-${traceLine}`}>{traceLine}</p>
+                              <p key={`${agent.agentName}-${traceLine}`}>{normalizeMonitorCopy(traceLine)}</p>
                             ))}
                           </div>
                           {agent.sourcesUsed.length > 0 ? (
@@ -4371,20 +4460,59 @@ function App() {
                     ))
                   ) : (
                     <p className="transcript-line transcript-line--muted">
-                      Relevant specialist streams will appear here only when they matter for the current beat.
+                      Relevant live streams will appear here only when they change the current beat.
                     </p>
                   )}
                 </div>
               </div>
 
               <div className="review-section">
-                <p className="memory-title">Generation explainability</p>
+                <p className="memory-title">Cue assembly</p>
                 {generationExplainability ? (
                   <>
-                    <div className="reason-list">
-                      {generationExplainability.reasoningTrace.map((line) => (
-                        <p key={line}>{line}</p>
-                      ))}
+                    {generationAgents.length > 0 ? (
+                      <div className="agent-trace-list">
+                        {generationAgents.map((agent) => (
+                          <details
+                            className={`agent-trace-item agent-trace-item--${agent.state === 'waiting' ? 'idle' : 'contributing'}`}
+                            key={`debug-generation-${agent.agentName}`}
+                          >
+                            <summary className="agent-trace-item__summary">
+                              <div className="agent-trace-item__content">
+                                <span className="agent-trace-item__label">{agent.agentName}</span>
+                                <p className="agent-trace-item__detail">{normalizeMonitorCopy(agent.output)}</p>
+                              </div>
+                              <span className="agent-trace-item__state">
+                                {formatSidebarAgentStateLabel({
+                                  ...agent,
+                                  origin: 'generation',
+                                  displayState: agent.state === 'waiting' ? 'idle' : 'contributing',
+                                })}
+                              </span>
+                            </summary>
+                            <div className="details-card__body">
+                              <div className="reason-list">
+                                {agent.reasoningTrace.map((line) => (
+                                  <p key={`debug-generation-${agent.agentName}-${line}`}>{normalizeMonitorCopy(line)}</p>
+                                ))}
+                              </div>
+                              {agent.sourcesUsed.length > 0 ? (
+                                <div className="source-chip-row">
+                                  {agent.sourcesUsed.map((chip) => (
+                                    <span className="source-chip" key={`debug-generation-${agent.agentName}-${chip.id}`}>
+                                      {chip.label}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
+                          </details>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="monitor-summary-note">
+                      {cueAssemblySummary ? <strong>{normalizeMonitorCopy(cueAssemblySummary)}</strong> : null}
+                      <p>{cueAssemblySupportCopy}</p>
                     </div>
                     {generationExplainability.sourcesUsed.length > 0 ? (
                       <div className="source-chip-row">
@@ -4398,7 +4526,7 @@ function App() {
                   </>
                 ) : (
                   <p className="transcript-line transcript-line--muted">
-                    Relevant cue contributors will appear here once a grounded cue is active.
+                    When a grounded cue appears, the streams and source facts behind it will show here.
                   </p>
                 )}
               </div>

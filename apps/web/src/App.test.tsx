@@ -950,8 +950,8 @@ describe('App dashboard', () => {
     expect(container.textContent).toContain('Barca preset');
     expect(container.textContent).toContain('Rangers preset');
     expect(container.textContent).toContain('AndOne stays quiet until hesitation needs backup.');
-    expect(container.textContent).toContain('No relevant live contributors right now');
-    expect(container.textContent).toContain('Cue contributors');
+    expect(container.textContent).toContain('No live stream is shaping the current beat');
+    expect(container.textContent).toContain('No cue stream is shaping a line right now');
     expect(container.textContent).not.toContain('Pre-match brief');
   });
 
@@ -969,19 +969,30 @@ describe('App dashboard', () => {
     );
   });
 
-  it('shows the standby voice setup inline on the live desk', async () => {
+  it('keeps takeover on the live desk and moves sample setup to Sidekick Console', async () => {
     await renderApp();
 
     expect(container.textContent).toContain('Let AndOne take over');
     expect(container.textContent).toContain('Takeover off');
-    expect(container.textContent).toContain('Record sample');
+    expect(container.textContent).toContain('Open Sidekick Console');
+    expect(container.textContent).not.toContain('Record sample');
   });
 
   it('records a standby sample, subs the synthetic voice in, and restores the live mic', async () => {
     await renderApp();
 
+    const sidekickConsoleButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Sidekick Console'),
+    );
+
+    await act(async () => {
+      sidekickConsoleButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
     const recordButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Record sample'),
+      button.textContent?.includes('Capture sample'),
     );
 
     await act(async () => {
@@ -993,6 +1004,16 @@ describe('App dashboard', () => {
     });
 
     expect(container.textContent).toContain('Takeover ready');
+
+    const liveDeskButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Live Desk'),
+    );
+
+    await act(async () => {
+      liveDeskButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
 
     const goLiveButton = [...container.querySelectorAll('button')].find((button) =>
       button.textContent?.includes('Go live'),
@@ -1379,12 +1400,12 @@ describe('App dashboard', () => {
     });
 
     expect(container.textContent).toContain('System debug');
-    expect(container.textContent).toContain('Generation explainability');
+    expect(container.textContent).toContain('Cue assembly');
 
     await act(async () => {
       // open the first debug details block if the browser keeps it collapsed in jsdom
       const explainabilitySummary = [...container.querySelectorAll('summary')].find((node) =>
-        node.textContent?.includes('Generation explainability'),
+        node.textContent?.includes('Cue assembly'),
       );
       explainabilitySummary?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
