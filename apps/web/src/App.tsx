@@ -3065,7 +3065,7 @@ function App() {
     : 'The sidekick will watch hesitation signals, live transcript flow, and confidence recovery once the session begins.';
   const overviewReason = hasStartedMonitoring
     ? visibleReasons[0] ?? confidenceReason
-    : 'No booth signal is being judged yet. Values stay empty until you start the live session.';
+    : '';
   const assistStateLabel = shouldSurfaceAssist
     ? isAssistWeaning
       ? 'Receding'
