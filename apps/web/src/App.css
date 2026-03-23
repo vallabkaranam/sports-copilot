@@ -653,13 +653,13 @@
 
 .stage-primary-bar {
   display: grid;
-  grid-template-columns: minmax(200px, auto) minmax(0, 1fr);
-  gap: 14px;
+  grid-template-columns: minmax(188px, auto) minmax(0, 1fr);
+  gap: 12px;
   align-items: center;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-radius: 14px;
   border: 1px solid var(--border);
-  background: rgba(247, 241, 233, 0.78);
+  background: rgba(247, 241, 233, 0.72);
 }
 
 .stage-title {
@@ -671,27 +671,40 @@
 .stage-primary-button {
   min-width: 180px;
   border: 0;
-  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border-radius: 999px;
   padding: 12px 18px;
   font-family: 'Sora', 'Avenir Next', sans-serif;
   font-size: 0.88rem;
   font-weight: 600;
-  letter-spacing: -0.02em;
-  color: #f8f4ee;
-  background: var(--accent-deep);
-  box-shadow: none;
+  letter-spacing: 0.01em;
+  color: #fff7f2;
+  background: linear-gradient(180deg, #e24f45, #b83730);
+  box-shadow: 0 8px 18px rgba(184, 55, 48, 0.22);
   cursor: pointer;
   transition:
     transform 180ms ease,
     box-shadow 180ms ease,
-    opacity 180ms ease;
+    opacity 180ms ease,
+    filter 180ms ease;
+}
+
+.stage-primary-button__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 5px rgba(255, 247, 242, 0.14);
 }
 
 .stage-primary-button:hover,
 .stage-primary-button:focus-visible {
   transform: translateY(-1px);
-  background: #2d231d;
-  box-shadow: none;
+  filter: brightness(1.04);
+  box-shadow: 0 10px 20px rgba(184, 55, 48, 0.26);
   outline: none;
 }
 
@@ -703,9 +716,7 @@
 }
 
 .stage-primary-button--live {
-  color: #fbf6f0;
-  background: var(--accent);
-  box-shadow: none;
+  background: linear-gradient(180deg, #df4a41, #aa2c26);
 }
 
 .stage-primary-copy {
@@ -714,6 +725,44 @@
   color: var(--copy-muted);
   font-size: 0.82rem;
   line-height: 1.35;
+}
+
+.stage-launch-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  background: radial-gradient(circle at center, rgba(12, 18, 24, 0.08), rgba(12, 18, 24, 0.48));
+}
+
+.stage-launch-overlay span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 116px;
+  min-height: 116px;
+  padding: 20px;
+  border-radius: 999px;
+  border: 1px solid rgba(247, 242, 235, 0.24);
+  background: rgba(15, 21, 28, 0.86);
+  color: #fff8f2;
+  font-family: 'Oswald', 'Arial Narrow', sans-serif;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.22);
+}
+
+.stage-launch-overlay--countdown span {
+  font-size: clamp(2.5rem, 8vw, 4rem);
+}
+
+.stage-launch-overlay--live span {
+  min-width: 180px;
+  min-height: 72px;
+  font-size: 1.3rem;
+  background: rgba(185, 44, 39, 0.92);
 }
 
 .feed-switcher {
@@ -1635,33 +1684,36 @@
 
 .signal-indicator-row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .signal-indicator {
   display: grid;
-  gap: 6px;
-  padding: 10px 11px;
+  gap: 4px;
+  padding: 7px 8px;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: rgba(247, 241, 234, 0.84);
+  min-height: 58px;
+  align-content: start;
 }
 
 .signal-indicator span {
   display: block;
   color: var(--copy-soft);
-  font-size: 0.7rem;
+  font-size: 0.62rem;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
+  line-height: 1.15;
 }
 
 .signal-indicator strong {
   color: var(--copy-strong);
   font-family: 'Sora', 'Avenir Next', sans-serif;
-  font-size: 0.82rem;
+  font-size: 0.74rem;
   font-weight: 600;
-  line-height: 1.25;
+  line-height: 1.2;
 }
 
 .signal-indicator--active {
@@ -2694,6 +2746,17 @@
     min-width: 0;
   }
 
+  .stage-launch-overlay span {
+    min-width: 92px;
+    min-height: 92px;
+  }
+
+  .stage-launch-overlay--live span {
+    min-width: 152px;
+    min-height: 64px;
+    font-size: 1.08rem;
+  }
+
   .replay-stage,
   .replay-stage__content {
     min-height: 300px;
@@ -2732,6 +2795,10 @@
 
   .stage-context-popover {
     width: min(280px, calc(100vw - 40px));
+  }
+
+  .signal-indicator-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .booth-summary--review {

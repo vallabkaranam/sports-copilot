@@ -927,6 +927,8 @@ function App() {
   const [subbedCue, setSubbedCue] = useState<GenerateBoothCueResponse | null>(null);
   const [subbedCueRequestedAt, setSubbedCueRequestedAt] = useState(0);
   const [isSyntheticSpeaking, setIsSyntheticSpeaking] = useState(false);
+  const [liveLaunchCountdown, setLiveLaunchCountdown] = useState<number | null>(null);
+  const [showLiveLaunchBanner, setShowLiveLaunchBanner] = useState(false);
   const [assistLockExpiresAt, setAssistLockExpiresAt] = useState(0);
   const [assistEpisodeId, setAssistEpisodeId] = useState(0);
   const [isAssistEpisodeActive, setIsAssistEpisodeActive] = useState(false);
@@ -964,6 +966,8 @@ function App() {
   const standbySampleStartedAtRef = useRef(0);
   const channel3InputRef = useRef<HTMLInputElement | null>(null);
   const handoffTimerRef = useRef<number | null>(null);
+  const liveLaunchTimerRef = useRef<number | null>(null);
+  const liveBannerTimerRef = useRef<number | null>(null);
   const syntheticUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const spokenSyntheticCueTextsRef = useRef<string[]>([]);
   const liveSignalTranscriptKeyRef = useRef('');
@@ -1116,6 +1120,12 @@ function App() {
     return () => {
       if (handoffTimerRef.current !== null) {
         window.clearInterval(handoffTimerRef.current);
+      }
+      if (liveLaunchTimerRef.current !== null) {
+        window.clearInterval(liveLaunchTimerRef.current);
+      }
+      if (liveBannerTimerRef.current !== null) {
+        window.clearTimeout(liveBannerTimerRef.current);
       }
       if (standbySampleStopTimerRef.current !== null) {
         window.clearTimeout(standbySampleStopTimerRef.current);
@@ -2590,7 +2600,12 @@ function App() {
   }
 
   async function startBroadcast() {
+    if (liveLaunchCountdown !== null) {
+      return;
+    }
+
     setBoothError(null);
+    setShowLiveLaunchBanner(false);
 
     if (!loadedClipUrl) {
       setBoothError('Load a clip before starting the booth.');
@@ -2615,6 +2630,31 @@ function App() {
         return;
       }
     }
+
+    setLiveLaunchCountdown(3);
+    liveLaunchTimerRef.current = window.setInterval(() => {
+      setLiveLaunchCountdown((current) => {
+        if (current === null) {
+          return null;
+        }
+
+        if (current <= 1) {
+          if (liveLaunchTimerRef.current !== null) {
+            window.clearInterval(liveLaunchTimerRef.current);
+            liveLaunchTimerRef.current = null;
+          }
+
+          void beginBroadcastLive();
+          return null;
+        }
+
+        return current - 1;
+      });
+    }, 1000);
+  }
+
+  async function beginBroadcastLive() {
+    setShowLiveLaunchBanner(false);
 
     if (!activeBoothSessionId) {
       try {
@@ -2644,6 +2684,15 @@ function App() {
     if (!isMicListening && isMicSupported) {
       startMicrophone();
     }
+
+    setShowLiveLaunchBanner(true);
+    if (liveBannerTimerRef.current !== null) {
+      window.clearTimeout(liveBannerTimerRef.current);
+    }
+    liveBannerTimerRef.current = window.setTimeout(() => {
+      setShowLiveLaunchBanner(false);
+      liveBannerTimerRef.current = null;
+    }, 1500);
   }
 
   async function stopBroadcast() {
@@ -3196,9 +3245,13 @@ function App() {
     ? 'Saving session...'
     : isBroadcastLive
       ? 'End live session'
-      : 'Go live';
+      : liveLaunchCountdown !== null
+        ? 'Going live'
+        : 'Go live';
   const primaryActionDisabled =
-    isFinalizingSession || (!isBroadcastLive && (!isBroadcastReady || isUpdatingControls || !isSystemReady || isUploadingContext));
+    isFinalizingSession ||
+    liveLaunchCountdown !== null ||
+    (!isBroadcastLive && (!isBroadcastReady || isUpdatingControls || !isSystemReady || isUploadingContext));
   const hasStartedMonitoring = hasStartedBroadcast;
   const activeAssistSupportCopy = isAssistWeaning
     ? 'Confidence is returning. AndOne is backing off.'
@@ -3261,6 +3314,8 @@ function App() {
   const overviewInputWidth = hasStartedMonitoring
     ? `${Math.max(boothSignal.audioLevel * 100, 3)}%`
     : '0%';
+  const liveLaunchOverlayLabel =
+    liveLaunchCountdown !== null ? String(liveLaunchCountdown) : showLiveLaunchBanner ? "You're live" : null;
   const activeSessionContextCount =
     sessionAutoArtifacts.length + sessionGlobalContextDocs.length + sessionContextEntries.length;
   const stageContextOverlayLabel =
@@ -4102,26 +4157,41 @@ function App() {
               <div className="stage-primary-bar">
                 <button
                   type="button"
-                  className={`stage-primary-button ${isBroadcastLive ? 'stage-primary-button--live' : ''}`}
+                  className={`stage-primary-button ${
+                    isBroadcastLive || liveLaunchCountdown !== null ? 'stage-primary-button--live' : ''
+                  }`}
                   disabled={primaryActionDisabled}
                   onClick={() => void (isBroadcastLive ? stopBroadcast() : startBroadcast())}
                 >
-                  {primaryActionLabel}
+                  <span className="stage-primary-button__dot" aria-hidden="true" />
+                  <span>{primaryActionLabel}</span>
                 </button>
                 <p className="stage-primary-copy">
                   {isFinalizingSession
                     ? 'Saving the session and building the analysis.'
                     : loadedClipUrl
-                      ? isBroadcastLive
-                        ? 'The desk is live. AndOne stays silent while you’re in rhythm, only surfacing cues when it senses hesitation.'
-                        : !isSystemReady || isUploadingContext
-                          ? 'The feed is loaded. AndOne is still arming the backend or context before the session can start.'
-                          : 'The feed is loaded and muted. Go live when you are ready.'
+                      ? liveLaunchCountdown !== null
+                        ? 'Stand by. The desk is counting you in before the live booth opens.'
+                        : isBroadcastLive
+                          ? 'The desk is live. AndOne stays silent while you’re in rhythm, only surfacing cues when it senses hesitation.'
+                          : !isSystemReady || isUploadingContext
+                            ? 'The feed is loaded. AndOne is still linking the backend or session context before the session can start.'
+                            : 'The feed is loaded and muted. Go live when you are ready.'
                       : 'Pick a preset above or add an input to Channel 3.'}
                 </p>
               </div>
 
               <div className={`replay-stage ${loadedClipUrl ? 'replay-stage--video' : ''}`}>
+                {liveLaunchOverlayLabel ? (
+                  <div
+                    className={`stage-launch-overlay ${
+                      liveLaunchCountdown !== null ? 'stage-launch-overlay--countdown' : 'stage-launch-overlay--live'
+                    }`}
+                    aria-live="polite"
+                  >
+                    <span>{liveLaunchOverlayLabel}</span>
+                  </div>
+                ) : null}
                 {loadedClipUrl ? (
                   <video
                     ref={videoRef}
