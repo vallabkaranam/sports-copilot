@@ -3759,6 +3759,20 @@ function App() {
         </div>
 
         <nav className="header-actions">
+          {appRoute === 'live' ? (
+            <div className="desk-status-strip" aria-label="Desk readiness">
+              {readinessChecks.map((check) => (
+                <div
+                  key={check.label}
+                  className={`desk-status-item ${check.done ? 'desk-status-item--done' : ''}`}
+                  title={check.detail}
+                >
+                  <span className={`readiness-dot ${check.done ? 'readiness-dot--done' : ''}`} />
+                  <span>{check.label}</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
           <div className="view-switcher" role="tablist" aria-label="App navigation">
             <button
               type="button"
@@ -4037,19 +4051,6 @@ function App() {
                   <span className="panel-tag">
                     {activeAgentNames.length > 0 ? `${activeAgentNames.length} active` : 'Quiet'}
                   </span>
-                </div>
-
-                <div className="rail-status-strip" aria-label="Booth readiness">
-                  {readinessChecks.map((check) => (
-                    <div
-                      key={check.label}
-                      className={`rail-status-chip ${check.done ? 'rail-status-chip--done' : ''}`}
-                      title={check.detail}
-                    >
-                      <span className={`readiness-dot ${check.done ? 'readiness-dot--done' : ''}`} />
-                      <strong>{check.label}</strong>
-                    </div>
-                  ))}
                 </div>
 
                 <article className={`booth-card booth-card--compact booth-card--${coachingTone.tone} live-card live-overview-card`}>
