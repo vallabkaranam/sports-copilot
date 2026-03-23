@@ -3062,7 +3062,7 @@ function App() {
         : 'Feed and microphone are ready. The Sidekick starts once you begin calling the action.';
   const overviewCopy = hasStartedMonitoring
     ? railSystemNote
-    : 'The sidekick will watch hesitation signals, live transcript flow, and confidence recovery once the session begins.';
+    : 'AndOne stays silent while you’re in rhythm, surfaces a prompt when it senses hesitation, then fades once you’re back in flow.';
   const overviewReason = hasStartedMonitoring
     ? visibleReasons[0] ?? confidenceReason
     : '';
