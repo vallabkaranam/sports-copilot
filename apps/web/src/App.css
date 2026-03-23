@@ -335,7 +335,7 @@
 }
 
 .main-grid--reviews {
-  grid-template-columns: minmax(300px, 340px) minmax(0, 1fr);
+  grid-template-columns: minmax(360px, 430px) minmax(0, 1fr);
 }
 
 .main-grid--live {
@@ -1543,8 +1543,9 @@
 .signal-indicator strong {
   color: var(--copy-strong);
   font-family: 'Sora', 'Avenir Next', sans-serif;
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   font-weight: 600;
+  line-height: 1.25;
 }
 
 .signal-indicator--active {
@@ -1943,10 +1944,8 @@
   gap: 14px;
 }
 
-.live-overview-signals {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.signal-meta--meters {
+  margin-top: 0;
 }
 
 .details-card--live .details-card__body {
@@ -1977,7 +1976,7 @@
   }
 
   .signal-indicator-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .live-sidebar-grid {
@@ -2081,8 +2080,8 @@
 
 .review-workspace {
   display: grid;
-  grid-template-columns: minmax(280px, 0.78fr) minmax(0, 1.22fr);
-  gap: 18px;
+  grid-template-columns: minmax(360px, 0.92fr) minmax(0, 1.08fr);
+  gap: 22px;
   margin-top: 20px;
 }
 
@@ -2123,7 +2122,7 @@
 
 .review-metric-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -2221,6 +2220,7 @@
   display: grid;
   align-content: start;
   gap: 18px;
+  padding-right: 18px;
 }
 
 .analyze-summary {
@@ -2263,17 +2263,17 @@
 }
 
 .analyze-session-card__metrics {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
 .analyze-session-card__metrics span {
   display: inline-flex;
   align-items: center;
-  min-height: 32px;
+  min-height: 38px;
   padding: 6px 10px;
-  border-radius: 999px;
+  border-radius: 12px;
   border: 1px solid rgba(31, 42, 51, 0.08);
   background: rgba(249, 245, 239, 0.96);
   color: var(--copy-strong);
@@ -2513,6 +2513,10 @@
   .setup-actions,
   .review-workspace,
   .review-metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .analyze-session-card__metrics {
     grid-template-columns: 1fr;
   }
 

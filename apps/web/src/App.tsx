@@ -2717,7 +2717,39 @@ function App() {
     boothSignal.unfinishedPhrase ? 'unfinished' : null,
     boothSignal.wakePhraseDetected ? 'line' : null,
   ].filter(Boolean) as string[];
-  const monitoredSignalLabels = ['Pause', 'Fillers', 'Repeat start', 'Wake phrase', 'Confidence'];
+  const recentFillerWords = [...new Set(boothSignal.fillerWords.map((word) => word.toLowerCase()))].slice(-2);
+  const monitoredSignals = [
+    {
+      label: 'Pause',
+      detail: boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS ? formatDurationMs(Math.round(boothSignal.pauseDurationMs)) : '--',
+      active: boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS,
+    },
+    {
+      label: 'Fillers',
+      detail:
+        boothSignal.fillerCount > 0
+          ? recentFillerWords.length > 0
+            ? recentFillerWords.join(' · ')
+            : `${boothSignal.fillerCount} hit${boothSignal.fillerCount === 1 ? '' : 's'}`
+          : '--',
+      active: boothSignal.fillerCount > 0,
+    },
+    {
+      label: 'Repeat start',
+      detail: boothSignal.repeatedOpeningCount > 0 ? `${boothSignal.repeatedOpeningCount}x` : '--',
+      active: boothSignal.repeatedOpeningCount > 0,
+    },
+    {
+      label: 'Unfinished line',
+      detail: boothSignal.unfinishedPhrase ? 'Open phrase' : '--',
+      active: boothSignal.unfinishedPhrase,
+    },
+    {
+      label: 'Wake phrase',
+      detail: boothSignal.wakePhraseDetected ? 'Line heard' : '--',
+      active: boothSignal.wakePhraseDetected,
+    },
+  ];
   const standbySetupSummary =
     standbyVoiceStatus === 'ready'
       ? `A ${Math.round(standbyVoiceSampleDurationMs / 1000)}s standby sample is armed for takeover.`
@@ -2806,6 +2838,10 @@ function App() {
       : 'Silent';
   const overviewBadgeLabel = hasStartedMonitoring ? boothRhythmPercent : '--';
   const overviewRhythmWidth = hasStartedMonitoring ? boothRhythmPercent : '0%';
+  const overviewHesitationLabel = hasStartedMonitoring ? formatPercent(effectiveHesitationScore) : '--';
+  const overviewRecoveryLabel = hasStartedMonitoring ? formatPercent(effectiveRecoveryScore) : '--';
+  const overviewHesitationWidth = hasStartedMonitoring ? `${Math.round(effectiveHesitationScore * 100)}%` : '0%';
+  const overviewRecoveryWidth = hasStartedMonitoring ? `${Math.round(effectiveRecoveryScore * 100)}%` : '0%';
   const overviewInputLabel = hasStartedMonitoring ? assistStateLabel : '--';
   const overviewInputWidth = hasStartedMonitoring
     ? `${Math.max(boothSignal.audioLevel * 100, 3)}%`
@@ -3789,12 +3825,33 @@ function App() {
 
                     <p className="field-copy field-copy--tight">{overviewCopy}</p>
 
-                    <div className="live-overview-signals" aria-label="Signals tracked">
-                      {monitoredSignalLabels.map((label) => (
-                        <span className="setup-chip" key={label}>
-                          {label}
-                        </span>
+                    <div className="signal-indicator-row" aria-label="Hesitation triggers">
+                      {monitoredSignals.map((signal) => (
+                        <div
+                          className={`signal-indicator ${
+                            signal.active
+                              ? coachingTone.tone === 'step-in'
+                                ? 'signal-indicator--step-in signal-indicator--active'
+                                : 'signal-indicator--supporting signal-indicator--active'
+                              : 'signal-indicator--steady'
+                          }`}
+                          key={signal.label}
+                        >
+                          <span>{signal.label}</span>
+                          <strong>{signal.detail}</strong>
+                        </div>
                       ))}
+                    </div>
+
+                    <div className="signal-meta" aria-label="Booth guidance scores">
+                      <div className="signal-meta__item">
+                        <span>Hesitation</span>
+                        <strong>{overviewHesitationLabel}</strong>
+                      </div>
+                      <div className="signal-meta__item">
+                        <span>Recovery</span>
+                        <strong>{overviewRecoveryLabel}</strong>
+                      </div>
                     </div>
 
                     <div className="metric-card">
@@ -3804,6 +3861,27 @@ function App() {
                       </div>
                       <div className={`meter-track meter-track--${coachingTone.tone}`}>
                         <span style={{ width: overviewRhythmWidth }} />
+                      </div>
+                    </div>
+
+                    <div className="signal-meta signal-meta--meters" aria-label="Hesitation and recovery meters">
+                      <div className="metric-card">
+                        <div className="meter-label-row">
+                          <span>Hesitation</span>
+                          <strong>{overviewHesitationLabel}</strong>
+                        </div>
+                        <div className="meter-track meter-track--step-in">
+                          <span style={{ width: overviewHesitationWidth }} />
+                        </div>
+                      </div>
+                      <div className="metric-card">
+                        <div className="meter-label-row">
+                          <span>Recovery</span>
+                          <strong>{overviewRecoveryLabel}</strong>
+                        </div>
+                        <div className="meter-track meter-track--steady">
+                          <span style={{ width: overviewRecoveryWidth }} />
+                        </div>
                       </div>
                     </div>
 
