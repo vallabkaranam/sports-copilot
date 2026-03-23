@@ -3581,6 +3581,54 @@ function App() {
                   ))}
                 </div>
 
+                <article className={`booth-card booth-card--compact booth-card--${coachingTone.tone} live-card live-overview-card`}>
+                    <div className="booth-card__header">
+                      <div>
+                        <p className="control-label">System note</p>
+                        <strong>{hasStartedMonitoring ? (isAssistWeaning ? 'Sidekick is receding' : assistStateLabel) : 'Waiting to go live'}</strong>
+                      </div>
+                      {hasStartedMonitoring ? <span className="metric-badge">{boothRhythmPercent}</span> : null}
+                    </div>
+
+                    <p className="field-copy field-copy--tight">{overviewCopy}</p>
+
+                    {contextDocuments.length > 0 ? (
+                      <p className="field-copy field-copy--tight">
+                        {contextDocuments.length} context {contextDocuments.length === 1 ? 'doc' : 'docs'} loaded from Sidekick Console.
+                      </p>
+                    ) : null}
+
+                    {hasStartedMonitoring ? (
+                      <>
+                        <div className="metric-card">
+                          <div className="meter-label-row">
+                            <span>Broadcast Rhythm</span>
+                            <strong>{boothRhythmPercent}</strong>
+                          </div>
+                          <div className={`meter-track meter-track--${coachingTone.tone}`}>
+                            <span style={{ width: boothRhythmPercent }} />
+                          </div>
+                        </div>
+
+                        <div className="level-meter-block">
+                          <div className="meter-label-row">
+                            <span>Input level</span>
+                            <strong>{assistStateLabel}</strong>
+                          </div>
+                          <div className="level-meter" aria-label="Microphone level">
+                            <span style={{ width: `${Math.max(boothSignal.audioLevel * 100, 3)}%` }} />
+                          </div>
+                        </div>
+
+                        <div className="reason-list">
+                          <p>{overviewReason}</p>
+                        </div>
+                      </>
+                    ) : null}
+                  </article>
+
+                {boothError ? <p className="inline-warning">{boothError}</p> : null}
+
                 <details className="booth-card booth-card--compact details-card">
                   <summary className="details-card__summary">
                     <div>
@@ -3651,54 +3699,6 @@ function App() {
                     </div>
                   </div>
                 </details>
-
-                {boothError ? <p className="inline-warning">{boothError}</p> : null}
-
-                <article className={`booth-card booth-card--compact booth-card--${coachingTone.tone} live-card live-overview-card`}>
-                    <div className="booth-card__header">
-                      <div>
-                        <p className="control-label">System note</p>
-                        <strong>{hasStartedMonitoring ? (isAssistWeaning ? 'Sidekick is receding' : assistStateLabel) : 'Waiting to go live'}</strong>
-                      </div>
-                      {hasStartedMonitoring ? <span className="metric-badge">{boothRhythmPercent}</span> : null}
-                    </div>
-
-                    <p className="field-copy field-copy--tight">{overviewCopy}</p>
-
-                    {contextDocuments.length > 0 ? (
-                      <p className="field-copy field-copy--tight">
-                        {contextDocuments.length} context {contextDocuments.length === 1 ? 'doc' : 'docs'} loaded from Sidekick Console.
-                      </p>
-                    ) : null}
-
-                    {hasStartedMonitoring ? (
-                      <>
-                        <div className="metric-card">
-                          <div className="meter-label-row">
-                            <span>Broadcast Rhythm</span>
-                            <strong>{boothRhythmPercent}</strong>
-                          </div>
-                          <div className={`meter-track meter-track--${coachingTone.tone}`}>
-                            <span style={{ width: boothRhythmPercent }} />
-                          </div>
-                        </div>
-
-                        <div className="level-meter-block">
-                          <div className="meter-label-row">
-                            <span>Input level</span>
-                            <strong>{assistStateLabel}</strong>
-                          </div>
-                          <div className="level-meter" aria-label="Microphone level">
-                            <span style={{ width: `${Math.max(boothSignal.audioLevel * 100, 3)}%` }} />
-                          </div>
-                        </div>
-
-                        <div className="reason-list">
-                          <p>{overviewReason}</p>
-                        </div>
-                      </>
-                    ) : null}
-                  </article>
               </section>
             </aside>
           </div>
