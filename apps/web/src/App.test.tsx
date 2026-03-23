@@ -972,8 +972,8 @@ describe('App dashboard', () => {
   it('keeps takeover on the live desk and moves sample setup to Sidekick Console', async () => {
     await renderApp();
 
-    expect(container.textContent).toContain('Let AndOne take over');
-    expect(container.textContent).toContain('Takeover off');
+    expect(container.textContent).toContain('Hand off to AndOne');
+    expect(container.textContent).toContain('Handoff off');
     expect(container.textContent).toContain('Open Sidekick Console');
     expect(container.textContent).not.toContain('Record sample');
   });
@@ -992,7 +992,7 @@ describe('App dashboard', () => {
     });
 
     const recordButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Capture sample'),
+      button.textContent?.includes('Capture voice'),
     );
 
     await act(async () => {
@@ -1003,7 +1003,7 @@ describe('App dashboard', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('Takeover ready');
+    expect(container.textContent).toContain('Handoff ready');
 
     const liveDeskButton = [...container.querySelectorAll('button')].find((button) =>
       button.textContent?.includes('Live Desk'),
@@ -1026,7 +1026,7 @@ describe('App dashboard', () => {
     });
 
     const subMeInButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Let AndOne take over'),
+      button.textContent?.includes('Hand off to AndOne'),
     );
 
     await act(async () => {
@@ -1036,7 +1036,7 @@ describe('App dashboard', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('AndOne is covering the booth.');
+    expect(container.textContent).toContain('AndOne has the call.');
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(4_000);
@@ -1047,7 +1047,7 @@ describe('App dashboard', () => {
     expect(speechSynthesisSpeakMock).toHaveBeenCalled();
 
     const subMeBackInButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes("I'm back on mic"),
+      button.textContent?.includes('Take the call back'),
     );
 
     await act(async () => {

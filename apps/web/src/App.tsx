@@ -147,15 +147,15 @@ function getAppRouteFromLocation(): AppRoute {
 function formatStandbyVoiceStatus(status: StandbyVoiceStatus) {
   switch (status) {
     case 'recording':
-      return 'Recording sample';
+      return 'Recording voice';
     case 'processing':
-      return 'Processing sample';
+      return 'Preparing handoff';
     case 'ready':
-      return 'Takeover ready';
+      return 'Handoff ready';
     case 'failed':
-      return 'Takeover unavailable';
+      return 'Handoff unavailable';
     default:
-      return 'Takeover off';
+      return 'Handoff off';
   }
 }
 
@@ -2111,14 +2111,14 @@ function App() {
   async function recordStandbyVoiceSample() {
     if (!supportsAudioMonitoring()) {
       setStandbyVoiceStatus('failed');
-      setBoothError('This browser cannot capture a standby voice sample.');
+      setBoothError('This browser cannot capture a handoff voice sample.');
       return;
     }
 
     const mimeType = getSupportedRecorderMimeType();
     if (typeof window === 'undefined' || typeof window.MediaRecorder === 'undefined' || !mimeType) {
       setStandbyVoiceStatus('failed');
-      setBoothError('This browser cannot record a standby voice sample.');
+      setBoothError('This browser cannot record a handoff voice sample.');
       return;
     }
 
@@ -2166,7 +2166,7 @@ function App() {
               sampleDurationMs: 0,
               readyAt: null,
             });
-            setBoothError('Standby voice sample was too short. Record at least four seconds of clean speech.');
+            setBoothError('The handoff voice sample was too short. Record at least four seconds of clean speech.');
             return;
           }
 
@@ -2191,7 +2191,7 @@ function App() {
     } catch (_error) {
       setStandbyVoiceStatus('failed');
       setStandbyVoiceEnabled(false);
-      setBoothError('Microphone access is required to prepare the standby voice.');
+      setBoothError('Microphone access is required to prepare the handoff voice.');
     }
   }
 
@@ -2221,7 +2221,7 @@ function App() {
       if (!isMicListening && isMicSupported) {
         startMicrophone();
       }
-      setBoothError('Browser speech output failed during takeover, so control returned to the live mic.');
+      setBoothError('Browser speech output failed during the handoff, so the call returned to your live mic.');
     };
 
     cancelSyntheticSpeech();
@@ -2257,13 +2257,13 @@ function App() {
         return;
       }
       setHandoffState('preparing_sub_in');
-      setHandoffNote('AndOne takes over in');
+      setHandoffNote('AndOne takes the call in');
     } else {
       if (!hasStartedBroadcast || activeDeliverySource !== 'synthetic-standby') {
         return;
       }
       setHandoffState('preparing_sub_back');
-      setHandoffNote('You return to air in');
+      setHandoffNote('You take the call back in');
     }
 
     let remaining = HANDOFF_COUNTDOWN_START;
@@ -2282,11 +2282,11 @@ function App() {
           stopMicrophone();
           setActiveDeliverySource('synthetic-standby');
           setHandoffState('subbed_in');
-          setHandoffNote('AndOne is covering the booth.');
+          setHandoffNote('AndOne has the call.');
           setSubbedCue(null);
           setSubbedCueRequestedAt(0);
           spokenSyntheticCueTextsRef.current = [];
-          speakStandbyNarration('AndOne is on air. I have the call while you reset.');
+          speakStandbyNarration('AndOne has the call. I will cover this stretch while you reset.');
         } else {
           setHandoffState('restoring_live');
           cancelSyntheticSpeech();
@@ -2697,7 +2697,7 @@ function App() {
       ? 'Browser speech unavailable'
       : formatStandbyVoiceStatus(standbyVoiceStatus);
   const activeDeliverySourceLabel =
-    activeDeliverySource === 'synthetic-standby' ? 'AndOne is on air' : 'Commentator is on mic';
+    activeDeliverySource === 'synthetic-standby' ? 'AndOne has the call' : 'You have the call';
   const isBroadcastLive =
     hasStartedBroadcast && (controls.playbackStatus === 'playing' || isMicListening);
   const selectedProgramSlot = PROGRAM_FEED_SLOTS.find((slot) => slot.id === selectedProgramFeedId) ?? null;
@@ -2752,14 +2752,14 @@ function App() {
   ];
   const standbySetupSummary =
     standbyVoiceStatus === 'ready'
-      ? `A ${Math.round(standbyVoiceSampleDurationMs / 1000)}s standby sample is armed for takeover.`
+      ? `A ${Math.round(standbyVoiceSampleDurationMs / 1000)}s handoff voice sample is ready.`
       : standbyVoiceStatus === 'recording'
-        ? 'Capturing your standby voice sample now.'
+        ? 'Capturing your handoff voice sample now.'
         : standbyVoiceStatus === 'processing'
-          ? 'Processing the standby voice sample for takeover.'
+          ? 'Preparing the handoff voice from your sample.'
           : standbyVoiceStatus === 'failed'
-            ? 'The last standby sample did not complete cleanly. Capture a fresh one in Sidekick Console.'
-            : 'Prepare a standby voice sample in Sidekick Console before using takeover on the live desk.';
+            ? 'The last handoff voice sample did not complete cleanly. Capture a fresh one in Sidekick Console.'
+            : 'Prepare a handoff voice sample in Sidekick Console before using booth handoff on the live desk.';
   const liveActivityHeadline =
     activeAgentNames.length > 0
       ? `${activeAgentNames.length} live stream${activeAgentNames.length === 1 ? '' : 's'} are shaping this beat`
@@ -2851,10 +2851,10 @@ function App() {
       ? `${contextDocuments.length} context ${contextDocuments.length === 1 ? 'doc' : 'docs'} armed`
       : null;
   const stageDeliveryOverlayLabel =
-    activeDeliverySource === 'synthetic-standby' ? 'AndOne on air' : null;
+    activeDeliverySource === 'synthetic-standby' ? 'AndOne has the call' : null;
   const standbyToggleDirection = activeDeliverySource === 'synthetic-standby' ? 'sub_back' : 'sub_in';
   const standbyToggleLabel =
-    activeDeliverySource === 'synthetic-standby' ? "I'm back on mic" : 'Let AndOne take over';
+    activeDeliverySource === 'synthetic-standby' ? 'Take the call back' : 'Hand off to AndOne';
   const standbyToggleDisabled =
     activeDeliverySource === 'synthetic-standby'
       ? !isBroadcastLive
@@ -3905,7 +3905,7 @@ function App() {
                 <details className="booth-card booth-card--compact details-card">
                   <summary className="details-card__summary">
                     <div>
-                      <p className="control-label">Standby takeover</p>
+                      <p className="control-label">Booth handoff</p>
                       <strong>{activeDeliverySourceLabel}</strong>
                     </div>
                     <span
@@ -3921,7 +3921,7 @@ function App() {
                     <div className="handoff-strip">
                       <div className="handoff-strip__meta">
                         <span>On Air</span>
-                        <strong>{activeDeliverySource === 'live-mic' ? 'Commentator' : 'AndOne'}</strong>
+                          <strong>{activeDeliverySource === 'live-mic' ? 'You' : 'AndOne'}</strong>
                       </div>
                       <div className="handoff-strip__meta">
                         <span>Transition</span>
@@ -4390,7 +4390,7 @@ function App() {
             <div className="setup-card standby-voice-card">
               <div className="setup-card__header">
                 <div>
-                  <p className="control-label">Standby voice</p>
+                  <p className="control-label">Handoff voice</p>
                   <strong>{standbyVoiceStatusLabel}</strong>
                 </div>
                 <span className={`panel-tag ${isStandbyVoiceAvailable ? 'panel-tag--success' : ''}`}>
@@ -4405,7 +4405,7 @@ function App() {
                   disabled={standbyVoiceStatus === 'recording' || standbyVoiceStatus === 'processing'}
                   onClick={() => void recordStandbyVoiceSample()}
                 >
-                  {standbyVoiceStatus === 'ready' ? 'Capture again' : 'Capture sample'}
+                  {standbyVoiceStatus === 'ready' ? 'Capture again' : 'Capture voice'}
                 </button>
                 {standbyVoiceEnabled ? (
                   <button
@@ -4414,7 +4414,7 @@ function App() {
                     disabled={standbyVoiceStatus === 'recording' || standbyVoiceStatus === 'processing'}
                     onClick={disableStandbyVoice}
                   >
-                    Clear sample
+                    Clear voice
                   </button>
                 ) : null}
               </div>
