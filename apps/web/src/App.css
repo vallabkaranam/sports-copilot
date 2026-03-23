@@ -1867,6 +1867,12 @@
   gap: 12px;
 }
 
+.live-overview-signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .details-card--live .details-card__body {
   max-height: 260px;
   overflow: auto;

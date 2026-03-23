@@ -2606,6 +2606,7 @@ function App() {
     boothSignal.unfinishedPhrase ? 'unfinished' : null,
     boothSignal.wakePhraseDetected ? 'line' : null,
   ].filter(Boolean) as string[];
+  const monitoredSignalLabels = ['Pause', 'Fillers', 'Repeat start', 'Wake phrase', 'Confidence'];
   const primaryActionLabel = isFinalizingSession
     ? 'Saving session...'
     : isBroadcastLive
@@ -2655,10 +2656,10 @@ function App() {
         : 'Feed and microphone are ready. The Sidekick starts once you begin calling the action.';
   const overviewCopy = hasStartedMonitoring
     ? railSystemNote
-    : 'Go live to start hesitation sensing, transcript monitoring, and grounded cueing.';
+    : 'The sidekick will watch hesitation signals, live transcript flow, and confidence recovery once the session begins.';
   const overviewReason = hasStartedMonitoring
     ? visibleReasons[0] ?? confidenceReason
-    : 'No booth signal is being judged yet.';
+    : 'No booth signal is being judged yet. Values stay empty until you start the live session.';
   const assistStateLabel = shouldSurfaceAssist
     ? isAssistWeaning
       ? 'Receding'
@@ -2666,6 +2667,12 @@ function App() {
     : coachingTone.tone === 'steady'
       ? 'Watching'
       : 'Silent';
+  const overviewBadgeLabel = hasStartedMonitoring ? boothRhythmPercent : '--';
+  const overviewRhythmWidth = hasStartedMonitoring ? boothRhythmPercent : '0%';
+  const overviewInputLabel = hasStartedMonitoring ? assistStateLabel : '--';
+  const overviewInputWidth = hasStartedMonitoring
+    ? `${Math.max(boothSignal.audioLevel * 100, 3)}%`
+    : '0%';
   const postSessionReview = derivePostSessionReview(latestCompletedSession);
   const completedReviewSessions = useMemo(
     () =>
@@ -3585,12 +3592,20 @@ function App() {
                     <div className="booth-card__header">
                       <div>
                         <p className="control-label">System note</p>
-                        <strong>{hasStartedMonitoring ? (isAssistWeaning ? 'Sidekick is receding' : assistStateLabel) : 'Waiting to go live'}</strong>
+                        <strong>{hasStartedMonitoring ? (isAssistWeaning ? 'Sidekick is receding' : assistStateLabel) : 'Monitoring preview'}</strong>
                       </div>
-                      {hasStartedMonitoring ? <span className="metric-badge">{boothRhythmPercent}</span> : null}
+                      <span className="metric-badge">{overviewBadgeLabel}</span>
                     </div>
 
                     <p className="field-copy field-copy--tight">{overviewCopy}</p>
+
+                    <div className="live-overview-signals" aria-label="Signals tracked">
+                      {monitoredSignalLabels.map((label) => (
+                        <span className="setup-chip" key={label}>
+                          {label}
+                        </span>
+                      ))}
+                    </div>
 
                     {contextDocuments.length > 0 ? (
                       <p className="field-copy field-copy--tight">
@@ -3598,33 +3613,29 @@ function App() {
                       </p>
                     ) : null}
 
-                    {hasStartedMonitoring ? (
-                      <>
-                        <div className="metric-card">
-                          <div className="meter-label-row">
-                            <span>Broadcast Rhythm</span>
-                            <strong>{boothRhythmPercent}</strong>
-                          </div>
-                          <div className={`meter-track meter-track--${coachingTone.tone}`}>
-                            <span style={{ width: boothRhythmPercent }} />
-                          </div>
-                        </div>
+                    <div className="metric-card">
+                      <div className="meter-label-row">
+                        <span>Broadcast Rhythm</span>
+                        <strong>{overviewBadgeLabel}</strong>
+                      </div>
+                      <div className={`meter-track meter-track--${coachingTone.tone}`}>
+                        <span style={{ width: overviewRhythmWidth }} />
+                      </div>
+                    </div>
 
-                        <div className="level-meter-block">
-                          <div className="meter-label-row">
-                            <span>Input level</span>
-                            <strong>{assistStateLabel}</strong>
-                          </div>
-                          <div className="level-meter" aria-label="Microphone level">
-                            <span style={{ width: `${Math.max(boothSignal.audioLevel * 100, 3)}%` }} />
-                          </div>
-                        </div>
+                    <div className="level-meter-block">
+                      <div className="meter-label-row">
+                        <span>Input level</span>
+                        <strong>{overviewInputLabel}</strong>
+                      </div>
+                      <div className="level-meter" aria-label="Microphone level">
+                        <span style={{ width: overviewInputWidth }} />
+                      </div>
+                    </div>
 
-                        <div className="reason-list">
-                          <p>{overviewReason}</p>
-                        </div>
-                      </>
-                    ) : null}
+                    <div className="reason-list">
+                      <p>{overviewReason}</p>
+                    </div>
                   </article>
 
                 {boothError ? <p className="inline-warning">{boothError}</p> : null}
