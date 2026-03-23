@@ -2158,13 +2158,13 @@ function App() {
         return;
       }
       setHandoffState('preparing_sub_in');
-      setHandoffNote('Standby voice takes over in');
+      setHandoffNote('AndOne takes over in');
     } else {
       if (!hasStartedBroadcast || activeDeliverySource !== 'synthetic-standby') {
         return;
       }
       setHandoffState('preparing_sub_back');
-      setHandoffNote('Returning you to air in');
+      setHandoffNote('You return to air in');
     }
 
     let remaining = HANDOFF_COUNTDOWN_START;
@@ -2183,7 +2183,7 @@ function App() {
           stopMicrophone();
           setActiveDeliverySource('synthetic-standby');
           setHandoffState('subbed_in');
-          setHandoffNote('Standby voice is on air.');
+          setHandoffNote('AndOne is covering the booth.');
           setSubbedCue(null);
           setSubbedCueRequestedAt(0);
           spokenSyntheticCueTextsRef.current = [];
@@ -2586,7 +2586,7 @@ function App() {
       ? 'Browser voice unavailable'
       : formatStandbyVoiceStatus(standbyVoiceStatus);
   const activeDeliverySourceLabel =
-    activeDeliverySource === 'synthetic-standby' ? 'Standby voice' : 'Live mic';
+    activeDeliverySource === 'synthetic-standby' ? 'AndOne is on air' : 'Commentator is on mic';
   const isBroadcastLive =
     hasStartedBroadcast && (controls.playbackStatus === 'playing' || isMicListening);
   const selectedProgramSlot = PROGRAM_FEED_SLOTS.find((slot) => slot.id === selectedProgramFeedId) ?? null;
@@ -2673,6 +2673,17 @@ function App() {
   const overviewInputWidth = hasStartedMonitoring
     ? `${Math.max(boothSignal.audioLevel * 100, 3)}%`
     : '0%';
+  const stageContextOverlayLabel =
+    contextDocuments.length > 0
+      ? `${contextDocuments.length} context ${contextDocuments.length === 1 ? 'doc' : 'docs'} armed`
+      : null;
+  const standbyToggleDirection = activeDeliverySource === 'synthetic-standby' ? 'sub_back' : 'sub_in';
+  const standbyToggleLabel =
+    activeDeliverySource === 'synthetic-standby' ? "I'm back on mic" : 'Let AndOne take over';
+  const standbyToggleDisabled =
+    activeDeliverySource === 'synthetic-standby'
+      ? !isBroadcastLive
+      : !isBroadcastLive || standbyVoiceStatus !== 'ready';
   const postSessionReview = derivePostSessionReview(latestCompletedSession);
   const completedReviewSessions = useMemo(
     () =>
@@ -3509,6 +3520,12 @@ function App() {
                 <div className="replay-stage__overlay" />
 
                 <div className="replay-stage__content">
+                  {stageContextOverlayLabel ? (
+                    <div className="stage-context-chip" aria-label="Context loaded">
+                      {stageContextOverlayLabel}
+                    </div>
+                  ) : null}
+
                   {!loadedClipUrl ? (
                     <div className="replay-copy">
                       <span className="live-chip">Ready for live desk</span>
@@ -3568,7 +3585,7 @@ function App() {
               <section className={`panel control-panel control-panel--${coachingTone.tone} live-sidebar`}>
                 <div className="panel-header panel-header--compact">
                   <div>
-                    <h2>Session monitor</h2>
+                    <h2>Live state</h2>
                   </div>
                   <span className="panel-tag">
                     {activeAgentNames.length > 0 ? `${activeAgentNames.length} active` : 'Quiet'}
@@ -3591,7 +3608,7 @@ function App() {
                 <article className={`booth-card booth-card--compact booth-card--${coachingTone.tone} live-card live-overview-card`}>
                     <div className="booth-card__header">
                       <div>
-                        <p className="control-label">System note</p>
+                        <p className="control-label">Assist engine</p>
                         <strong>{hasStartedMonitoring ? (isAssistWeaning ? 'Sidekick is receding' : assistStateLabel) : 'Monitoring preview'}</strong>
                       </div>
                       <span className="metric-badge">{overviewBadgeLabel}</span>
@@ -3606,12 +3623,6 @@ function App() {
                         </span>
                       ))}
                     </div>
-
-                    {contextDocuments.length > 0 ? (
-                      <p className="field-copy field-copy--tight">
-                        {contextDocuments.length} context {contextDocuments.length === 1 ? 'doc' : 'docs'} loaded from Sidekick Console.
-                      </p>
-                    ) : null}
 
                     <div className="metric-card">
                       <div className="meter-label-row">
@@ -3643,7 +3654,7 @@ function App() {
                 <details className="booth-card booth-card--compact details-card">
                   <summary className="details-card__summary">
                     <div>
-                      <p className="control-label">Standby handoff</p>
+                      <p className="control-label">Standby takeover</p>
                       <strong>{activeDeliverySourceLabel}</strong>
                     </div>
                     <span
@@ -3682,30 +3693,22 @@ function App() {
                     </div>
                     <div className="handoff-strip">
                       <div className="handoff-strip__meta">
-                        <span>Delivery Source</span>
-                        <strong>{activeDeliverySource === 'live-mic' ? 'Live Mic' : 'Synthetic'}</strong>
+                        <span>On Air</span>
+                        <strong>{activeDeliverySource === 'live-mic' ? 'Commentator' : 'AndOne'}</strong>
                       </div>
                       <div className="handoff-strip__meta">
-                        <span>Handoff</span>
+                        <span>Transition</span>
                         <strong>{handoffCountdown ? `${handoffNote} ${handoffCountdown}` : handoffNote ?? 'Ready'}</strong>
                       </div>
                     </div>
-                    <div className="standby-voice-actions standby-voice-actions--split">
+                    <div className="standby-voice-actions">
                       <button
                         type="button"
                         className="ghost-button"
-                        disabled={!isBroadcastLive || activeDeliverySource !== 'live-mic'}
-                        onClick={() => beginHandoff('sub_in')}
+                        disabled={standbyToggleDisabled}
+                        onClick={() => beginHandoff(standbyToggleDirection)}
                       >
-                        Sub Me In
-                      </button>
-                      <button
-                        type="button"
-                        className="ghost-button"
-                        disabled={!isBroadcastLive || activeDeliverySource !== 'synthetic-standby'}
-                        onClick={() => beginHandoff('sub_back')}
-                      >
-                        Sub Me Back
+                        {standbyToggleLabel}
                       </button>
                     </div>
                   </div>
