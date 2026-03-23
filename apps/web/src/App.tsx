@@ -3494,8 +3494,7 @@ function App() {
             <section className="panel replay-panel stage-panel">
               <div className="panel-header panel-header--stage">
                 <div>
-                  <p className="panel-kicker">Live desk</p>
-                  <h2>{feedHeading}</h2>
+                  <h2 className="stage-title">{feedHeading}</h2>
                 </div>
                 <div className="panel-chip-row">
                   <span className="panel-tag">{loadedClipUrl ? 'Feed active' : 'No feed live'}</span>
@@ -3619,8 +3618,7 @@ function App() {
               <section className={`panel control-panel control-panel--${coachingTone.tone} live-sidebar`}>
                 <div className="panel-header panel-header--compact">
                   <div>
-                    <p className="panel-kicker">Live session</p>
-                    <h2>Monitor</h2>
+                    <h2>Session monitor</h2>
                   </div>
                   <span className="panel-tag">
                     {activeAgentNames.length > 0 ? `${activeAgentNames.length} active` : 'Quiet'}
@@ -3640,10 +3638,10 @@ function App() {
                   ))}
                 </div>
 
-                <article className="booth-card booth-card--compact booth-card--steady standby-voice-card">
-                  <div className="booth-card__header">
+                <details className="booth-card booth-card--compact details-card">
+                  <summary className="details-card__summary">
                     <div>
-                      <p className="control-label">Sub Me In</p>
+                      <p className="control-label">Standby handoff</p>
                       <strong>{activeDeliverySourceLabel}</strong>
                     </div>
                     <span
@@ -3653,45 +3651,33 @@ function App() {
                     >
                       {standbyVoiceStatusLabel}
                     </span>
-                  </div>
-
-                  <p className="field-copy field-copy--tight">
-                    {isStandbyVoiceAvailable
-                      ? `A ${Math.round(standbyVoiceSampleDurationMs / 1000)}s voice sample is ready for the standby handoff.`
-                      : 'Capture a short sample first so the standby voice can take over cleanly during a break.'}
-                  </p>
-
-                  <div className="standby-voice-actions">
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      disabled={standbyVoiceStatus === 'recording' || standbyVoiceStatus === 'processing'}
-                      onClick={() => void recordStandbyVoiceSample()}
-                    >
-                      {standbyVoiceStatus === 'ready' ? 'Re-record sample' : 'Record sample'}
-                    </button>
-                    {standbyVoiceEnabled ? (
-                      <button
-                        type="button"
-                        className="text-button"
-                        disabled={standbyVoiceStatus === 'recording' || standbyVoiceStatus === 'processing'}
-                        onClick={disableStandbyVoice}
-                      >
-                        Disable
-                      </button>
-                    ) : null}
-                  </div>
-
-                </article>
-
-                <details className="booth-card booth-card--compact details-card">
-                  <summary className="details-card__summary">
-                    <div>
-                      <p className="control-label">Advanced</p>
-                      <strong>Handoff & Standby</strong>
-                    </div>
                   </summary>
                   <div className="details-card__body">
+                    <p className="field-copy field-copy--tight">
+                      {isStandbyVoiceAvailable
+                        ? `A ${Math.round(standbyVoiceSampleDurationMs / 1000)}s voice sample is ready for the standby handoff.`
+                        : 'Capture a short sample first so the standby voice can take over cleanly during a break.'}
+                    </p>
+                    <div className="standby-voice-actions">
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        disabled={standbyVoiceStatus === 'recording' || standbyVoiceStatus === 'processing'}
+                        onClick={() => void recordStandbyVoiceSample()}
+                      >
+                        {standbyVoiceStatus === 'ready' ? 'Re-record sample' : 'Record sample'}
+                      </button>
+                      {standbyVoiceEnabled ? (
+                        <button
+                          type="button"
+                          className="text-button"
+                          disabled={standbyVoiceStatus === 'recording' || standbyVoiceStatus === 'processing'}
+                          onClick={disableStandbyVoice}
+                        >
+                          Disable
+                        </button>
+                      ) : null}
+                    </div>
                     <div className="handoff-strip">
                       <div className="handoff-strip__meta">
                         <span>Delivery Source</span>
@@ -3725,96 +3711,97 @@ function App() {
 
                 {boothError ? <p className="inline-warning">{boothError}</p> : null}
 
-                <article className={`booth-card booth-card--compact booth-card--${coachingTone.tone}`}>
-                  <div className="booth-card__header">
-                    <div>
-                      <p className="control-label">System note</p>
-                      <strong>{isAssistWeaning ? 'Sidekick is receding' : assistStateLabel}</strong>
-                    </div>
-                  </div>
-
-                  <p className="field-copy field-copy--tight">{railSystemNote}</p>
-
-                  <div className="metric-card">
-                    <div className="meter-label-row">
-                      <span>Broadcast Rhythm</span>
-                      <strong>{boothRhythmPercent}</strong>
-                    </div>
-                    <div className={`meter-track meter-track--${coachingTone.tone}`}>
-                      <span style={{ width: boothRhythmPercent }} />
-                    </div>
-                    <p className="field-copy field-copy--tight">
-                      {effectiveHesitationScore > 0.4 ? 'Sensing significant hesitation.' : confidenceReason}
-                    </p>
-                  </div>
-
-                  <div className="signal-meta">
-                    <div className="signal-meta__item">
-                      <span>Mic activity</span>
-                      <div className="audio-meter" aria-label="Mic activity">
-                        {micBars.map((isActive, index) => (
-                          <span
-                            key={index}
-                            className={isActive ? 'audio-meter__bar audio-meter__bar--active' : 'audio-meter__bar'}
-                          />
-                        ))}
+                <div className="live-sidebar-grid">
+                  <article className={`booth-card booth-card--compact booth-card--${coachingTone.tone} live-card live-card--system`}>
+                    <div className="booth-card__header">
+                      <div>
+                        <p className="control-label">System note</p>
+                        <strong>{isAssistWeaning ? 'Sidekick is receding' : assistStateLabel}</strong>
                       </div>
                     </div>
-                    <div className="signal-meta__item">
-                      <span>Sidekick state</span>
-                      <strong>{assistStateLabel}</strong>
-                    </div>
-                  </div>
 
-                  <div className="signal-indicator-row" aria-label="Live booth indicators">
-                    {boothSignalIndicators.map((indicator) => (
-                      <div
-                        key={indicator.label}
-                        className={`signal-indicator signal-indicator--${indicator.emphasis} ${
-                          indicator.active ? 'signal-indicator--active' : ''
-                        }`}
-                      >
-                        <span>{indicator.label}</span>
-                        <strong>{indicator.value}</strong>
+                    <p className="field-copy field-copy--tight">{railSystemNote}</p>
+
+                    <div className="metric-card">
+                      <div className="meter-label-row">
+                        <span>Broadcast Rhythm</span>
+                        <strong>{boothRhythmPercent}</strong>
                       </div>
-                    ))}
-                  </div>
-
-                  <div className="reason-list">
-                    {visibleReasons.slice(0, 1).map((reason) => (
-                      <p key={reason}>{reason}</p>
-                    ))}
-                  </div>
-                </article>
-
-                <article className="booth-card booth-card--compact booth-card--steady booth-card--transcript">
-                  <div className="booth-card__header">
-                    <div>
-                      <p className="control-label">Live transcript</p>
-                      <strong>{boothHasTranscriptContext ? 'Mic copy is flowing' : 'Waiting for speech'}</strong>
-                    </div>
-                  </div>
-
-                  <div className="transcript-list" aria-live="polite">
-                    {transcriptWindow.length > 0 ? (
-                      transcriptWindow.map((entry) => (
-                        <p className="transcript-line" key={`${entry.timestamp}-${entry.text}`}>
-                          {entry.text}
-                        </p>
-                      ))
-                    ) : (
-                      <p className="transcript-line transcript-line--muted">
-                        Once the booth mic produces usable text, the latest lines will appear here.
+                      <div className={`meter-track meter-track--${coachingTone.tone}`}>
+                        <span style={{ width: boothRhythmPercent }} />
+                      </div>
+                      <p className="field-copy field-copy--tight">
+                        {effectiveHesitationScore > 0.4 ? 'Sensing significant hesitation.' : confidenceReason}
                       </p>
-                    )}
+                    </div>
 
-                    {boothInterimTranscript.trim() ? (
-                      <p className="transcript-line transcript-line--interim">{boothInterimTranscript.trim()}</p>
-                    ) : null}
-                  </div>
-                </article>
+                    <div className="signal-meta">
+                      <div className="signal-meta__item">
+                        <span>Mic activity</span>
+                        <div className="audio-meter" aria-label="Mic activity">
+                          {micBars.map((isActive, index) => (
+                            <span
+                              key={index}
+                              className={isActive ? 'audio-meter__bar audio-meter__bar--active' : 'audio-meter__bar'}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      <div className="signal-meta__item">
+                        <span>Sidekick state</span>
+                        <strong>{assistStateLabel}</strong>
+                      </div>
+                    </div>
 
-                <details className="booth-card booth-card--compact details-card" open>
+                    <div className="signal-indicator-row" aria-label="Live booth indicators">
+                      {boothSignalIndicators.map((indicator) => (
+                        <div
+                          key={indicator.label}
+                          className={`signal-indicator signal-indicator--${indicator.emphasis} ${
+                            indicator.active ? 'signal-indicator--active' : ''
+                          }`}
+                        >
+                          <span>{indicator.label}</span>
+                          <strong>{indicator.value}</strong>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="reason-list">
+                      {visibleReasons.slice(0, 1).map((reason) => (
+                        <p key={reason}>{reason}</p>
+                      ))}
+                    </div>
+                  </article>
+
+                  <article className="booth-card booth-card--compact booth-card--steady booth-card--transcript live-card">
+                    <div className="booth-card__header">
+                      <div>
+                        <p className="control-label">Live transcript</p>
+                        <strong>{boothHasTranscriptContext ? 'Mic copy is flowing' : 'Waiting for speech'}</strong>
+                      </div>
+                    </div>
+
+                    <div className="transcript-list" aria-live="polite">
+                      {transcriptWindow.length > 0 ? (
+                        transcriptWindow.map((entry) => (
+                          <p className="transcript-line" key={`${entry.timestamp}-${entry.text}`}>
+                            {entry.text}
+                          </p>
+                        ))
+                      ) : (
+                        <p className="transcript-line transcript-line--muted">
+                          Once the booth mic produces usable text, the latest lines will appear here.
+                        </p>
+                      )}
+
+                      {boothInterimTranscript.trim() ? (
+                        <p className="transcript-line transcript-line--interim">{boothInterimTranscript.trim()}</p>
+                      ) : null}
+                    </div>
+                  </article>
+
+                <details className="booth-card booth-card--compact details-card live-card live-card--wide" open>
                   <summary className="details-card__summary">
                     <div>
                       <p className="control-label">Agent activity</p>
@@ -3869,7 +3856,10 @@ function App() {
                   )}
                 </details>
 
-                <details className="booth-card booth-card--compact details-card" open={Boolean(generationExplainability)}>
+                <details
+                  className="booth-card booth-card--compact details-card live-card live-card--wide"
+                  open={Boolean(generationExplainability)}
+                >
                   <summary className="details-card__summary">
                     <div>
                       <p className="control-label">Generation explainability</p>
@@ -3903,6 +3893,7 @@ function App() {
                     </p>
                   )}
                 </details>
+                </div>
 
                 <details className="booth-card booth-card--compact details-card">
                   <summary className="details-card__summary">
