@@ -939,6 +939,9 @@ describe('App dashboard', () => {
     expect(container.textContent).toContain('Channel 1 · Barca preset');
     expect(container.textContent).toContain('Barca preset');
     expect(container.textContent).toContain('Rangers preset');
+    expect(container.textContent).toContain('AndOne stays quiet until hesitation needs backup.');
+    expect(container.textContent).toContain('No relevant live contributors right now');
+    expect(container.textContent).toContain('Cue contributors');
     expect(container.textContent).not.toContain('Pre-match brief');
   });
 

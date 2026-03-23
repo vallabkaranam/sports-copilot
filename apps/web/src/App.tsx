@@ -3571,40 +3571,48 @@ function App() {
               </div>
 
               <div className="stage-support">
-                {shouldSurfaceAssist ? (
-                  <article
-                    className={`replay-toast replay-toast--below ${
-                      isAssistWeaning ? 'replay-toast--weaning' : 'replay-toast--live'
-                    }`}
-                    key={replayToastSignature}
-                  >
-                    <p className="assist-type">{isAssistWeaning ? 'Hand-off' : 'Sidekick Insight'}</p>
-                    <h3>{activeAssist.text}</h3>
-                    <p>{activeAssistSupportCopy}</p>
-                    {activeAssist.sourceChips.length > 0 ? (
-                      <details className="assist-trace">
-                        <summary>
-                          Why this cue
-                          {assistSourceSummary ? <span>{assistSourceSummary}</span> : null}
-                        </summary>
-                        <div className="assist-trace__body">
-                          <div className="source-chip-row">
-                            {activeAssist.sourceChips.map((chip) => (
-                              <span className="source-chip" key={chip.id}>
-                                {chip.label}
-                              </span>
-                            ))}
+                <div className="stage-cue-slot" aria-live="polite">
+                  {shouldSurfaceAssist ? (
+                    <article
+                      className={`replay-toast replay-toast--below ${
+                        isAssistWeaning ? 'replay-toast--weaning' : 'replay-toast--live'
+                      }`}
+                      key={replayToastSignature}
+                    >
+                      <p className="assist-type">{isAssistWeaning ? 'Hand-off' : 'Sidekick Insight'}</p>
+                      <h3>{activeAssist.text}</h3>
+                      <p>{activeAssistSupportCopy}</p>
+                      {activeAssist.sourceChips.length > 0 ? (
+                        <details className="assist-trace">
+                          <summary>
+                            Why this cue
+                            {assistSourceSummary ? <span>{assistSourceSummary}</span> : null}
+                          </summary>
+                          <div className="assist-trace__body">
+                            <div className="source-chip-row">
+                              {activeAssist.sourceChips.map((chip) => (
+                                <span className="source-chip" key={chip.id}>
+                                  {chip.label}
+                                </span>
+                              ))}
+                            </div>
+                            <div className="reason-list">
+                              {assistTraceLines.map((line) => (
+                                <p key={line}>{line}</p>
+                              ))}
+                            </div>
                           </div>
-                          <div className="reason-list">
-                            {assistTraceLines.map((line) => (
-                              <p key={line}>{line}</p>
-                            ))}
-                          </div>
-                        </div>
-                      </details>
-                    ) : null}
-                  </article>
-                ) : null}
+                        </details>
+                      ) : null}
+                    </article>
+                  ) : (
+                    <article className="replay-toast replay-toast--below replay-toast--placeholder">
+                      <p className="assist-type">Cue card</p>
+                      <h3>AndOne stays quiet until hesitation needs backup.</h3>
+                      <p>The cue card will take this slot without shifting the rest of the live desk.</p>
+                    </article>
+                  )}
+                </div>
 
                 <p className="stage-footnote">
                   {loadedClipUrl
@@ -3812,7 +3820,7 @@ function App() {
                       <strong>
                         {activeAgentNames.length > 0
                           ? `Active agents: ${activeAgentNames.join(', ')}`
-                          : 'No agents are contributing right now'}
+                          : 'No relevant live contributors right now'}
                       </strong>
                     </div>
                     <span className="panel-tag">{liveAgents.length} observed</span>
@@ -3855,7 +3863,7 @@ function App() {
                     </div>
                   ) : (
                     <p className="transcript-line transcript-line--muted">
-                      The sidebar only shows specialist agents that actually ran for the current moment.
+                      Relevant specialist streams will appear here only when they matter for the current beat.
                     </p>
                   )}
                 </details>
@@ -3867,7 +3875,7 @@ function App() {
                   <summary className="details-card__summary">
                     <div>
                       <p className="control-label">Generation explainability</p>
-                      <strong>Who made this cue</strong>
+                      <strong>Cue contributors</strong>
                     </div>
                     <span className="panel-tag">
                       {generationExplainability?.contributingAgents.length ?? 0} agents
@@ -3893,7 +3901,7 @@ function App() {
                     </div>
                   ) : (
                     <p className="transcript-line transcript-line--muted">
-                      Cue explainability will appear once a grounded prompt is generated.
+                      Relevant cue contributors will appear here once a grounded cue is active.
                     </p>
                   )}
                 </details>
@@ -4311,7 +4319,7 @@ function App() {
                     ))
                   ) : (
                     <p className="transcript-line transcript-line--muted">
-                      The sidebar only shows specialist agents that actually ran for the current moment.
+                      Relevant specialist streams will appear here only when they matter for the current beat.
                     </p>
                   )}
                 </div>
@@ -4338,7 +4346,7 @@ function App() {
                   </>
                 ) : (
                   <p className="transcript-line transcript-line--muted">
-                    Cue explainability will appear once a grounded prompt is generated.
+                    Relevant cue contributors will appear here once a grounded cue is active.
                   </p>
                 )}
               </div>
