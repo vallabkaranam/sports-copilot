@@ -1511,36 +1511,25 @@
   color: var(--signal-red);
 }
 
-.audio-meter {
-  display: flex;
-  align-items: end;
-  gap: 3px;
-  min-height: 26px;
-  margin-top: 8px;
+.level-meter-block {
+  display: grid;
+  gap: 8px;
 }
 
-.audio-meter__bar {
-  width: 6px;
+.level-meter {
+  position: relative;
   height: 10px;
   border-radius: 999px;
-  background: rgba(31, 42, 51, 0.14);
-  transition:
-    height 140ms ease,
-    background-color 140ms ease,
-    opacity 140ms ease;
+  overflow: hidden;
+  background: rgba(31, 42, 51, 0.08);
 }
 
-.audio-meter__bar:nth-child(3n + 1) {
-  height: 14px;
-}
-
-.audio-meter__bar:nth-child(3n + 2) {
-  height: 20px;
-}
-
-.audio-meter__bar--active {
-  background: linear-gradient(180deg, var(--signal-green), var(--signal-yellow) 58%, var(--signal-red));
-  opacity: 1;
+.level-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--signal-green), var(--signal-yellow) 58%, var(--signal-red));
+  transition: width 140ms ease;
 }
 
 .booth-card__header strong,
@@ -1840,7 +1829,7 @@
 
 .live-sidebar-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 10px;
   align-items: start;
 }

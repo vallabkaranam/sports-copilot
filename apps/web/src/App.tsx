@@ -507,20 +507,6 @@ export function selectPreferredTriggeredAssist(params: {
   return generatedAssist;
 }
 
-function formatSignalIndicatorValue(label: 'Pause' | 'Fillers' | 'Wake phrase', boothSignal: BoothSignal) {
-  if (label === 'Pause') {
-    return boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS
-      ? `${Math.round((boothSignal.pauseDurationMs / 100) * 10) / 10}s`
-      : 'Stable';
-  }
-
-  if (label === 'Fillers') {
-    return boothSignal.fillerCount > 0 ? boothSignal.fillerWords.slice(0, 3).join(', ') : 'Clean';
-  }
-
-  return boothSignal.wakePhraseDetected ? 'Detected' : 'Listening';
-}
-
 async function canLoadPresetFeed(url: string) {
   try {
     const response = await fetch(url, {
@@ -2626,32 +2612,7 @@ function App() {
       : 'Go live';
   const primaryActionDisabled =
     isFinalizingSession || (!isBroadcastLive && (!isBroadcastReady || isUpdatingControls));
-  const boothSignalIndicators = [
-    {
-      label: 'Pause' as const,
-      active: boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS,
-      emphasis: boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS ? coachingTone.tone : 'standby',
-      value: formatSignalIndicatorValue('Pause', boothSignal),
-    },
-    {
-      label: 'Fillers' as const,
-      active: boothSignal.fillerCount > 0,
-      emphasis: boothSignal.fillerCount > 0 ? 'supporting' : 'standby',
-      value: formatSignalIndicatorValue('Fillers', boothSignal),
-    },
-    {
-      label: 'Wake phrase' as const,
-      active: boothSignal.wakePhraseDetected,
-      emphasis: boothSignal.wakePhraseDetected ? 'step-in' : 'standby',
-      value: formatSignalIndicatorValue('Wake phrase', boothSignal),
-    },
-    {
-      label: 'Rhythm',
-      value: boothRhythmPercent,
-      active: effectiveHesitationScore < 0.2,
-      emphasis: coachingTone.tone,
-    },
-  ];
+  const hasStartedMonitoring = hasStartedBroadcast;
   const activeAssistSupportCopy = isAssistWeaning
     ? 'Confidence is returning. AndOne is backing off.'
     : activeAssist.whyNow;
@@ -2691,10 +2652,12 @@ function App() {
       : boothHasLiveInput
         ? 'The Sidekick is watching silently. No assist needed while you are in flow.'
         : 'Feed and microphone are ready. The Sidekick starts once you begin calling the action.';
-  const micBars = Array.from({ length: 14 }, (_, index) => {
-    const threshold = (index + 1) / 14;
-    return boothSignal.audioLevel >= threshold * 0.18;
-  });
+  const overviewCopy = hasStartedMonitoring
+    ? railSystemNote
+    : 'Go live to start hesitation sensing, transcript monitoring, and grounded cueing.';
+  const overviewReason = hasStartedMonitoring
+    ? visibleReasons[0] ?? confidenceReason
+    : 'No booth signal is being judged yet.';
   const assistStateLabel = shouldSurfaceAssist
     ? isAssistWeaning
       ? 'Receding'
@@ -3695,62 +3658,40 @@ function App() {
                     <div className="booth-card__header">
                       <div>
                         <p className="control-label">System note</p>
-                        <strong>{isAssistWeaning ? 'Sidekick is receding' : assistStateLabel}</strong>
+                        <strong>{hasStartedMonitoring ? (isAssistWeaning ? 'Sidekick is receding' : assistStateLabel) : 'Waiting to go live'}</strong>
                       </div>
+                      {hasStartedMonitoring ? <span className="metric-badge">{boothRhythmPercent}</span> : null}
                     </div>
 
-                    <p className="field-copy field-copy--tight">{railSystemNote}</p>
+                    <p className="field-copy field-copy--tight">{overviewCopy}</p>
 
-                    <div className="metric-card">
-                      <div className="meter-label-row">
-                        <span>Broadcast Rhythm</span>
-                        <strong>{boothRhythmPercent}</strong>
-                      </div>
-                      <div className={`meter-track meter-track--${coachingTone.tone}`}>
-                        <span style={{ width: boothRhythmPercent }} />
-                      </div>
-                      <p className="field-copy field-copy--tight">
-                        {effectiveHesitationScore > 0.4 ? 'Sensing significant hesitation.' : confidenceReason}
-                      </p>
-                    </div>
-
-                    <div className="signal-meta">
-                      <div className="signal-meta__item">
-                        <span>Mic activity</span>
-                        <div className="audio-meter" aria-label="Mic activity">
-                          {micBars.map((isActive, index) => (
-                            <span
-                              key={index}
-                              className={isActive ? 'audio-meter__bar audio-meter__bar--active' : 'audio-meter__bar'}
-                            />
-                          ))}
+                    {hasStartedMonitoring ? (
+                      <>
+                        <div className="metric-card">
+                          <div className="meter-label-row">
+                            <span>Broadcast Rhythm</span>
+                            <strong>{boothRhythmPercent}</strong>
+                          </div>
+                          <div className={`meter-track meter-track--${coachingTone.tone}`}>
+                            <span style={{ width: boothRhythmPercent }} />
+                          </div>
                         </div>
-                      </div>
-                      <div className="signal-meta__item">
-                        <span>Sidekick state</span>
-                        <strong>{assistStateLabel}</strong>
-                      </div>
-                    </div>
 
-                    <div className="signal-indicator-row" aria-label="Live booth indicators">
-                      {boothSignalIndicators.map((indicator) => (
-                        <div
-                          key={indicator.label}
-                          className={`signal-indicator signal-indicator--${indicator.emphasis} ${
-                            indicator.active ? 'signal-indicator--active' : ''
-                          }`}
-                        >
-                          <span>{indicator.label}</span>
-                          <strong>{indicator.value}</strong>
+                        <div className="level-meter-block">
+                          <div className="meter-label-row">
+                            <span>Input level</span>
+                            <strong>{assistStateLabel}</strong>
+                          </div>
+                          <div className="level-meter" aria-label="Microphone level">
+                            <span style={{ width: `${Math.max(boothSignal.audioLevel * 100, 3)}%` }} />
+                          </div>
                         </div>
-                      ))}
-                    </div>
 
-                    <div className="reason-list">
-                      {visibleReasons.slice(0, 1).map((reason) => (
-                        <p key={reason}>{reason}</p>
-                      ))}
-                    </div>
+                        <div className="reason-list">
+                          <p>{overviewReason}</p>
+                        </div>
+                      </>
+                    ) : null}
                   </article>
 
                   <article className="booth-card booth-card--compact booth-card--steady booth-card--transcript live-card">
