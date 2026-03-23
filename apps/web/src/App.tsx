@@ -268,6 +268,26 @@ function supportsSpeechSynthesis() {
   );
 }
 
+function getAvailableSpeechVoices() {
+  if (!supportsSpeechSynthesis() || typeof window.speechSynthesis.getVoices !== 'function') {
+    return [] as SpeechSynthesisVoice[];
+  }
+
+  return window.speechSynthesis.getVoices().filter((voice) => Boolean(voice?.voiceURI || voice?.name));
+}
+
+function pickStandbyVoice(voices: SpeechSynthesisVoice[]) {
+  if (voices.length === 0) {
+    return null;
+  }
+
+  return (
+    voices.find((voice) => voice.default) ??
+    voices.find((voice) => /^en(-|_|$)/i.test(voice.lang ?? '')) ??
+    voices[0]
+  );
+}
+
 function getSupportedRecorderMimeType() {
   if (typeof window === 'undefined' || typeof window.MediaRecorder === 'undefined') {
     return null;
@@ -827,6 +847,7 @@ function App() {
   const [standbyVoiceEnabled, setStandbyVoiceEnabled] = useState(false);
   const [standbyVoiceStatus, setStandbyVoiceStatus] = useState<StandbyVoiceStatus>('disabled');
   const [standbyVoiceSampleDurationMs, setStandbyVoiceSampleDurationMs] = useState(0);
+  const [speechVoicesReady, setSpeechVoicesReady] = useState(() => getAvailableSpeechVoices().length > 0);
   const [activeDeliverySource, setActiveDeliverySource] = useState<DeliverySource>('live-mic');
   const [handoffState, setHandoffState] = useState<HandoffState>('idle');
   const [handoffCountdown, setHandoffCountdown] = useState<number | null>(null);
@@ -927,6 +948,24 @@ function App() {
     } catch (_error) {
       window.localStorage.removeItem(STANDBY_VOICE_STORAGE_KEY);
     }
+  }, []);
+
+  useEffect(() => {
+    if (!supportsSpeechSynthesis()) {
+      setSpeechVoicesReady(false);
+      return;
+    }
+
+    const refreshVoices = () => {
+      setSpeechVoicesReady(getAvailableSpeechVoices().length > 0);
+    };
+
+    refreshVoices();
+    window.speechSynthesis.addEventListener?.('voiceschanged', refreshVoices);
+
+    return () => {
+      window.speechSynthesis.removeEventListener?.('voiceschanged', refreshVoices);
+    };
   }, []);
 
   useEffect(() => {
@@ -2140,13 +2179,7 @@ function App() {
       return;
     }
 
-    cancelSyntheticSpeech();
-    const utterance = new window.SpeechSynthesisUtterance(text);
-    utterance.rate = 1.02;
-    utterance.pitch = 0.96;
-    utterance.onstart = () => setIsSyntheticSpeaking(true);
-    utterance.onend = () => setIsSyntheticSpeaking(false);
-    utterance.onerror = () => {
+    const handleSpeechFailure = () => {
       setIsSyntheticSpeaking(false);
       setActiveDeliverySource('live-mic');
       setHandoffState('idle');
@@ -2155,11 +2188,30 @@ function App() {
       if (!isMicListening && isMicSupported) {
         startMicrophone();
       }
-      setBoothError('Standby voice playback failed, so AndOne returned control to the live mic.');
+      setBoothError('Browser speech output failed during takeover, so control returned to the live mic.');
+    };
+
+    cancelSyntheticSpeech();
+    const utterance = new window.SpeechSynthesisUtterance(text);
+    const standbyVoice = pickStandbyVoice(getAvailableSpeechVoices());
+    if (standbyVoice) {
+      utterance.voice = standbyVoice;
+      utterance.lang = standbyVoice.lang;
+    }
+    utterance.rate = 1.02;
+    utterance.pitch = 0.96;
+    utterance.onstart = () => setIsSyntheticSpeaking(true);
+    utterance.onend = () => setIsSyntheticSpeaking(false);
+    utterance.onerror = () => {
+      handleSpeechFailure();
     };
 
     syntheticUtteranceRef.current = utterance;
-    window.speechSynthesis.speak(utterance);
+    try {
+      window.speechSynthesis.speak(utterance);
+    } catch (_error) {
+      handleSpeechFailure();
+    }
   }
 
   function beginHandoff(direction: 'sub_in' | 'sub_back') {
@@ -2595,10 +2647,10 @@ function App() {
     },
   ];
   const isStandbyVoiceAvailable =
-    standbyVoiceEnabled && standbyVoiceStatus === 'ready' && supportsSpeechSynthesis();
+    standbyVoiceEnabled && standbyVoiceStatus === 'ready' && supportsSpeechSynthesis() && speechVoicesReady;
   const standbyVoiceStatusLabel =
-    standbyVoiceStatus === 'ready' && !supportsSpeechSynthesis()
-      ? 'Browser voice unavailable'
+    standbyVoiceStatus === 'ready' && (!supportsSpeechSynthesis() || !speechVoicesReady)
+      ? 'Browser speech unavailable'
       : formatStandbyVoiceStatus(standbyVoiceStatus);
   const activeDeliverySourceLabel =
     activeDeliverySource === 'synthetic-standby' ? 'AndOne is on air' : 'Commentator is on mic';
@@ -2700,7 +2752,7 @@ function App() {
   const standbyToggleDisabled =
     activeDeliverySource === 'synthetic-standby'
       ? !isBroadcastLive
-      : !isBroadcastLive || standbyVoiceStatus !== 'ready';
+      : !isBroadcastLive || !isStandbyVoiceAvailable;
   const postSessionReview = derivePostSessionReview(latestCompletedSession);
   const completedReviewSessions = useMemo(
     () =>

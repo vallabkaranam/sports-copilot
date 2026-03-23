@@ -620,6 +620,16 @@ describe('App dashboard', () => {
     vi.stubGlobal('speechSynthesis', {
       speak: speechSynthesisSpeakMock,
       cancel: speechSynthesisCancelMock,
+      getVoices: vi.fn(() => [
+        {
+          name: 'Test Voice',
+          lang: 'en-US',
+          default: true,
+          voiceURI: 'test-voice',
+        },
+      ]),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
     });
     storageState = {};
     Object.defineProperty(window, 'localStorage', {
