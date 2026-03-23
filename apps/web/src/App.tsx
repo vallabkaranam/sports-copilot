@@ -2547,9 +2547,6 @@ function App() {
   const contextPreviewFacts = usedContextFacts.slice(0, 3);
   const heldContextPreviewFacts = unusedContextFacts.slice(0, 2);
   const liveContextItems = worldState.contextBundle.items.slice(0, 4);
-  const liveStreamContext = worldState.liveStreamContext;
-  const liveCommentarySignals = (worldState.liveSignals.commentary ?? []).slice(-3);
-  const liveVisionSignals = (worldState.liveSignals.vision ?? []).slice(-3);
   const topAgentWeights = (worldState.orchestration?.agentWeights ?? []).slice(0, 4);
   const coachingTone = getCoachingTone({
     hasStartedBroadcast,
@@ -3668,6 +3665,12 @@ function App() {
 
                     <p className="field-copy field-copy--tight">{overviewCopy}</p>
 
+                    {contextDocuments.length > 0 ? (
+                      <p className="field-copy field-copy--tight">
+                        {contextDocuments.length} context {contextDocuments.length === 1 ? 'doc' : 'docs'} loaded from Sidekick Console.
+                      </p>
+                    ) : null}
+
                     {hasStartedMonitoring ? (
                       <>
                         <div className="metric-card">
@@ -3844,124 +3847,6 @@ function App() {
                       Cue explainability will appear once a grounded prompt is generated.
                     </p>
                   )}
-                </details>
-
-                <details className="booth-card booth-card--compact details-card live-card live-card--wide">
-                  <summary className="details-card__summary">
-                    <div>
-                      <p className="control-label">Context drawer</p>
-                      <strong>Live retrieval context</strong>
-                    </div>
-                    <span className="panel-tag">{usedContextFacts.length} used · {unusedContextFacts.length} held</span>
-                  </summary>
-
-                  <div className="details-card__body">
-                    <div className="context-column">
-                      <p className="memory-title">Live stream context (last ~10s)</p>
-                      <div className="context-fact-item">
-                        <strong>{liveStreamContext.teams.home} vs {liveStreamContext.teams.away}</strong>
-                        <p>{liveStreamContext.summary}</p>
-                        <span>
-                          {liveStreamContext.scoreState.clock} · {liveStreamContext.scoreState.home}-{liveStreamContext.scoreState.away}
-                        </span>
-                      </div>
-                      {liveStreamContext.recentEvents.length > 0 ? (
-                        <div className="context-fact-list">
-                          {liveStreamContext.recentEvents.slice(-3).map((event) => (
-                            <div className="context-fact-item" key={`stream-${event.id}`}>
-                              <strong>{event.headline}</strong>
-                              <p>{event.detail}</p>
-                              <span>{Math.round(event.salience * 100)}%</span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                      {liveVisionSignals.length > 0 ? (
-                        <div className="context-fact-list">
-                          {liveVisionSignals.map((cue) => (
-                            <div className="context-fact-item" key={`vision-live-${cue.timestamp}-${cue.label}`}>
-                              <strong>Frame cue · {cue.tag}</strong>
-                              <p>{cue.label}</p>
-                              <span>{formatDurationMs(cue.timestamp)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                      {liveCommentarySignals.length > 0 ? (
-                        <div className="context-fact-list">
-                          {liveCommentarySignals.map((entry) => (
-                            <div
-                              className="context-fact-item context-fact-item--held"
-                              key={`commentary-live-${entry.timestamp}-${entry.text}`}
-                            >
-                              <strong>Live commentary</strong>
-                              <p>{entry.text}</p>
-                              <span>{formatDurationMs(entry.timestamp)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-
-                    {liveContextItems.length > 0 ? (
-                      <div className="context-doc-list context-doc-list--compact">
-                        {liveContextItems.map((item) => (
-                          <div className="context-doc-item" key={item.id}>
-                            <strong>{item.headline}</strong>
-                            <span>{Math.round(item.salience * 100)}%</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    {contextDocuments.length > 0 ? (
-                      <div className="context-doc-list context-doc-list--compact">
-                        {contextDocuments.map((document) => (
-                          <div className="context-doc-item" key={`live-doc-${document.id}`}>
-                            <strong>{document.fileName}</strong>
-                            <span>{document.chunkCount} chunks</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    <div className="context-columns">
-                      <div className="context-column">
-                        <p className="memory-title">Used now</p>
-                        <div className="context-fact-list">
-                          {contextPreviewFacts.length > 0 ? (
-                            contextPreviewFacts.map((fact) => (
-                              <div className="context-fact-item" key={fact.id}>
-                                <strong>{fact.sourceChip.label}</strong>
-                                <p>{fact.text}</p>
-                                <span>{Math.round(fact.relevance * 100)}%</span>
-                              </div>
-                            ))
-                          ) : (
-                            <p className="transcript-line transcript-line--muted">
-                              Retrieval context will appear once the sidekick has enough live signal.
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      <div className="context-column">
-                        <p className="memory-title">Retrieved but held</p>
-                        <div className="context-fact-list">
-                          {heldContextPreviewFacts.length > 0 ? (
-                            heldContextPreviewFacts.map((fact) => (
-                              <div className="context-fact-item context-fact-item--held" key={fact.id}>
-                                <strong>{fact.sourceChip.label}</strong>
-                                <p>{fact.text}</p>
-                                <span>{Math.round(fact.relevance * 100)}%</span>
-                              </div>
-                            ))
-                          ) : (
-                            <p className="transcript-line transcript-line--muted">No reserve context is waiting right now.</p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
                 </details>
               </div>
             </div>
