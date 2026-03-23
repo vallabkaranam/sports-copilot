@@ -4014,7 +4014,6 @@ function App() {
                     <article className="replay-toast replay-toast--below replay-toast--placeholder">
                       <p className="assist-type">Cue card</p>
                       <h3>AndOne stays quiet until hesitation needs backup.</h3>
-                      <p>The cue card will take this slot without shifting the rest of the live desk.</p>
                     </article>
                   )}
                 </div>
