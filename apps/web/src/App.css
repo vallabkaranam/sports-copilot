@@ -669,21 +669,21 @@
 }
 
 .stage-primary-button {
-  min-width: 132px;
+  min-width: 112px;
   border: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  border-radius: 999px;
-  padding: 10px 14px;
+  gap: 7px;
+  border-radius: 14px;
+  padding: 8px 12px;
   font-family: 'Sora', 'Avenir Next', sans-serif;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 600;
   letter-spacing: 0.01em;
   color: #fff7f2;
   background: linear-gradient(180deg, #e24f45, #b83730);
-  box-shadow: 0 6px 14px rgba(184, 55, 48, 0.18);
+  box-shadow: 0 4px 10px rgba(184, 55, 48, 0.14);
   cursor: pointer;
   transition:
     transform 180ms ease,
@@ -704,7 +704,7 @@
 .stage-primary-button:focus-visible {
   transform: translateY(-1px);
   filter: brightness(1.04);
-  box-shadow: 0 8px 16px rgba(184, 55, 48, 0.22);
+  box-shadow: 0 6px 12px rgba(184, 55, 48, 0.18);
   outline: none;
 }
 
@@ -1689,18 +1689,18 @@
 
 .signal-indicator-row {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(5, minmax(68px, 1fr));
+  gap: 5px;
 }
 
 .signal-indicator {
   display: grid;
   gap: 4px;
-  padding: 7px 8px;
+  padding: 7px 7px 6px;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: rgba(247, 241, 234, 0.84);
-  min-height: 58px;
+  min-height: 54px;
   align-content: start;
   min-width: 0;
 }
@@ -1708,22 +1708,22 @@
 .signal-indicator span {
   display: block;
   color: var(--copy-soft);
-  font-size: 0.62rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  line-height: 1.15;
+  font-size: 0.56rem;
+  text-transform: none;
+  letter-spacing: 0.01em;
+  line-height: 1.05;
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
 }
 
 .signal-indicator strong {
   color: var(--copy-strong);
   font-family: 'Sora', 'Avenir Next', sans-serif;
-  font-size: 0.74rem;
+  font-size: 0.7rem;
   font-weight: 600;
   line-height: 1.2;
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
 }
 
 .signal-indicator--active {

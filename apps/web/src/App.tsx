@@ -92,7 +92,7 @@ const MIN_AUDIO_ACTIVITY_THRESHOLD = 0.012;
 const MAX_AUDIO_ACTIVITY_THRESHOLD = 0.08;
 const ASSIST_WEAN_OFF_MS = 2600;
 const MIN_ASSIST_DISPLAY_MS = 2400;
-const MIN_RECOVERY_COMMIT_MS = 900;
+const MIN_RECOVERY_COMMIT_MS = 1600;
 const BUFFERED_TRANSCRIPTION_CHUNK_MS = 2_500;
 const BUFFERED_TRANSCRIPTION_WARNING_THRESHOLD = 3;
 const BUFFERED_TRANSCRIPTION_WARNING =
@@ -2467,14 +2467,11 @@ function App() {
 
     const handleSpeechFailure = () => {
       setIsSyntheticSpeaking(false);
-      setActiveDeliverySource('live-mic');
-      setHandoffState('idle');
+      setActiveDeliverySource('synthetic-standby');
+      setHandoffState('subbed_in');
       setHandoffCountdown(null);
-      setHandoffNote(null);
-      if (!isMicListening && isMicSupported) {
-        startMicrophone();
-      }
-      setBoothError('Browser speech output failed during the handoff, so the call returned to your live mic.');
+      setHandoffNote('AndOne is on mic.');
+      setBoothError('Browser speech output failed during the handoff. AndOne stayed on mic, so follow the cue card while speech output is unavailable.');
     };
 
     cancelSyntheticSpeech();
@@ -3205,13 +3202,13 @@ function App() {
       active: boothSignal.repeatedOpeningCount > 0,
     },
     {
-      label: 'Unfinished',
-      detail: boothSignal.unfinishedPhrase ? 'Open phrase' : '--',
+      label: 'Open line',
+      detail: boothSignal.unfinishedPhrase ? 'Open' : '--',
       active: boothSignal.unfinishedPhrase,
     },
     {
-      label: 'Wake phrase',
-      detail: boothSignal.wakePhraseDetected ? 'Line heard' : '--',
+      label: 'Wake cue',
+      detail: boothSignal.wakePhraseDetected ? 'Heard' : '--',
       active: boothSignal.wakePhraseDetected,
     },
   ];
@@ -3508,22 +3505,14 @@ function App() {
     }
 
     if (
-      speakerHasRecovered &&
-      hasLatchedAssist &&
-      !assistIsLocked
-    ) {
-      setAssistVisibilityPhase((current) => (current === 'hidden' ? 'hidden' : 'weaning'));
-      return;
-    }
-
-    if (
-      !nextTriggeredAssist &&
       hasLatchedAssist &&
       !assistIsLocked &&
       !isAssistEpisodeActive
     ) {
       setAssistVisibilityPhase((current) => (current === 'hidden' ? 'hidden' : 'weaning'));
+      return;
     }
+
   }, [
     assistLockExpiresAt,
     assistEpisodeId,
