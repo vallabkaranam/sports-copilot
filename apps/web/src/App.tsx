@@ -3950,7 +3950,11 @@ function App() {
                   className={`desk-status-item ${check.done ? 'desk-status-item--done' : ''}`}
                   title={check.detail}
                 >
-                  <span className={`readiness-dot ${check.done ? 'readiness-dot--done' : ''}`} />
+                  <span
+                    className={`readiness-dot ${
+                      check.done ? 'readiness-dot--done' : 'readiness-dot--pending'
+                    }`}
+                  />
                   <span>{check.label}</span>
                 </div>
               ))}

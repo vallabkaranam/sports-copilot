@@ -1438,15 +1438,30 @@
 }
 
 .readiness-dot {
+  position: relative;
   width: 12px;
   height: 12px;
   border-radius: 999px;
   background: rgba(231, 236, 240, 0.18);
+  flex: 0 0 auto;
 }
 
 .readiness-dot--done {
   background: var(--signal-green);
   box-shadow: 0 0 0 6px rgba(63, 141, 95, 0.12);
+}
+
+.readiness-dot--pending {
+  background: transparent;
+  border: 1.5px solid rgba(122, 110, 100, 0.5);
+}
+
+.readiness-dot--pending::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 999px;
+  background: rgba(122, 110, 100, 0.18);
 }
 
 .booth-summary strong,
