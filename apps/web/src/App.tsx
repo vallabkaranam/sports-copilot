@@ -2535,11 +2535,11 @@ function App() {
           stopMicrophone();
           setActiveDeliverySource('synthetic-standby');
           setHandoffState('subbed_in');
-          setHandoffNote('AndOne has the call.');
+          setHandoffNote('AndOne is on mic.');
           setSubbedCue(null);
           setSubbedCueRequestedAt(0);
           spokenSyntheticCueTextsRef.current = [];
-          speakStandbyNarration('AndOne has the call. I will cover this stretch while you reset.');
+          speakStandbyNarration('AndOne is on mic. I will cover this stretch while you reset.');
         } else {
           setHandoffState('restoring_live');
           cancelSyntheticSpeech();
@@ -3163,7 +3163,7 @@ function App() {
       ? 'Browser speech unavailable'
       : formatStandbyVoiceStatus(standbyVoiceStatus);
   const activeDeliverySourceLabel =
-    activeDeliverySource === 'synthetic-standby' ? 'AndOne has the call' : 'You have the call';
+    activeDeliverySource === 'synthetic-standby' ? 'AndOne is on mic' : "You're on mic";
   const isBroadcastLive =
     hasStartedBroadcast && (controls.playbackStatus === 'playing' || isMicListening);
   const selectedProgramSlot = PROGRAM_FEED_SLOTS.find((slot) => slot.id === selectedProgramFeedId) ?? null;
@@ -3200,12 +3200,12 @@ function App() {
       active: boothSignal.fillerCount > 0,
     },
     {
-      label: 'Repeat start',
+      label: 'Restart',
       detail: boothSignal.repeatedOpeningCount > 0 ? `${boothSignal.repeatedOpeningCount}x` : '--',
       active: boothSignal.repeatedOpeningCount > 0,
     },
     {
-      label: 'Unfinished line',
+      label: 'Unfinished',
       detail: boothSignal.unfinishedPhrase ? 'Open phrase' : '--',
       active: boothSignal.unfinishedPhrase,
     },
@@ -3224,7 +3224,7 @@ function App() {
           ? 'Preparing the handoff voice from your sample.'
           : standbyVoiceStatus === 'failed'
             ? 'The last handoff voice sample did not complete cleanly. Capture a fresh one in Sidekick Console.'
-            : 'Prepare a handoff voice sample in Sidekick Console before using booth handoff on the live desk.';
+            : 'Prepare a handoff voice sample in Sidekick Console before using mic handoff on the live desk.';
   const liveActivityHeadline =
     activeAgentNames.length > 0
       ? `${activeAgentNames.length} live stream${activeAgentNames.length === 1 ? '' : 's'} are shaping this beat`
@@ -3323,10 +3323,10 @@ function App() {
       ? `${activeSessionContextCount} context ${activeSessionContextCount === 1 ? 'item' : 'items'} loaded`
       : null;
   const stageDeliveryOverlayLabel =
-    activeDeliverySource === 'synthetic-standby' ? 'AndOne has the call' : null;
+    activeDeliverySource === 'synthetic-standby' ? 'AndOne is on mic' : null;
   const standbyToggleDirection = activeDeliverySource === 'synthetic-standby' ? 'sub_back' : 'sub_in';
   const standbyToggleLabel =
-    activeDeliverySource === 'synthetic-standby' ? 'Take the call back' : 'Hand off to AndOne';
+    activeDeliverySource === 'synthetic-standby' ? 'Take back the mic' : 'Give AndOne the mic';
   const standbyToggleDisabled =
     activeDeliverySource === 'synthetic-standby'
       ? !isBroadcastLive
@@ -4415,7 +4415,7 @@ function App() {
                 <details className="booth-card booth-card--compact details-card">
                   <summary className="details-card__summary">
                     <div>
-                      <p className="control-label">Booth handoff</p>
+                      <p className="control-label">Mic handoff</p>
                       <strong>{activeDeliverySourceLabel}</strong>
                     </div>
                     <span
@@ -4430,11 +4430,11 @@ function App() {
                     <p className="field-copy field-copy--tight">{standbySetupSummary}</p>
                     <div className="handoff-strip">
                       <div className="handoff-strip__meta">
-                        <span>On Air</span>
-                          <strong>{activeDeliverySource === 'live-mic' ? 'You' : 'AndOne'}</strong>
+                        <span>On mic</span>
+                        <strong>{activeDeliverySource === 'live-mic' ? 'You' : 'AndOne'}</strong>
                       </div>
                       <div className="handoff-strip__meta">
-                        <span>Transition</span>
+                        <span>Handoff</span>
                         <strong>{handoffCountdown ? `${handoffNote} ${handoffCountdown}` : handoffNote ?? 'Ready'}</strong>
                       </div>
                     </div>
@@ -5201,9 +5201,9 @@ function App() {
           <section className="panel review-panel console-voice-panel">
             <div className="panel-header">
               <div>
-                <p className="panel-kicker">Booth handoff</p>
+                <p className="panel-kicker">Mic handoff</p>
                 <h2>Handoff voice</h2>
-                <p className="panel-copy">Voice setup is separate from context setup. Capture it only if you want AndOne to take the call during a booth handoff.</p>
+                <p className="panel-copy">Voice setup is separate from context setup. Capture it only if you want AndOne to take the mic during a live handoff.</p>
               </div>
               <span className={`panel-tag ${isStandbyVoiceAvailable ? 'panel-tag--success' : ''}`}>
                 {isStandbyVoiceAvailable ? 'Ready' : 'Setup'}

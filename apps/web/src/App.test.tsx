@@ -932,6 +932,7 @@ describe('App dashboard', () => {
 
     await act(async () => {
       goLiveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(3_100);
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -969,10 +970,36 @@ describe('App dashboard', () => {
     );
   });
 
+  it('counts down before the live session actually opens', async () => {
+    await renderApp();
+
+    const goLiveButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Go live'),
+    );
+
+    await act(async () => {
+      goLiveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Going live');
+    expect(container.textContent).toContain('Stand by. The desk is counting you in before the live booth opens.');
+    expect(container.textContent).not.toContain('End live session');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_100);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('End live session');
+  });
+
   it('keeps takeover on the live desk and moves sample setup to Sidekick Console', async () => {
     await renderApp();
 
-    expect(container.textContent).toContain('Hand off to AndOne');
+    expect(container.textContent).toContain('Give AndOne the mic');
     expect(container.textContent).toContain('Handoff off');
     expect(container.textContent).toContain('Open Sidekick Console');
     expect(container.textContent).not.toContain('Record sample');
@@ -1021,12 +1048,13 @@ describe('App dashboard', () => {
 
     await act(async () => {
       goLiveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(3_100);
       await Promise.resolve();
       await Promise.resolve();
     });
 
     const subMeInButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Hand off to AndOne'),
+      button.textContent?.includes('Give AndOne the mic'),
     );
 
     await act(async () => {
@@ -1036,7 +1064,7 @@ describe('App dashboard', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('AndOne has the call.');
+    expect(container.textContent).toContain('AndOne is on mic.');
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(4_000);
@@ -1047,7 +1075,7 @@ describe('App dashboard', () => {
     expect(speechSynthesisSpeakMock).toHaveBeenCalled();
 
     const subMeBackInButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Take the call back'),
+      button.textContent?.includes('Take back the mic'),
     );
 
     await act(async () => {
@@ -1442,6 +1470,7 @@ describe('App dashboard', () => {
 
     await act(async () => {
       playButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(3_100);
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -1596,6 +1625,7 @@ describe('App dashboard', () => {
 
     await act(async () => {
       goLiveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(3_100);
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -1664,6 +1694,7 @@ describe('App dashboard', () => {
 
     await act(async () => {
       goLiveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(3_100);
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -1699,6 +1730,7 @@ describe('App dashboard', () => {
 
     await act(async () => {
       startButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(3_100);
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -1798,6 +1830,7 @@ describe('App dashboard', () => {
 
     await act(async () => {
       goLiveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(3_100);
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -1866,6 +1899,7 @@ describe('App dashboard', () => {
 
     await act(async () => {
       playButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(3_100);
       await Promise.resolve();
       await Promise.resolve();
     });
