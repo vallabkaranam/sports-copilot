@@ -1400,15 +1400,15 @@ describe('App dashboard', () => {
     });
 
     expect(container.textContent).toContain('Sidekick Console');
-    expect(container.textContent).toContain('Current session');
-    expect(container.textContent).toContain('What the cue engine will use');
+    expect(container.textContent).toContain('Session setup');
+    expect(container.textContent).toContain('Cue engine context');
 
     await act(async () => {
       await Promise.resolve();
     });
 
     expect(container.textContent).toContain('prep-notes.md');
-    expect(container.textContent).toContain('Pre-match brief');
+    expect(container.textContent).toContain('Pre-match report');
   });
 
   it('requests mic access when going live and still posts control updates', async () => {

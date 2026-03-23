@@ -67,7 +67,7 @@ import {
 type MicrophoneAvailability = 'supported' | 'degraded' | 'unsupported';
 type CoachingTone = 'standby' | 'steady' | 'supporting' | 'step-in';
 type AssistVisibilityPhase = 'hidden' | 'live' | 'weaning';
-type AppRoute = 'live' | 'archive' | 'debug';
+type AppRoute = 'live-desk' | 'analyze' | 'sidekick-console';
 type SidebarAgentState = 'idle' | 'active' | 'contributing' | 'blocked';
 type DeliverySource = 'live-mic' | 'synthetic-standby';
 type HandoffState = 'idle' | 'preparing_sub_in' | 'subbed_in' | 'preparing_sub_back' | 'restoring_live';
@@ -106,6 +106,7 @@ const STANDBY_SAMPLE_CAPTURE_MS = 6_000;
 const SUBBED_CUE_FLOOR_MS = 3_500;
 const STANDBY_VOICE_STORAGE_KEY = 'andone-standby-voice-profile';
 const LOCAL_CONTEXT_LIBRARY_STORAGE_KEY = 'andone-local-context-library';
+const HIDDEN_CONTEXT_DOCUMENT_IDS_STORAGE_KEY = 'andone-hidden-context-document-ids';
 const PROGRAM_FEED_SLOTS: ProgramFeedSlot[] = [
   {
     id: 'program-a',
@@ -141,18 +142,18 @@ function createEmptyStoredProgramFeeds(): Record<ProgramFeedSlotId, StoredProgra
 
 function getAppRouteFromLocation(): AppRoute {
   if (typeof window === 'undefined') {
-    return 'live';
+    return 'live-desk';
   }
 
   const route = window.location.hash.replace(/^#\/?/, '').trim().toLowerCase();
   if (route === 'archive' || route === 'reviews' || route === 'analyze') {
-    return 'archive';
+    return 'analyze';
   }
-  if (route === 'debug') {
-    return 'debug';
+  if (route === 'debug' || route === 'sidekick-console') {
+    return 'sidekick-console';
   }
 
-  return 'live';
+  return 'live-desk';
 }
 
 function formatStandbyVoiceStatus(status: StandbyVoiceStatus) {
@@ -175,7 +176,7 @@ function setAppRouteHash(route: AppRoute) {
     return;
   }
 
-  const nextHash = route === 'archive' ? '#/analyze' : `#/${route}`;
+  const nextHash = `#/${route}`;
   if (window.location.hash !== nextHash) {
     window.location.hash = nextHash;
   }
@@ -889,6 +890,7 @@ function App() {
   const [isResolvingFixture, setIsResolvingFixture] = useState(false);
   const [contextDocuments, setContextDocuments] = useState<UserContextDocument[]>([]);
   const [localContextLibrary, setLocalContextLibrary] = useState<LocalContextEntry[]>([]);
+  const [hiddenContextDocumentIds, setHiddenContextDocumentIds] = useState<string[]>([]);
   const [contextUploadText, setContextUploadText] = useState('');
   const [isUploadingContext, setIsUploadingContext] = useState(false);
   const [sessionContextText, setSessionContextText] = useState('');
@@ -982,13 +984,13 @@ function App() {
     syncRoute();
     window.addEventListener('hashchange', syncRoute);
     if (!window.location.hash) {
-      setAppRouteHash('live');
+      setAppRouteHash('live-desk');
     }
 
     return () => {
       window.removeEventListener('hashchange', syncRoute);
-      if (window.location.hash !== '#/live') {
-        window.location.hash = '#/live';
+      if (window.location.hash !== '#/live-desk') {
+        window.location.hash = '#/live-desk';
       }
     };
   }, []);
@@ -1055,6 +1057,42 @@ function App() {
 
     window.localStorage.setItem(LOCAL_CONTEXT_LIBRARY_STORAGE_KEY, JSON.stringify(localContextLibrary));
   }, [localContextLibrary]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      const rawHiddenIds = window.localStorage.getItem(HIDDEN_CONTEXT_DOCUMENT_IDS_STORAGE_KEY);
+      if (!rawHiddenIds) {
+        return;
+      }
+
+      const parsed = JSON.parse(rawHiddenIds) as string[];
+      if (Array.isArray(parsed)) {
+        setHiddenContextDocumentIds(parsed.filter((value) => typeof value === 'string'));
+      }
+    } catch (_error) {
+      window.localStorage.removeItem(HIDDEN_CONTEXT_DOCUMENT_IDS_STORAGE_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (hiddenContextDocumentIds.length === 0) {
+      window.localStorage.removeItem(HIDDEN_CONTEXT_DOCUMENT_IDS_STORAGE_KEY);
+      return;
+    }
+
+    window.localStorage.setItem(
+      HIDDEN_CONTEXT_DOCUMENT_IDS_STORAGE_KEY,
+      JSON.stringify(hiddenContextDocumentIds),
+    );
+  }, [hiddenContextDocumentIds]);
 
   useEffect(() => {
     if (!supportsSpeechSynthesis()) {
@@ -1212,11 +1250,13 @@ function App() {
       return;
     }
 
-    const nextIds = contextDocuments.map((document) => document.id);
+    const nextIds = contextDocuments
+      .filter((document) => !hiddenContextDocumentIds.includes(document.id))
+      .map((document) => document.id);
     setSessionSelectedGlobalContextIds((current) =>
       current.length === nextIds.length && current.every((id, index) => id === nextIds[index]) ? current : nextIds,
     );
-  }, [contextDocuments, sessionContextMode]);
+  }, [contextDocuments, hiddenContextDocumentIds, sessionContextMode]);
 
   useEffect(() => {
     let isActive = true;
@@ -1602,6 +1642,7 @@ function App() {
       nextEntry,
       ...current.filter((entry) => entry.backendDocumentId !== response.document.id),
     ]);
+    setHiddenContextDocumentIds((current) => current.filter((id) => id !== response.document.id));
 
     if (scope === 'session') {
       setSessionContextEntries((current) => [
@@ -1709,6 +1750,28 @@ function App() {
     }
   }
 
+  function removeGlobalContextDocument(documentId: string) {
+    setHiddenContextDocumentIds((current) =>
+      current.includes(documentId) ? current : [...current, documentId],
+    );
+    setSessionSelectedGlobalContextIds((current) => current.filter((id) => id !== documentId));
+  }
+
+  function editSessionContextEntry(entryId: string) {
+    const existingEntry = sessionContextEntries.find((entry) => entry.id === entryId);
+    if (!existingEntry) {
+      return;
+    }
+
+    setSessionContextMode('custom');
+    setSessionContextText(existingEntry.text);
+    setSessionContextEntries((current) => current.filter((entry) => entry.id !== entryId));
+  }
+
+  function removeSessionContextEntry(entryId: string) {
+    setSessionContextEntries((current) => current.filter((entry) => entry.id !== entryId));
+  }
+
   async function refreshBoothSessions() {
     try {
       const nextBoothSessions = await fetchBoothSessions();
@@ -1769,7 +1832,7 @@ function App() {
         setBoothError('The live session was saved, but the saved session detail is not ready yet.');
       }
 
-      navigateToRoute('archive');
+      navigateToRoute('analyze');
 
       try {
         const review = await fetchBoothSessionReview(response.session.id);
@@ -2675,7 +2738,10 @@ function App() {
     [boothInterimTranscript, boothTranscript, recentCueTexts],
   );
   const rankedBoothAssistFacts = rankBoothAssistFacts({
-    facts: boothAssistFacts,
+    facts: boothAssistFacts.filter((fact) => {
+      const documentId = fact.metadata?.documentId;
+      return !documentId || sessionGlobalContextIdSet.has(documentId);
+    }),
     boothTranscript,
     interimTranscript: boothInterimTranscript,
     liveMatch: worldState.liveMatch,
@@ -2703,11 +2769,15 @@ function App() {
       })),
     [contextDocuments, localContextLibrary],
   );
+  const visibleContextDocuments = useMemo(
+    () => mergedContextDocuments.filter((document) => !hiddenContextDocumentIds.includes(document.id)),
+    [hiddenContextDocumentIds, mergedContextDocuments],
+  );
   const activeGlobalContextIds =
     sessionContextMode === 'inherit-global'
-      ? mergedContextDocuments.map((document) => document.id)
+      ? visibleContextDocuments.map((document) => document.id)
       : sessionSelectedGlobalContextIds;
-  const sessionGlobalContextDocs = mergedContextDocuments.filter((document) =>
+  const sessionGlobalContextDocs = visibleContextDocuments.filter((document) =>
     activeGlobalContextIds.includes(document.id),
   );
   const sessionAutoArtifacts = useMemo(
@@ -2751,6 +2821,10 @@ function App() {
     ...sessionContextEntries.map((entry) => entry.fileName),
     ...sessionContextEntries.map((entry) => getLocalContextPreview(entry)),
   ], 12);
+  const sessionGlobalContextIdSet = useMemo(
+    () => new Set(sessionGlobalContextDocs.map((document) => document.id)),
+    [sessionGlobalContextDocs],
+  );
   const sessionContextPreviewItems = useMemo(
     () => [
       ...sessionAutoArtifacts.map((artifact) => ({
@@ -2775,6 +2849,85 @@ function App() {
       })),
     ],
     [sessionAutoArtifacts, sessionGlobalContextDocs, sessionContextEntries],
+  );
+  const cueEngineStreams = useMemo(
+    () => [
+      {
+        id: 'pre-match',
+        title: 'Pre-match report',
+        status: preMatchCueSummary ? 'Ready' : 'Waiting for fixture',
+        items: preMatchCueSummary ? [safeTrimText(preMatchCueSummary, 200)] : [],
+      },
+      {
+        id: 'live-match',
+        title: 'Scoreboard state',
+        status:
+          worldState.liveStreamContext.scoreState.clock !== '00:00' ||
+          worldState.liveMatch.stats.length > 0
+            ? 'Live'
+            : 'Idle',
+        items: [
+          `${worldState.liveMatch.homeTeam.name} ${worldState.liveStreamContext.scoreState.home}-${worldState.liveStreamContext.scoreState.away} ${worldState.liveMatch.awayTeam.name}`,
+          worldState.liveStreamContext.scoreState.clock
+            ? `Clock ${worldState.liveStreamContext.scoreState.clock}`
+            : null,
+          ...worldState.liveMatch.stats.slice(0, 2).map(
+            (stat) => `${stat.label}: ${stat.teamSide} ${stat.value}`,
+          ),
+        ].filter(Boolean) as string[],
+      },
+      {
+        id: 'recent-events',
+        title: 'Event stream',
+        status: worldState.recentEvents.length > 0 ? `${worldState.recentEvents.length} events` : 'Quiet',
+        items: worldState.recentEvents.slice(0, 3).map((event) => event.description),
+      },
+      {
+        id: 'vision',
+        title: 'Vision stream',
+        status: worldState.liveSignals.vision.length > 0 ? `${worldState.liveSignals.vision.length} cues` : 'Quiet',
+        items: worldState.liveSignals.vision.slice(0, 3).map((cue) => cue.label),
+      },
+      {
+        id: 'social',
+        title: 'Social stream',
+        status: worldState.liveSignals.social.length > 0 ? `${worldState.liveSignals.social.length} posts` : 'Quiet',
+        items: worldState.liveSignals.social.slice(0, 3).map((post) => `${post.handle}: ${post.text}`),
+      },
+      {
+        id: 'bundle',
+        title: 'Match context bundle',
+        status: worldState.contextBundle.items.length > 0 ? `${worldState.contextBundle.items.length} lanes` : 'Quiet',
+        items: worldState.contextBundle.items.slice(0, 3).map((item) => item.headline),
+      },
+      {
+        id: 'global-docs',
+        title: 'Selected global docs',
+        status: sessionGlobalContextDocs.length > 0 ? `${sessionGlobalContextDocs.length} included` : 'None included',
+        items: sessionGlobalContextDocs.map((document) => document.fileName).slice(0, 4),
+      },
+      {
+        id: 'session-additions',
+        title: 'Session additions',
+        status: sessionContextEntries.length > 0 ? `${sessionContextEntries.length} added` : 'None added',
+        items: sessionContextEntries.map((entry) => entry.fileName).slice(0, 4),
+      },
+    ],
+    [
+      preMatchCueSummary,
+      sessionContextEntries,
+      sessionGlobalContextDocs,
+      worldState.contextBundle.items,
+      worldState.liveMatch.homeTeam.name,
+      worldState.liveMatch.awayTeam.name,
+      worldState.liveMatch.stats,
+      worldState.liveSignals.social,
+      worldState.liveSignals.vision,
+      worldState.liveStreamContext.scoreState.away,
+      worldState.liveStreamContext.scoreState.clock,
+      worldState.liveStreamContext.scoreState.home,
+      worldState.recentEvents,
+    ],
   );
   const currentBoothFeatures = useMemo<BoothFeatureSnapshot>(
     () => ({
@@ -3782,14 +3935,14 @@ function App() {
     <div className="app-shell">
       <header className="app-header">
         <div className="app-header__brand">
-          <div className="brand-mark" aria-hidden="true" onClick={() => navigateToRoute('live')}>
+          <div className="brand-mark" aria-hidden="true" onClick={() => navigateToRoute('live-desk')}>
             <span className="brand-mark__dot" />
             <span className="brand-mark__text">AndOne</span>
           </div>
         </div>
 
         <nav className="header-actions">
-          {appRoute === 'live' ? (
+          {appRoute === 'live-desk' ? (
             <div className="desk-status-strip" aria-label="Desk readiness">
               {readinessChecks.map((check) => (
                 <div
@@ -3807,27 +3960,27 @@ function App() {
             <button
               type="button"
               role="tab"
-              aria-selected={appRoute === 'live'}
-              className={appRoute === 'live' ? 'ghost-button ghost-button--active' : 'ghost-button'}
-              onClick={() => navigateToRoute('live')}
+              aria-selected={appRoute === 'live-desk'}
+              className={appRoute === 'live-desk' ? 'ghost-button ghost-button--active' : 'ghost-button'}
+              onClick={() => navigateToRoute('live-desk')}
             >
               Live Desk
             </button>
             <button
               type="button"
               role="tab"
-              aria-selected={appRoute === 'archive'}
-              className={appRoute === 'archive' ? 'ghost-button ghost-button--active' : 'ghost-button'}
-              onClick={() => navigateToRoute('archive')}
+              aria-selected={appRoute === 'analyze'}
+              className={appRoute === 'analyze' ? 'ghost-button ghost-button--active' : 'ghost-button'}
+              onClick={() => navigateToRoute('analyze')}
             >
               Analyze
             </button>
             <button
               type="button"
               role="tab"
-              aria-selected={appRoute === 'debug'}
-              className={appRoute === 'debug' ? 'ghost-button ghost-button--active' : 'ghost-button'}
-              onClick={() => navigateToRoute('debug')}
+              aria-selected={appRoute === 'sidekick-console'}
+              className={appRoute === 'sidekick-console' ? 'ghost-button ghost-button--active' : 'ghost-button'}
+              onClick={() => navigateToRoute('sidekick-console')}
             >
               Sidekick Console
             </button>
@@ -3837,7 +3990,7 @@ function App() {
 
       {error ? <div className="warning-banner">{error}</div> : null}
 
-      {appRoute === 'live' ? (
+      {appRoute === 'live-desk' ? (
         <>
           <section className="panel live-toolbar">
             <div className="program-toolbar">
@@ -4036,7 +4189,7 @@ function App() {
                           <button
                             type="button"
                             className="text-button"
-                            onClick={() => navigateToRoute('debug')}
+                            onClick={() => navigateToRoute('sidekick-console')}
                           >
                             Open Sidekick Console
                           </button>
@@ -4216,7 +4369,7 @@ function App() {
                         <button
                           type="button"
                           className="text-button"
-                          onClick={() => navigateToRoute('debug')}
+                          onClick={() => navigateToRoute('sidekick-console')}
                         >
                           Open Sidekick Console
                         </button>
@@ -4418,7 +4571,7 @@ function App() {
             </div>
           </section>
         </>
-      ) : appRoute === 'archive' ? (
+      ) : appRoute === 'analyze' ? (
         <div className="main-grid main-grid--reviews">
           <section className="panel analyze-sidebar">
             <div className="panel-header">
@@ -4541,7 +4694,7 @@ function App() {
                   <button
                     type="button"
                     className="text-button"
-                    onClick={() => navigateToRoute('live')}
+                    onClick={() => navigateToRoute('live-desk')}
                   >
                     Return to live
                   </button>
@@ -4659,15 +4812,336 @@ function App() {
           </section>
         </div>
       ) : (
-        <div className="main-grid main-grid--debug">
+        <div className="debug-layout">
+          <div className="main-grid main-grid--debug">
           <section className="panel review-panel">
             <div className="panel-header">
               <div>
                 <p className="panel-kicker">Global setup</p>
                 <h2>Sidekick Console</h2>
-                <p className="panel-copy">Build the reusable context library and handoff voice that AndOne can carry into any session.</p>
+                <p className="panel-copy">Configure the reusable context library that shapes cue generation across sessions.</p>
               </div>
-              <span className="panel-tag">{mergedContextDocuments.length} docs</span>
+              <span className="panel-tag">{visibleContextDocuments.length} docs</span>
+            </div>
+
+            <div className="review-stack review-stack--console">
+              <details className="console-section" open>
+                <summary className="console-section__summary">
+                  <div>
+                    <p className="memory-title">Global context library</p>
+                    <strong>Reusable docs and notes</strong>
+                  </div>
+                  <span className="panel-tag">{visibleContextDocuments.length}</span>
+                </summary>
+                <div className="console-section__body">
+                  <p className="field-copy field-copy--tight">
+                    Save reusable prep notes, research docs, and cheat sheets here. These become the default base library for future sessions.
+                  </p>
+                  <div className="context-upload">
+                    <textarea
+                      className="context-textarea"
+                      value={contextUploadText}
+                      onChange={(event) => setContextUploadText(event.target.value)}
+                      placeholder="Paste reusable prep notes or talking points..."
+                    />
+                    <div className="context-upload__actions">
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        disabled={isUploadingContext || !contextUploadText.trim()}
+                        onClick={() => void handleContextTextUpload()}
+                      >
+                        {isUploadingContext ? 'Saving...' : 'Save to global library'}
+                      </button>
+                      <label className="file-chip">
+                        <span>Upload global file</span>
+                        <input
+                          type="file"
+                          accept=".txt,.md,.csv,.json,.html,.xml"
+                          onChange={(event) => void handleContextFileUpload(event)}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
+              <details className="console-section" open>
+                <summary className="console-section__summary">
+                  <div>
+                    <p className="memory-title">Library contents</p>
+                    <strong>Docs available to include</strong>
+                  </div>
+                  <span className="panel-tag">{visibleContextDocuments.length}</span>
+                </summary>
+                <div className="console-section__body">
+                  {visibleContextDocuments.length > 0 ? (
+                    <div className="context-doc-list">
+                      {visibleContextDocuments.map((document) => (
+                        <div className="context-fact-item" key={document.id}>
+                          <strong>{document.fileName}</strong>
+                          <p>{document.localEntry ? getLocalContextPreview(document.localEntry) : 'Stored in the shared context library for cue retrieval.'}</p>
+                          <div className="inline-actions inline-actions--compact inline-actions--spread">
+                            <span>{document.chunkCount} chunks</span>
+                            <button
+                              type="button"
+                              className="text-button"
+                              onClick={() => removeGlobalContextDocument(document.id)}
+                            >
+                              Remove from library
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="transcript-line transcript-line--muted">
+                      No reusable docs are stored yet. Add a cheat sheet or prep note to seed the library.
+                    </p>
+                  )}
+                </div>
+              </details>
+            </div>
+          </section>
+
+          <section className="panel review-panel">
+            <div className="panel-header">
+              <div>
+                <p className="panel-kicker">Session setup</p>
+                <h2>{loadedClipName || 'Session context'}</h2>
+                <p className="panel-copy">Choose exactly what this session feeds into the cue engine before you go live.</p>
+              </div>
+              <span className="panel-tag">{activeSessionContextCount} in session</span>
+            </div>
+
+            <div className="review-stack review-stack--console">
+              <details className="console-section" open>
+                <summary className="console-section__summary">
+                  <div>
+                    <p className="memory-title">Session mode</p>
+                    <strong>{sessionContextMode === 'inherit-global' ? 'Using the global setup' : 'Customizing this session'}</strong>
+                  </div>
+                  <span className="panel-tag">{sessionContextMode === 'inherit-global' ? 'Global' : 'Custom'}</span>
+                </summary>
+                <div className="console-section__body">
+                  <div className="inline-actions inline-actions--compact">
+                    <button
+                      type="button"
+                      className={`ghost-button ${sessionContextMode === 'inherit-global' ? 'ghost-button--active' : ''}`}
+                      onClick={() => setSessionContextMode('inherit-global')}
+                    >
+                      Use global setup
+                    </button>
+                    <button
+                      type="button"
+                      className={`ghost-button ${sessionContextMode === 'custom' ? 'ghost-button--active' : ''}`}
+                      onClick={() => {
+                        setSessionContextMode('custom');
+                        setSessionSelectedGlobalContextIds(visibleContextDocuments.map((document) => document.id));
+                      }}
+                    >
+                      Customize this session
+                    </button>
+                  </div>
+                  <p className="field-copy field-copy--tight">
+                    {sessionContextMode === 'inherit-global'
+                      ? 'This session uses the visible global library by default, plus the live-generated system streams below.'
+                      : 'This session is using a custom context pack. Pick which global docs carry over, then add session-specific material on top.'}
+                  </p>
+                </div>
+              </details>
+
+              <details className="console-section" open>
+                <summary className="console-section__summary">
+                  <div>
+                    <p className="memory-title">Cue engine streams</p>
+                    <strong>What is currently feeding generation</strong>
+                  </div>
+                  <span className="panel-tag">{cueEngineStreams.length} streams</span>
+                </summary>
+                <div className="console-section__body">
+                  <div className="context-doc-list">
+                    {cueEngineStreams.map((stream) => (
+                      <div className="context-fact-item" key={stream.id}>
+                        <strong>{stream.title}</strong>
+                        <p>
+                          {stream.items.length > 0
+                            ? stream.items.join(' · ')
+                            : 'No data is flowing through this stream yet.'}
+                        </p>
+                        <span>{stream.status}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </details>
+
+              <details className="console-section" open>
+                <summary className="console-section__summary">
+                  <div>
+                    <p className="memory-title">Global docs in this session</p>
+                    <strong>Choose which reusable docs carry over</strong>
+                  </div>
+                  <span className="panel-tag">{sessionGlobalContextDocs.length} included</span>
+                </summary>
+                <div className="console-section__body">
+                  {visibleContextDocuments.length > 0 ? (
+                    <div className="context-doc-list">
+                      {visibleContextDocuments.map((document) => {
+                        const isInSession = activeGlobalContextIds.includes(document.id);
+
+                        return (
+                          <div className="context-fact-item" key={`session-${document.id}`}>
+                            <strong>{document.fileName}</strong>
+                            <p>{document.localEntry ? getLocalContextPreview(document.localEntry) : 'Stored in the shared library for cue retrieval.'}</p>
+                            <div className="inline-actions inline-actions--compact inline-actions--spread">
+                              <span>{document.chunkCount} chunks</span>
+                              {sessionContextMode === 'custom' ? (
+                                <button
+                                  type="button"
+                                  className="text-button"
+                                  onClick={() =>
+                                    setSessionSelectedGlobalContextIds((current) =>
+                                      current.includes(document.id)
+                                        ? current.filter((id) => id !== document.id)
+                                        : [...current, document.id]
+                                    )
+                                  }
+                                >
+                                  {isInSession ? 'Remove from session' : 'Add to session'}
+                                </button>
+                              ) : (
+                                <span>{isInSession ? 'Included' : 'Not included'}</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="transcript-line transcript-line--muted">
+                      No global docs are available yet for this session to inherit.
+                    </p>
+                  )}
+                </div>
+              </details>
+
+              <details className="console-section" open>
+                <summary className="console-section__summary">
+                  <div>
+                    <p className="memory-title">Session additions</p>
+                    <strong>Add one-off notes or cheat sheets</strong>
+                  </div>
+                  <span className="panel-tag">{sessionContextEntries.length} added</span>
+                </summary>
+                <div className="console-section__body">
+                  <div className="context-upload">
+                    <textarea
+                      className="context-textarea"
+                      value={sessionContextText}
+                      onChange={(event) => setSessionContextText(event.target.value)}
+                      placeholder="Add matchup-specific reminders, sponsor reads, or a one-off cheat sheet for this session..."
+                    />
+                    <div className="context-upload__actions">
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        disabled={isUploadingContext || !sessionContextText.trim()}
+                        onClick={() => void handleSessionContextTextUpload()}
+                      >
+                        {isUploadingContext ? 'Saving...' : 'Add session note'}
+                      </button>
+                      <label className="file-chip">
+                        <span>Upload session file</span>
+                        <input
+                          type="file"
+                          accept=".txt,.md,.csv,.json,.html,.xml"
+                          onChange={(event) => void handleSessionContextFileUpload(event)}
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  {sessionContextEntries.length > 0 ? (
+                    <div className="context-doc-list">
+                      {sessionContextEntries.map((entry) => (
+                        <div className="context-fact-item" key={entry.id}>
+                          <strong>{entry.fileName}</strong>
+                          <p>{getLocalContextPreview(entry)}</p>
+                          <div className="inline-actions inline-actions--compact inline-actions--spread">
+                            <span>Session-only</span>
+                            <div className="inline-actions inline-actions--compact">
+                              <button
+                                type="button"
+                                className="text-button"
+                                onClick={() => editSessionContextEntry(entry.id)}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                className="text-button"
+                                onClick={() => removeSessionContextEntry(entry.id)}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="transcript-line transcript-line--muted">
+                      Nothing extra is pinned to this session yet.
+                    </p>
+                  )}
+                </div>
+              </details>
+
+              <details className="console-section" open>
+                <summary className="console-section__summary">
+                  <div>
+                    <p className="memory-title">Cue engine context</p>
+                    <strong>What the model will receive</strong>
+                  </div>
+                  <span className="panel-tag">{sessionExpectedTopics.length} topics</span>
+                </summary>
+                <div className="console-section__body">
+                  <div className="reason-list">
+                    <p>
+                      The cue engine receives the live match state, the system-generated context streams, the selected global docs, and any session-specific additions shown here.
+                    </p>
+                    <p>
+                      Session topics: {sessionExpectedTopics.slice(0, 10).join(' · ') || 'Waiting for match context'}
+                    </p>
+                    <p>{sessionContextSummary || 'Session context will appear here once the pack has real content.'}</p>
+                  </div>
+                </div>
+              </details>
+
+              <div className="inline-actions inline-actions--compact inline-actions--spread">
+                <button type="button" className="text-button" onClick={() => navigateToRoute('live-desk')}>
+                  Return to live
+                </button>
+                <button type="button" className="text-button" onClick={() => navigateToRoute('analyze')}>
+                  Open Analyze
+                </button>
+              </div>
+            </div>
+          </section>
+
+          </div>
+
+          <section className="panel review-panel console-voice-panel">
+            <div className="panel-header">
+              <div>
+                <p className="panel-kicker">Booth handoff</p>
+                <h2>Handoff voice</h2>
+                <p className="panel-copy">Voice setup is separate from context setup. Capture it only if you want AndOne to take the call during a booth handoff.</p>
+              </div>
+              <span className={`panel-tag ${isStandbyVoiceAvailable ? 'panel-tag--success' : ''}`}>
+                {isStandbyVoiceAvailable ? 'Ready' : 'Setup'}
+              </span>
             </div>
 
             <div className="setup-card standby-voice-card">
@@ -4676,9 +5150,6 @@ function App() {
                   <p className="control-label">Handoff voice</p>
                   <strong>{standbyVoiceStatusLabel}</strong>
                 </div>
-                <span className={`panel-tag ${isStandbyVoiceAvailable ? 'panel-tag--success' : ''}`}>
-                  {isStandbyVoiceAvailable ? 'Ready' : 'Setup'}
-                </span>
               </div>
               <p className="field-copy field-copy--tight">{standbySetupSummary}</p>
               <div className="standby-voice-actions">
@@ -4700,228 +5171,6 @@ function App() {
                     Clear voice
                   </button>
                 ) : null}
-              </div>
-            </div>
-
-            <div className="review-section">
-              <p className="memory-title">Global context library</p>
-              <p className="field-copy field-copy--tight">
-                Save reusable prep notes, research docs, and cheat sheets here. These become the base library for future sessions.
-              </p>
-              <div className="context-upload">
-                <textarea
-                  className="context-textarea"
-                  value={contextUploadText}
-                  onChange={(event) => setContextUploadText(event.target.value)}
-                  placeholder="Paste reusable prep notes or talking points..."
-                />
-                <div className="context-upload__actions">
-                  <button
-                    type="button"
-                    className="ghost-button"
-                    disabled={isUploadingContext || !contextUploadText.trim()}
-                    onClick={() => void handleContextTextUpload()}
-                  >
-                    {isUploadingContext ? 'Saving...' : 'Save to global library'}
-                  </button>
-                  <label className="file-chip">
-                    <span>Upload global file</span>
-                    <input
-                      type="file"
-                      accept=".txt,.md,.csv,.json,.html,.xml"
-                      onChange={(event) => void handleContextFileUpload(event)}
-                    />
-                  </label>
-                </div>
-              </div>
-            </div>
-
-            <div className="review-section">
-              <p className="memory-title">Stored global docs</p>
-              {mergedContextDocuments.length > 0 ? (
-                <div className="context-doc-list">
-                  {mergedContextDocuments.map((document) => (
-                    <div className="context-fact-item" key={document.id}>
-                      <strong>{document.fileName}</strong>
-                      <p>{document.localEntry ? getLocalContextPreview(document.localEntry) : 'Stored in the shared context library and ready to arm for a session.'}</p>
-                      <span>{document.chunkCount} chunks</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="transcript-line transcript-line--muted">
-                  No reusable docs are stored yet. Add a cheat sheet or prep note to seed the library.
-                </p>
-              )}
-            </div>
-          </section>
-
-          <section className="panel review-panel">
-            <div className="panel-header">
-              <div>
-                <p className="panel-kicker">Current session</p>
-                <h2>{loadedClipName || 'Session pack'}</h2>
-                <p className="panel-copy">Choose what this broadcast will feed into the cue engine before you go live.</p>
-              </div>
-              <span className="panel-tag">{activeSessionContextCount} in session</span>
-            </div>
-
-            <div className="review-stack">
-              <div className="review-section">
-                <p className="memory-title">Session mode</p>
-                <div className="inline-actions inline-actions--compact">
-                  <button
-                    type="button"
-                    className={`ghost-button ${sessionContextMode === 'inherit-global' ? 'ghost-button--active' : ''}`}
-                    onClick={() => setSessionContextMode('inherit-global')}
-                  >
-                    Use global setup
-                  </button>
-                  <button
-                    type="button"
-                    className={`ghost-button ${sessionContextMode === 'custom' ? 'ghost-button--active' : ''}`}
-                    onClick={() => {
-                      setSessionContextMode('custom');
-                      setSessionSelectedGlobalContextIds(mergedContextDocuments.map((document) => document.id));
-                    }}
-                  >
-                    Customize this session
-                  </button>
-                </div>
-                <p className="field-copy field-copy--tight">
-                  {sessionContextMode === 'inherit-global'
-                    ? 'This session inherits the full global library, plus the auto-generated match artifacts below.'
-                    : 'This session is using a custom pack. Pick which global docs carry over, then add session-only notes on top.'}
-                </p>
-              </div>
-
-              <div className="review-section">
-                <p className="memory-title">Auto-generated session artifacts</p>
-                {sessionAutoArtifacts.length > 0 ? (
-                  <div className="context-doc-list">
-                    {sessionAutoArtifacts.map((artifact) => (
-                      <div className="context-fact-item" key={artifact.id}>
-                        <strong>{artifact.title}</strong>
-                        <p>{artifact.summary}</p>
-                        <span>Built from current match state</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="transcript-line transcript-line--muted">
-                    Once the feed links to a fixture, the pre-match brief and live summary will appear here automatically.
-                  </p>
-                )}
-              </div>
-
-              <div className="review-section">
-                <p className="memory-title">Global docs in this session</p>
-                {mergedContextDocuments.length > 0 ? (
-                  <div className="context-doc-list">
-                    {mergedContextDocuments.map((document) => {
-                      const isInSession = activeGlobalContextIds.includes(document.id);
-
-                      return (
-                        <div className="context-fact-item" key={`session-${document.id}`}>
-                          <strong>{document.fileName}</strong>
-                          <p>{document.localEntry ? getLocalContextPreview(document.localEntry) : 'Stored in the shared library for retrieval.'}</p>
-                          <div className="inline-actions inline-actions--compact inline-actions--spread">
-                            <span>{document.chunkCount} chunks</span>
-                            {sessionContextMode === 'custom' ? (
-                              <button
-                                type="button"
-                                className="text-button"
-                                onClick={() =>
-                                  setSessionSelectedGlobalContextIds((current) =>
-                                    current.includes(document.id)
-                                      ? current.filter((id) => id !== document.id)
-                                      : [...current, document.id]
-                                  )
-                                }
-                              >
-                                {isInSession ? 'Remove from session' : 'Add to session'}
-                              </button>
-                            ) : (
-                              <span>{isInSession ? 'Included' : 'Not included'}</span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="transcript-line transcript-line--muted">
-                    No global docs are available yet for this session to inherit.
-                  </p>
-                )}
-              </div>
-
-              <div className="review-section">
-                <p className="memory-title">Session-only additions</p>
-                <div className="context-upload">
-                  <textarea
-                    className="context-textarea"
-                    value={sessionContextText}
-                    onChange={(event) => setSessionContextText(event.target.value)}
-                    placeholder="Add matchup-specific reminders, sponsor reads, or a one-off cheat sheet for this session..."
-                  />
-                  <div className="context-upload__actions">
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      disabled={isUploadingContext || !sessionContextText.trim()}
-                      onClick={() => void handleSessionContextTextUpload()}
-                    >
-                      {isUploadingContext ? 'Saving...' : 'Add session note'}
-                    </button>
-                    <label className="file-chip">
-                      <span>Upload session file</span>
-                      <input
-                        type="file"
-                        accept=".txt,.md,.csv,.json,.html,.xml"
-                        onChange={(event) => void handleSessionContextFileUpload(event)}
-                      />
-                    </label>
-                  </div>
-                </div>
-
-                {sessionContextEntries.length > 0 ? (
-                  <div className="context-doc-list">
-                    {sessionContextEntries.map((entry) => (
-                      <div className="context-fact-item" key={entry.id}>
-                        <strong>{entry.fileName}</strong>
-                        <p>{getLocalContextPreview(entry)}</p>
-                        <span>Session-only</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="transcript-line transcript-line--muted">
-                    Nothing extra is pinned to this session yet.
-                  </p>
-                )}
-              </div>
-
-              <div className="review-section">
-                <p className="memory-title">What the cue engine will use</p>
-                <div className="reason-list">
-                  <p>
-                    The cue engine receives the live match state, the auto-generated match artifacts, the selected global docs, and any session-only additions shown here.
-                  </p>
-                  <p>
-                    Session topics: {sessionExpectedTopics.slice(0, 10).join(' · ') || 'Waiting for match context'}
-                  </p>
-                  <p>{sessionContextSummary || 'Session context will appear here once the pack has real content.'}</p>
-                </div>
-              </div>
-
-              <div className="inline-actions inline-actions--compact inline-actions--spread">
-                <button type="button" className="text-button" onClick={() => navigateToRoute('live')}>
-                  Return to live
-                </button>
-                <button type="button" className="text-button" onClick={() => navigateToRoute('archive')}>
-                  Open Analyze
-                </button>
               </div>
             </div>
           </section>

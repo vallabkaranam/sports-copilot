@@ -406,6 +406,15 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.debug-layout {
+  display: grid;
+  gap: 18px;
+}
+
+.console-voice-panel {
+  margin-top: 0;
+}
+
 @media (max-width: 900px) {
   .main-grid--reviews,
   .main-grid--debug {
@@ -2148,6 +2157,43 @@
   display: grid;
   gap: 12px;
   margin-top: 0;
+}
+
+.review-stack--console {
+  gap: 14px;
+}
+
+.console-section {
+  border: 1px solid rgba(31, 42, 51, 0.08);
+  border-radius: 14px;
+  background: rgba(252, 248, 243, 0.96);
+  overflow: hidden;
+}
+
+.console-section__summary {
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 16px 18px;
+  cursor: pointer;
+}
+
+.console-section__summary::-webkit-details-marker {
+  display: none;
+}
+
+.console-section__summary strong {
+  display: block;
+  font-family: 'Sora', 'Avenir Next', sans-serif;
+  color: var(--ink);
+}
+
+.console-section__body {
+  display: grid;
+  gap: 14px;
+  padding: 0 18px 18px;
 }
 
 .review-workspace {
