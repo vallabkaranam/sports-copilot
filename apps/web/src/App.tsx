@@ -72,9 +72,19 @@ type SidebarAgentState = 'idle' | 'active' | 'contributing' | 'blocked';
 type DeliverySource = 'live-mic' | 'synthetic-standby';
 type HandoffState = 'idle' | 'preparing_sub_in' | 'subbed_in' | 'preparing_sub_back' | 'restoring_live';
 type StandbyVoiceStatus = 'disabled' | 'recording' | 'processing' | 'ready' | 'failed';
+type ContextScope = 'global' | 'session';
+type SessionContextMode = 'inherit-global' | 'custom';
 type SidebarAgent = AgentExplainability & {
   displayState: SidebarAgentState;
   origin: 'interpretation' | 'orchestration' | 'generation';
+};
+type LocalContextEntry = {
+  id: string;
+  fileName: string;
+  sourceType: 'text' | 'file';
+  text: string;
+  createdAt: string;
+  backendDocumentId?: string;
 };
 
 const AUDIO_ACTIVITY_SAMPLE_MS = 120;
@@ -95,6 +105,7 @@ const MIN_STANDBY_SAMPLE_MS = 4_000;
 const STANDBY_SAMPLE_CAPTURE_MS = 6_000;
 const SUBBED_CUE_FLOOR_MS = 3_500;
 const STANDBY_VOICE_STORAGE_KEY = 'andone-standby-voice-profile';
+const LOCAL_CONTEXT_LIBRARY_STORAGE_KEY = 'andone-local-context-library';
 const PROGRAM_FEED_SLOTS: ProgramFeedSlot[] = [
   {
     id: 'program-a',
@@ -186,6 +197,23 @@ function formatSessionStartedAt(timestamp: string) {
 
 function normalizeAgentName(agentName: string) {
   return agentName.trim().toLowerCase();
+}
+
+function safeTrimText(text: string, maxLength = 220) {
+  const trimmed = text.trim();
+  if (trimmed.length <= maxLength) {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+function mergeUniqueText(values: Array<string | null | undefined>, maxItems = 8) {
+  const merged = values
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+
+  return [...new Set(merged)].slice(0, maxItems);
 }
 
 function mergeAgentRuns(
@@ -650,6 +678,10 @@ function buildPreMatchCueSummary(worldState: ReturnType<typeof createInitialWorl
   return [...new Set(parts)].join(' | ');
 }
 
+function getLocalContextPreview(entry: LocalContextEntry) {
+  return safeTrimText(entry.text, 180);
+}
+
 function average(values: number[]) {
   if (values.length === 0) {
     return 0;
@@ -856,8 +888,13 @@ function App() {
   const [isClipMuted, setIsClipMuted] = useState(true);
   const [isResolvingFixture, setIsResolvingFixture] = useState(false);
   const [contextDocuments, setContextDocuments] = useState<UserContextDocument[]>([]);
+  const [localContextLibrary, setLocalContextLibrary] = useState<LocalContextEntry[]>([]);
   const [contextUploadText, setContextUploadText] = useState('');
   const [isUploadingContext, setIsUploadingContext] = useState(false);
+  const [sessionContextText, setSessionContextText] = useState('');
+  const [sessionContextMode, setSessionContextMode] = useState<SessionContextMode>('inherit-global');
+  const [sessionSelectedGlobalContextIds, setSessionSelectedGlobalContextIds] = useState<string[]>([]);
+  const [sessionContextEntries, setSessionContextEntries] = useState<LocalContextEntry[]>([]);
   const [boothTranscript, setBoothTranscript] = useState<TranscriptEntry[]>([]);
   const [boothInterimTranscript, setBoothInterimTranscript] = useState('');
   const [boothError, setBoothError] = useState<string | null>(null);
@@ -982,6 +1019,41 @@ function App() {
       window.localStorage.removeItem(STANDBY_VOICE_STORAGE_KEY);
     }
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      const rawLibrary = window.localStorage.getItem(LOCAL_CONTEXT_LIBRARY_STORAGE_KEY);
+      if (!rawLibrary) {
+        return;
+      }
+
+      const parsed = JSON.parse(rawLibrary) as LocalContextEntry[];
+      if (Array.isArray(parsed)) {
+        setLocalContextLibrary(
+          parsed.filter((entry) => typeof entry?.id === 'string' && typeof entry?.text === 'string'),
+        );
+      }
+    } catch (_error) {
+      window.localStorage.removeItem(LOCAL_CONTEXT_LIBRARY_STORAGE_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (localContextLibrary.length === 0) {
+      window.localStorage.removeItem(LOCAL_CONTEXT_LIBRARY_STORAGE_KEY);
+      return;
+    }
+
+    window.localStorage.setItem(LOCAL_CONTEXT_LIBRARY_STORAGE_KEY, JSON.stringify(localContextLibrary));
+  }, [localContextLibrary]);
 
   useEffect(() => {
     if (!supportsSpeechSynthesis()) {
@@ -1133,6 +1205,17 @@ function App() {
       isActive = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (sessionContextMode !== 'inherit-global') {
+      return;
+    }
+
+    const nextIds = contextDocuments.map((document) => document.id);
+    setSessionSelectedGlobalContextIds((current) =>
+      current.length === nextIds.length && current.every((id, index) => id === nextIds[index]) ? current : nextIds,
+    );
+  }, [contextDocuments, sessionContextMode]);
 
   useEffect(() => {
     let isActive = true;
@@ -1474,6 +1557,9 @@ function App() {
     setIsResolvingFixture(false);
     setHasStartedBroadcast(false);
     setActiveBoothSessionId(null);
+    setSessionContextEntries([]);
+    setSessionContextText('');
+    setSessionContextMode('inherit-global');
     setIsMicPrepared(false);
     setSpeechStreakStartedAtMs(-1);
     setSilenceStreakStartedAtMs(-1);
@@ -1487,6 +1573,45 @@ function App() {
     setHandoffNote(null);
   }
 
+  async function saveContextEntry(params: {
+    fileName: string;
+    text: string;
+    sourceType: 'text' | 'file';
+    scope: ContextScope;
+  }) {
+    const { fileName, text, sourceType, scope } = params;
+    const trimmedText = text.trim();
+    if (!trimmedText) {
+      throw new Error('empty context');
+    }
+
+    const response = await uploadUserContext(fileName, trimmedText, sourceType);
+    setContextDocuments((current) => [response.document, ...current]);
+
+    const nextEntry: LocalContextEntry = {
+      id: `${scope}-${response.document.id}`,
+      fileName: response.document.fileName,
+      sourceType,
+      text: trimmedText,
+      createdAt: response.document.createdAt,
+      backendDocumentId: response.document.id,
+    };
+
+    setLocalContextLibrary((current) => [
+      nextEntry,
+      ...current.filter((entry) => entry.backendDocumentId !== response.document.id),
+    ]);
+
+    if (scope === 'session') {
+      setSessionContextEntries((current) => [
+        nextEntry,
+        ...current.filter((entry) => entry.backendDocumentId !== response.document.id),
+      ]);
+    }
+
+    setBoothError(null);
+  }
+
   async function handleContextTextUpload() {
     const text = contextUploadText.trim();
     if (!text) {
@@ -1495,10 +1620,13 @@ function App() {
 
     setIsUploadingContext(true);
     try {
-      const response = await uploadUserContext('Live notes', text, 'text');
-      setContextDocuments((current) => [response.document, ...current]);
+      await saveContextEntry({
+        fileName: 'Global notes',
+        text,
+        sourceType: 'text',
+        scope: 'global',
+      });
       setContextUploadText('');
-      setBoothError(null);
     } catch (_error) {
       setBoothError('User context could not be uploaded right now.');
     } finally {
@@ -1515,14 +1643,65 @@ function App() {
     setIsUploadingContext(true);
     try {
       const text = await readFileAsText(file);
-      if (!text.trim()) {
-        throw new Error('empty file');
-      }
-      const response = await uploadUserContext(file.name, text, 'file');
-      setContextDocuments((current) => [response.document, ...current]);
-      setBoothError(null);
+      await saveContextEntry({
+        fileName: file.name,
+        text,
+        sourceType: 'file',
+        scope: 'global',
+      });
     } catch (_error) {
       setBoothError('This file could not be ingested as text context.');
+    } finally {
+      setIsUploadingContext(false);
+      event.target.value = '';
+    }
+  }
+
+  async function handleSessionContextTextUpload() {
+    const text = sessionContextText.trim();
+    if (!text) {
+      return;
+    }
+
+    setIsUploadingContext(true);
+    try {
+      await saveContextEntry({
+        fileName: `Session note · ${loadedClipName || 'Current feed'}`,
+        text,
+        sourceType: 'text',
+        scope: 'session',
+      });
+      setSessionContextText('');
+      if (sessionContextMode === 'inherit-global') {
+        setSessionContextMode('custom');
+      }
+    } catch (_error) {
+      setBoothError('This session note could not be added right now.');
+    } finally {
+      setIsUploadingContext(false);
+    }
+  }
+
+  async function handleSessionContextFileUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setIsUploadingContext(true);
+    try {
+      const text = await readFileAsText(file);
+      await saveContextEntry({
+        fileName: file.name,
+        text,
+        sourceType: 'file',
+        scope: 'session',
+      });
+      if (sessionContextMode === 'inherit-global') {
+        setSessionContextMode('custom');
+      }
+    } catch (_error) {
+      setBoothError('This file could not be added to the current session.');
     } finally {
       setIsUploadingContext(false);
       event.target.value = '';
@@ -2511,6 +2690,66 @@ function App() {
       excludedCueTexts,
     });
   }, [boothAssistQuery, excludedCueTexts, rankedBoothAssistFacts]);
+  const preMatchCueSummary = useMemo(() => buildPreMatchCueSummary(worldState), [worldState]);
+  const mergedContextDocuments = useMemo(
+    () =>
+      contextDocuments.map((document) => ({
+        ...document,
+        localEntry:
+          localContextLibrary.find((entry) => entry.backendDocumentId === document.id) ??
+          localContextLibrary.find((entry) => entry.fileName === document.fileName) ??
+          null,
+      })),
+    [contextDocuments, localContextLibrary],
+  );
+  const activeGlobalContextIds =
+    sessionContextMode === 'inherit-global'
+      ? mergedContextDocuments.map((document) => document.id)
+      : sessionSelectedGlobalContextIds;
+  const armedGlobalContextDocs = mergedContextDocuments.filter((document) =>
+    activeGlobalContextIds.includes(document.id),
+  );
+  const sessionAutoArtifacts = useMemo(
+    () =>
+      [
+        preMatchCueSummary.trim()
+          ? {
+              id: 'auto-prematch',
+              title: 'Pre-match brief',
+              summary: safeTrimText(preMatchCueSummary, 220),
+              text: preMatchCueSummary,
+              scope: 'session-auto' as const,
+            }
+          : null,
+        buildContextSummary(worldState).trim()
+          ? {
+              id: 'auto-live',
+              title: 'Live brief',
+              summary: safeTrimText(buildContextSummary(worldState), 220),
+              text: buildContextSummary(worldState),
+              scope: 'session-auto' as const,
+            }
+          : null,
+      ].filter((artifact): artifact is {
+        id: string;
+        title: string;
+        summary: string;
+        text: string;
+        scope: 'session-auto';
+      } => Boolean(artifact)),
+    [preMatchCueSummary, worldState],
+  );
+  const sessionContextSummary = mergeUniqueText([
+    ...sessionAutoArtifacts.map((artifact) => artifact.text),
+    ...armedGlobalContextDocs.map((document) => document.localEntry?.text ?? document.fileName),
+    ...sessionContextEntries.map((entry) => entry.text),
+  ], 10).join(' | ');
+  const sessionExpectedTopics = mergeUniqueText([
+    ...buildExpectedTopics(worldState),
+    ...armedGlobalContextDocs.map((document) => document.localEntry?.fileName ?? document.fileName),
+    ...sessionContextEntries.map((entry) => entry.fileName),
+    ...sessionContextEntries.map((entry) => getLocalContextPreview(entry)),
+  ], 12);
   const currentBoothFeatures = useMemo<BoothFeatureSnapshot>(
     () => ({
       timestamp: boothClockMs,
@@ -2537,8 +2776,11 @@ function App() {
       hesitationReasons: boothSignal.hesitationReasons,
       transcriptWindow: boothTranscript.slice(-LOCAL_TRANSCRIPT_LIMIT),
       interimTranscript: boothInterimTranscript,
-      contextSummary: buildContextSummary(worldState),
-      expectedTopics: buildExpectedTopics(worldState),
+      contextSummary: mergeUniqueText([
+        buildContextSummary(worldState),
+        sessionContextSummary,
+      ], 10).join(' | '),
+      expectedTopics: sessionExpectedTopics,
       wakePhraseDetected: boothSignal.wakePhraseDetected,
       previousState: boothInterpretation?.state,
     }),
@@ -2568,6 +2810,8 @@ function App() {
       boothSignal.wakePhraseDetected,
       boothTranscript,
       boothInterpretation?.state,
+      sessionContextSummary,
+      sessionExpectedTopics,
       worldState,
     ],
   );
@@ -2619,8 +2863,6 @@ function App() {
   const generationExplainability =
     generatedCue?.explainability ?? worldState.orchestration?.lastGeneration ?? null;
   const generationAgents = generationExplainability?.contributingAgents ?? [];
-  const usedContextFacts = worldState.retrieval.supportingFacts;
-  const unusedContextFacts = worldState.retrieval.unusedFacts ?? [];
   const fixtureLinkBlocked =
     Boolean(boothError) &&
     /match linking|identify this match|fixture extraction|sportmonks_api_token|fixture resolution/i.test(
@@ -2655,10 +2897,6 @@ function App() {
   const activeAgentNames = liveAgents
     .filter((agent) => agent.displayState === 'active' || agent.displayState === 'contributing')
     .map((agent) => agent.agentName);
-  const contextPreviewFacts = usedContextFacts.slice(0, 3);
-  const heldContextPreviewFacts = unusedContextFacts.slice(0, 2);
-  const liveContextItems = worldState.contextBundle.items.slice(0, 4);
-  const topAgentWeights = (worldState.orchestration?.agentWeights ?? []).slice(0, 4);
   const coachingTone = getCoachingTone({
     hasStartedBroadcast,
     boothHasLiveInput,
@@ -2708,7 +2946,6 @@ function App() {
         : `${selectedProgramSlot.label} · Add input`
       : `${selectedProgramSlot.label} · ${selectedProgramSlot.presetFileName ?? loadedClipName}`
     : 'Select a program feed';
-  const preMatchCueSummary = useMemo(() => buildPreMatchCueSummary(worldState), [worldState]);
   const replayToastSignature = `${activeAssist.type}:${activeAssist.text}:${shouldSurfaceAssist}:${controls.restartToken}`;
   const activeTriggerBadges = [
     boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS ? 'pause' : null,
@@ -2846,9 +3083,11 @@ function App() {
   const overviewInputWidth = hasStartedMonitoring
     ? `${Math.max(boothSignal.audioLevel * 100, 3)}%`
     : '0%';
+  const activeSessionContextCount =
+    sessionAutoArtifacts.length + armedGlobalContextDocs.length + sessionContextEntries.length;
   const stageContextOverlayLabel =
-    contextDocuments.length > 0
-      ? `${contextDocuments.length} context ${contextDocuments.length === 1 ? 'doc' : 'docs'} armed`
+    activeSessionContextCount > 0
+      ? `${activeSessionContextCount} context ${activeSessionContextCount === 1 ? 'item' : 'items'} armed`
       : null;
   const stageDeliveryOverlayLabel =
     activeDeliverySource === 'synthetic-standby' ? 'AndOne has the call' : null;
@@ -4380,11 +4619,11 @@ function App() {
           <section className="panel review-panel">
             <div className="panel-header">
               <div>
-                <p className="panel-kicker">Context and retrieval</p>
-                <h2>Live RAG debug</h2>
-                <p className="panel-copy">Inspect the exact context the system is using, what it held back, and any uploaded notes.</p>
+                <p className="panel-kicker">Global setup</p>
+                <h2>Sidekick Console</h2>
+                <p className="panel-copy">Build the reusable context library and handoff voice that AndOne can carry into any session.</p>
               </div>
-              <span className="panel-tag">{usedContextFacts.length} used</span>
+              <span className="panel-tag">{mergedContextDocuments.length} docs</span>
             </div>
 
             <div className="setup-card standby-voice-card">
@@ -4420,284 +4659,215 @@ function App() {
               </div>
             </div>
 
-            <div className="context-upload">
-              <textarea
-                className="context-textarea"
-                value={contextUploadText}
-                onChange={(event) => setContextUploadText(event.target.value)}
-                placeholder="Paste prep notes or talking points..."
-              />
-              <div className="context-upload__actions">
-                <button
-                  type="button"
-                  className="ghost-button"
-                  disabled={isUploadingContext || !contextUploadText.trim()}
-                  onClick={() => void handleContextTextUpload()}
-                >
-                  {isUploadingContext ? 'Saving...' : 'Save notes'}
-                </button>
-                <label className="file-chip">
-                  <span>Upload file</span>
-                  <input
-                    type="file"
-                    accept=".txt,.md,.csv,.json,.html,.xml"
-                    onChange={(event) => void handleContextFileUpload(event)}
-                  />
-                </label>
+            <div className="review-section">
+              <p className="memory-title">Global context library</p>
+              <p className="field-copy field-copy--tight">
+                Save reusable prep notes, research docs, and cheat sheets here. These become the base library for future sessions.
+              </p>
+              <div className="context-upload">
+                <textarea
+                  className="context-textarea"
+                  value={contextUploadText}
+                  onChange={(event) => setContextUploadText(event.target.value)}
+                  placeholder="Paste reusable prep notes or talking points..."
+                />
+                <div className="context-upload__actions">
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    disabled={isUploadingContext || !contextUploadText.trim()}
+                    onClick={() => void handleContextTextUpload()}
+                  >
+                    {isUploadingContext ? 'Saving...' : 'Save to global library'}
+                  </button>
+                  <label className="file-chip">
+                    <span>Upload global file</span>
+                    <input
+                      type="file"
+                      accept=".txt,.md,.csv,.json,.html,.xml"
+                      onChange={(event) => void handleContextFileUpload(event)}
+                    />
+                  </label>
+                </div>
               </div>
             </div>
 
-            {contextDocuments.length > 0 ? (
-              <div className="context-doc-list">
-                {contextDocuments.map((document) => (
-                  <div className="context-doc-item" key={document.id}>
-                    <strong>{document.fileName}</strong>
-                    <span>{document.chunkCount} chunks</span>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-
-            <div className="context-columns">
-              <div className="context-column">
-                <p className="memory-title">Used now</p>
-                <div className="context-fact-list">
-                  {usedContextFacts.map((fact) => (
-                    <div className="context-fact-item" key={fact.id}>
-                      <strong>{fact.sourceChip.label}</strong>
-                      <p>{fact.text}</p>
-                      <span>{Math.round(fact.relevance * 100)}%</span>
+            <div className="review-section">
+              <p className="memory-title">Stored global docs</p>
+              {mergedContextDocuments.length > 0 ? (
+                <div className="context-doc-list">
+                  {mergedContextDocuments.map((document) => (
+                    <div className="context-fact-item" key={document.id}>
+                      <strong>{document.fileName}</strong>
+                      <p>{document.localEntry ? getLocalContextPreview(document.localEntry) : 'Stored in the shared context library and ready to arm for a session.'}</p>
+                      <span>{document.chunkCount} chunks</span>
                     </div>
                   ))}
                 </div>
-              </div>
-
-              <div className="context-column">
-                <p className="memory-title">Retrieved but held</p>
-                <div className="context-fact-list">
-                  {unusedContextFacts.length > 0 ? (
-                    unusedContextFacts.map((fact) => (
-                      <div className="context-fact-item context-fact-item--held" key={fact.id}>
-                        <strong>{fact.sourceChip.label}</strong>
-                        <p>{fact.text}</p>
-                        <span>{Math.round(fact.relevance * 100)}%</span>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="transcript-line transcript-line--muted">No reserve context is waiting right now.</p>
-                  )}
-                </div>
-              </div>
+              ) : (
+                <p className="transcript-line transcript-line--muted">
+                  No reusable docs are stored yet. Add a cheat sheet or prep note to seed the library.
+                </p>
+              )}
             </div>
           </section>
 
           <section className="panel review-panel">
             <div className="panel-header">
               <div>
-                <p className="panel-kicker">Agent and memory state</p>
-                <h2>System debug</h2>
-                <p className="panel-copy">This view is the full state drawer: agent runs, retrieval reasoning, and sliding memory.</p>
+                <p className="panel-kicker">Current session</p>
+                <h2>{loadedClipName || 'Session pack'}</h2>
+                <p className="panel-copy">Choose what this broadcast will feed into the hint engine before you go live.</p>
               </div>
-              <span className="panel-tag">{liveAgents.length} agents</span>
+              <span className="panel-tag">{activeSessionContextCount} items armed</span>
             </div>
 
             <div className="review-stack">
               <div className="review-section">
-                <p className="memory-title">Assist streams</p>
-                <div className="agent-trace-list">
-                  {liveAgents.length > 0 ? (
-                    liveAgents.map((agent) => (
-                      <details
-                        className={`agent-trace-item agent-trace-item--${agent.displayState}`}
-                        key={`${agent.origin}-${agent.agentName}`}
-                      >
-                        <summary className="agent-trace-item__summary">
-                          <div className="agent-trace-item__content">
-                            <span className="agent-trace-item__label">{agent.agentName}</span>
-                            <p className="agent-trace-item__detail">{normalizeMonitorCopy(agent.output)}</p>
-                          </div>
-                          <span className="agent-trace-item__state">{formatSidebarAgentStateLabel(agent)}</span>
-                        </summary>
-                        <div className="details-card__body">
-                          <div className="reason-list">
-                            {agent.reasoningTrace.map((traceLine) => (
-                              <p key={`${agent.agentName}-${traceLine}`}>{normalizeMonitorCopy(traceLine)}</p>
-                            ))}
-                          </div>
-                          {agent.sourcesUsed.length > 0 ? (
-                            <div className="source-chip-row">
-                              {agent.sourcesUsed.map((chip) => (
-                                <span className="source-chip" key={`${agent.agentName}-${chip.id}`}>
-                                  {chip.label}
-                                </span>
-                              ))}
-                            </div>
-                          ) : null}
-                        </div>
-                      </details>
-                    ))
-                  ) : (
-                    <p className="transcript-line transcript-line--muted">
-                      Relevant live streams will appear here only when they change the current beat.
-                    </p>
-                  )}
+                <p className="memory-title">Session mode</p>
+                <div className="inline-actions inline-actions--compact">
+                  <button
+                    type="button"
+                    className={`ghost-button ${sessionContextMode === 'inherit-global' ? 'ghost-button--active' : ''}`}
+                    onClick={() => setSessionContextMode('inherit-global')}
+                  >
+                    Use global setup
+                  </button>
+                  <button
+                    type="button"
+                    className={`ghost-button ${sessionContextMode === 'custom' ? 'ghost-button--active' : ''}`}
+                    onClick={() => {
+                      setSessionContextMode('custom');
+                      setSessionSelectedGlobalContextIds(mergedContextDocuments.map((document) => document.id));
+                    }}
+                  >
+                    Customize this session
+                  </button>
                 </div>
+                <p className="field-copy field-copy--tight">
+                  {sessionContextMode === 'inherit-global'
+                    ? 'This session inherits the full global library, plus the auto-generated match artifacts below.'
+                    : 'This session is using a custom pack. Pick which global docs carry over, then add session-only notes on top.'}
+                </p>
               </div>
 
               <div className="review-section">
-                <p className="memory-title">Cue assembly</p>
-                {generationExplainability ? (
-                  <>
-                    {generationAgents.length > 0 ? (
-                      <div className="agent-trace-list">
-                        {generationAgents.map((agent) => (
-                          <details
-                            className={`agent-trace-item agent-trace-item--${agent.state === 'waiting' ? 'idle' : 'contributing'}`}
-                            key={`debug-generation-${agent.agentName}`}
-                          >
-                            <summary className="agent-trace-item__summary">
-                              <div className="agent-trace-item__content">
-                                <span className="agent-trace-item__label">{agent.agentName}</span>
-                                <p className="agent-trace-item__detail">{normalizeMonitorCopy(agent.output)}</p>
-                              </div>
-                              <span className="agent-trace-item__state">
-                                {formatSidebarAgentStateLabel({
-                                  ...agent,
-                                  origin: 'generation',
-                                  displayState: agent.state === 'waiting' ? 'idle' : 'contributing',
-                                })}
-                              </span>
-                            </summary>
-                            <div className="details-card__body">
-                              <div className="reason-list">
-                                {agent.reasoningTrace.map((line) => (
-                                  <p key={`debug-generation-${agent.agentName}-${line}`}>{normalizeMonitorCopy(line)}</p>
-                                ))}
-                              </div>
-                              {agent.sourcesUsed.length > 0 ? (
-                                <div className="source-chip-row">
-                                  {agent.sourcesUsed.map((chip) => (
-                                    <span className="source-chip" key={`debug-generation-${agent.agentName}-${chip.id}`}>
-                                      {chip.label}
-                                    </span>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-                          </details>
-                        ))}
+                <p className="memory-title">Auto-generated session artifacts</p>
+                {sessionAutoArtifacts.length > 0 ? (
+                  <div className="context-doc-list">
+                    {sessionAutoArtifacts.map((artifact) => (
+                      <div className="context-fact-item" key={artifact.id}>
+                        <strong>{artifact.title}</strong>
+                        <p>{artifact.summary}</p>
+                        <span>Built from current match state</span>
                       </div>
-                    ) : null}
-                    <div className="monitor-summary-note">
-                      {cueAssemblySummary ? <strong>{normalizeMonitorCopy(cueAssemblySummary)}</strong> : null}
-                      <p>{cueAssemblySupportCopy}</p>
-                    </div>
-                    {generationExplainability.sourcesUsed.length > 0 ? (
-                      <div className="source-chip-row">
-                        {generationExplainability.sourcesUsed.map((chip) => (
-                          <span className="source-chip" key={`generation-${chip.id}`}>
-                            {chip.label}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
-                  </>
+                    ))}
+                  </div>
                 ) : (
                   <p className="transcript-line transcript-line--muted">
-                    When a grounded cue appears, the streams and source facts behind it will show here.
+                    Once the feed links to a fixture, the pre-match brief and live summary will appear here automatically.
                   </p>
                 )}
               </div>
 
               <div className="review-section">
-                <p className="memory-title">Live retrieval context</p>
-                {liveContextItems.length > 0 ? (
-                  <div className="context-doc-list context-doc-list--compact">
-                    {liveContextItems.map((item) => (
-                      <div className="context-doc-item" key={item.id}>
-                        <strong>{item.headline}</strong>
-                        <span>{Math.round(item.salience * 100)}%</span>
+                <p className="memory-title">Global docs in this session</p>
+                {mergedContextDocuments.length > 0 ? (
+                  <div className="context-doc-list">
+                    {mergedContextDocuments.map((document) => {
+                      const isArmed = activeGlobalContextIds.includes(document.id);
+
+                      return (
+                        <div className="context-fact-item" key={`session-${document.id}`}>
+                          <strong>{document.fileName}</strong>
+                          <p>{document.localEntry ? getLocalContextPreview(document.localEntry) : 'Stored in the shared library for retrieval.'}</p>
+                          <div className="inline-actions inline-actions--compact inline-actions--spread">
+                            <span>{document.chunkCount} chunks</span>
+                            {sessionContextMode === 'custom' ? (
+                              <button
+                                type="button"
+                                className="text-button"
+                                onClick={() =>
+                                  setSessionSelectedGlobalContextIds((current) =>
+                                    current.includes(document.id)
+                                      ? current.filter((id) => id !== document.id)
+                                      : [...current, document.id]
+                                  )
+                                }
+                              >
+                                {isArmed ? 'Remove from session' : 'Add to session'}
+                              </button>
+                            ) : (
+                              <span>{isArmed ? 'Using global setup' : 'Not armed'}</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="transcript-line transcript-line--muted">
+                    No global docs are available yet for this session to inherit.
+                  </p>
+                )}
+              </div>
+
+              <div className="review-section">
+                <p className="memory-title">Session-only additions</p>
+                <div className="context-upload">
+                  <textarea
+                    className="context-textarea"
+                    value={sessionContextText}
+                    onChange={(event) => setSessionContextText(event.target.value)}
+                    placeholder="Add matchup-specific reminders, sponsor reads, or a one-off cheat sheet for this session..."
+                  />
+                  <div className="context-upload__actions">
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      disabled={isUploadingContext || !sessionContextText.trim()}
+                      onClick={() => void handleSessionContextTextUpload()}
+                    >
+                      {isUploadingContext ? 'Saving...' : 'Add session note'}
+                    </button>
+                    <label className="file-chip">
+                      <span>Upload session file</span>
+                      <input
+                        type="file"
+                        accept=".txt,.md,.csv,.json,.html,.xml"
+                        onChange={(event) => void handleSessionContextFileUpload(event)}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {sessionContextEntries.length > 0 ? (
+                  <div className="context-doc-list">
+                    {sessionContextEntries.map((entry) => (
+                      <div className="context-fact-item" key={entry.id}>
+                        <strong>{entry.fileName}</strong>
+                        <p>{getLocalContextPreview(entry)}</p>
+                        <span>Session-only</span>
                       </div>
                     ))}
                   </div>
-                ) : null}
-
-                {contextDocuments.length > 0 ? (
-                  <div className="context-doc-list context-doc-list--compact">
-                    {contextDocuments.map((document) => (
-                      <div className="context-doc-item" key={`live-doc-${document.id}`}>
-                        <strong>{document.fileName}</strong>
-                        <span>{document.chunkCount} chunks</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-
-                <div className="context-columns">
-                  <div className="context-column">
-                    <p className="memory-title">Used now</p>
-                    <div className="context-fact-list">
-                      {contextPreviewFacts.length > 0 ? (
-                        contextPreviewFacts.map((fact) => (
-                          <div className="context-fact-item" key={fact.id}>
-                            <strong>{fact.sourceChip.label}</strong>
-                            <p>{fact.text}</p>
-                            <span>{Math.round(fact.relevance * 100)}%</span>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="transcript-line transcript-line--muted">
-                          Retrieval context will appear once the sidekick has enough live signal.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="context-column">
-                    <p className="memory-title">Retrieved but held</p>
-                    <div className="context-fact-list">
-                      {heldContextPreviewFacts.length > 0 ? (
-                        heldContextPreviewFacts.map((fact) => (
-                          <div className="context-fact-item context-fact-item--held" key={fact.id}>
-                            <strong>{fact.sourceChip.label}</strong>
-                            <p>{fact.text}</p>
-                            <span>{Math.round(fact.relevance * 100)}%</span>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="transcript-line transcript-line--muted">No reserve context is waiting right now.</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                ) : (
+                  <p className="transcript-line transcript-line--muted">
+                    Nothing extra is pinned to this session yet.
+                  </p>
+                )}
               </div>
 
               <div className="review-section">
-                <p className="memory-title">Retrieval reasoning</p>
+                <p className="memory-title">What the hint engine will use</p>
                 <div className="reason-list">
-                  {(worldState.orchestration?.retrievalReasoning ?? []).map((line) => (
-                    <p key={`retrieval-${line}`}>{line}</p>
-                  ))}
-                </div>
-              </div>
-
-              <div className="review-section">
-                <p className="memory-title">Agent weights</p>
-                <div className="context-doc-list context-doc-list--compact">
-                  {topAgentWeights.map((agent) => (
-                    <div className="context-doc-item" key={`weight-${agent.agentName}`}>
-                      <strong>{agent.agentName}</strong>
-                      <span>{Math.round(agent.weight * 100)}%</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="review-section">
-                <p className="memory-title">Sliding memory</p>
-                <div className="reason-list">
-                  {(worldState.orchestration?.memoryState ?? []).map((line) => (
-                    <p key={`memory-${line}`}>{line}</p>
-                  ))}
+                  <p>
+                    The cue model receives the live match state, the auto-generated match artifacts, the armed global docs, and any session-only additions shown here.
+                  </p>
+                  <p>
+                    Armed topics: {sessionExpectedTopics.slice(0, 10).join(' · ') || 'Waiting for match context'}
+                  </p>
+                  <p>{sessionContextSummary || 'Session context will appear here once the pack has real content.'}</p>
                 </div>
               </div>
 

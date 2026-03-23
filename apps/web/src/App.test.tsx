@@ -1399,22 +1399,16 @@ describe('App dashboard', () => {
       debugButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    expect(container.textContent).toContain('System debug');
-    expect(container.textContent).toContain('Cue assembly');
+    expect(container.textContent).toContain('Sidekick Console');
+    expect(container.textContent).toContain('Current session');
+    expect(container.textContent).toContain('What the hint engine will use');
 
     await act(async () => {
-      // open the first debug details block if the browser keeps it collapsed in jsdom
-      const explainabilitySummary = [...container.querySelectorAll('summary')].find((node) =>
-        node.textContent?.includes('Cue assembly'),
-      );
-      explainabilitySummary?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('context-agent');
-    expect(container.textContent).toContain('The live save fact and recent booth pause aligned.');
-
     expect(container.textContent).toContain('prep-notes.md');
-    expect(container.textContent).toContain('Retrieved but held');
+    expect(container.textContent).toContain('Pre-match brief');
   });
 
   it('requests mic access when going live and still posts control updates', async () => {
