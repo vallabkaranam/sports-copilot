@@ -928,7 +928,22 @@
   position: static;
   right: auto;
   top: auto;
+  appearance: none;
+  -webkit-appearance: none;
   cursor: pointer;
+  line-height: 1.2;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease;
+}
+
+.stage-context-chip:hover,
+.stage-context-chip:focus-visible {
+  transform: none;
+  background: rgba(22, 33, 41, 0.9);
+  border-color: rgba(247, 242, 235, 0.22);
+  outline: none;
 }
 
 .stage-context-popover {
