@@ -98,7 +98,7 @@ const PROGRAM_FEED_SLOTS: ProgramFeedSlot[] = [
   {
     id: 'program-a',
     label: 'Channel 1',
-    tone: 'Preset match feed',
+    tone: 'Preset feed',
     source: 'preset',
     presetUrl: `${import.meta.env.VITE_API_BASE_URL ?? ''}/preset-feeds/barca`,
     presetFileName: 'Barca preset',
@@ -106,7 +106,7 @@ const PROGRAM_FEED_SLOTS: ProgramFeedSlot[] = [
   {
     id: 'program-b',
     label: 'Channel 2',
-    tone: 'Preset alternate feed',
+    tone: 'Preset feed',
     source: 'preset',
     presetUrl: `${import.meta.env.VITE_API_BASE_URL ?? ''}/preset-feeds/rangers`,
     presetFileName: 'Rangers preset',
@@ -114,7 +114,7 @@ const PROGRAM_FEED_SLOTS: ProgramFeedSlot[] = [
   {
     id: 'program-c',
     label: 'Channel 3',
-    tone: 'Manual backup feed',
+    tone: 'Backup input',
     source: 'upload',
   },
 ];
@@ -799,10 +799,8 @@ function App() {
   const [storedProgramFeeds, setStoredProgramFeeds] = useState<Record<ProgramFeedSlotId, StoredProgramFeed | null>>(
     createEmptyStoredProgramFeeds,
   );
-  const [clipPositionMs, setClipPositionMs] = useState(0);
   const [clipDurationMs, setClipDurationMs] = useState(0);
   const [isClipMuted, setIsClipMuted] = useState(true);
-  const [fixtureResolutionLabel, setFixtureResolutionLabel] = useState<string | null>(null);
   const [isResolvingFixture, setIsResolvingFixture] = useState(false);
   const [contextDocuments, setContextDocuments] = useState<UserContextDocument[]>([]);
   const [contextUploadText, setContextUploadText] = useState('');
@@ -870,6 +868,7 @@ function App() {
   const standbySampleStopTimerRef = useRef<number | null>(null);
   const standbySampleChunksRef = useRef<Blob[]>([]);
   const standbySampleStartedAtRef = useRef(0);
+  const channel3InputRef = useRef<HTMLInputElement | null>(null);
   const handoffTimerRef = useRef<number | null>(null);
   const syntheticUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const spokenSyntheticCueTextsRef = useRef<string[]>([]);
@@ -1265,7 +1264,6 @@ function App() {
     setSilenceStreakStartedAtMs(-1);
     setAudioLevel(0);
     setBoothClockMs(Date.now());
-    setClipPositionMs(0);
 
     if (!videoRef.current) {
       return;
@@ -1351,7 +1349,6 @@ function App() {
 
     const timeoutId = window.setTimeout(() => {
       setIsResolvingFixture(true);
-      setFixtureResolutionLabel('Identifying match');
 
       void captureVideoFrameAsBase64(videoElement)
         .then(({ screenshotBase64, mimeType }) =>
@@ -1360,9 +1357,6 @@ function App() {
         .catch((_error) => resolveFixture(undefined, undefined, loadedClipName))
         .then(async (resolvedFixture) => {
           lastResolvedFeedKeyRef.current = feedKey;
-          setFixtureResolutionLabel(
-            `${resolvedFixture.homeTeam} vs ${resolvedFixture.awayTeam}`,
-          );
 
           if (controls.activeFixtureId !== resolvedFixture.fixtureId) {
             await sendControlPatch({ activeFixtureId: resolvedFixture.fixtureId });
@@ -1372,7 +1366,6 @@ function App() {
         })
         .catch((error) => {
           lastResolvedFeedKeyRef.current = feedKey;
-          setFixtureResolutionLabel('Match link unavailable');
           setBoothError((current) =>
             current ??
             getFixtureResolutionErrorMessage(error),
@@ -1404,10 +1397,8 @@ function App() {
 
     setLoadedClipName('');
     setLoadedClipUrl(null);
-    setClipPositionMs(0);
     setClipDurationMs(0);
     setIsClipMuted(true);
-    setFixtureResolutionLabel(null);
     setIsResolvingFixture(false);
     setHasStartedBroadcast(false);
     setActiveBoothSessionId(null);
@@ -1918,7 +1909,6 @@ function App() {
       setSelectedProgramFeedId(slotId);
       setLoadedClipName(slot.presetFileName ?? slot.label);
       setLoadedClipUrl(slot.presetUrl);
-      setClipPositionMs(0);
       setClipDurationMs(0);
       setIsClipMuted(true);
       setBoothError(null);
@@ -1934,7 +1924,6 @@ function App() {
     setSelectedProgramFeedId(slotId);
     setLoadedClipName(feed.fileName);
     setLoadedClipUrl(nextClipUrl);
-    setClipPositionMs(0);
     setClipDurationMs(0);
     setIsClipMuted(true);
     setBoothError(null);
@@ -2615,8 +2604,6 @@ function App() {
       : formatStandbyVoiceStatus(standbyVoiceStatus);
   const activeDeliverySourceLabel =
     activeDeliverySource === 'synthetic-standby' ? 'Standby voice' : 'Live mic';
-  const clipClockLabel = formatDurationMs(clipPositionMs);
-  const clipDurationLabel = clipDurationMs > 0 ? formatDurationMs(clipDurationMs) : '--:--';
   const isBroadcastLive =
     hasStartedBroadcast && (controls.playbackStatus === 'playing' || isMicListening);
   const selectedProgramSlot = PROGRAM_FEED_SLOTS.find((slot) => slot.id === selectedProgramFeedId) ?? null;
@@ -3427,13 +3414,14 @@ function App() {
 
                         setSelectedProgramFeedId(slot.id);
                         setBoothError(null);
+                        channel3InputRef.current?.click();
                       }}
                     >
                       <span>{slot.label}</span>
                       <small>
                         {slot.source === 'preset'
-                          ? `${slot.presetFileName} · ${slot.tone}`
-                          : feed?.fileName ?? 'Load reel'}
+                          ? slot.presetFileName
+                          : feed?.fileName ?? 'Add input'}
                       </small>
                     </button>
                   );
@@ -3441,16 +3429,23 @@ function App() {
               </div>
 
               <div className="program-toolbar__actions">
-                <label className="file-chip ghost-button">
-                  <span>
-                    {storedProgramFeeds['program-c'] ? 'Update Channel 3' : 'Upload to Channel 3'}
-                  </span>
-                  <input
-                    type="file"
-                    accept="video/*"
-                    onChange={(event) => void handleProgramFeedChange('program-c', event)}
-                  />
-                </label>
+                <input
+                  ref={channel3InputRef}
+                  type="file"
+                  accept="video/*"
+                  className="sr-only-input"
+                  onChange={(event) => void handleProgramFeedChange('program-c', event)}
+                />
+                {selectedProgramSlot?.source === 'upload' && storedProgramFeeds[selectedProgramSlot.id] ? (
+                  <label className="file-chip ghost-button">
+                    <span>Replace Channel 3 input</span>
+                    <input
+                      type="file"
+                      accept="video/*"
+                      onChange={(event) => void handleProgramFeedChange('program-c', event)}
+                    />
+                  </label>
+                ) : null}
                 {selectedProgramSlot?.source === 'upload' ? (
                   <>
                     {storedProgramFeeds[selectedProgramSlot.id] ? (
@@ -3473,19 +3468,6 @@ function App() {
                     {isClipMuted ? 'Muted' : 'Audio on'}
                   </button>
                 ) : null}
-              </div>
-            </div>
-
-            <div className="program-toolbar__meta">
-              <p>
-                {selectedProgramSlot
-                  ? `${selectedProgramSlot.label} is on deck${loadedClipName ? ` · ${loadedClipName}` : ''}`
-                  : 'Select a preset or load a reel to start the desk.'}
-              </p>
-              <div className="panel-chip-row">
-                {loadedClipUrl ? <span className="panel-tag">{clipClockLabel} / {clipDurationLabel}</span> : null}
-                {isResolvingFixture ? <span className="panel-tag">Identifying match</span> : null}
-                {fixtureResolutionLabel ? <span className="panel-tag">{fixtureResolutionLabel}</span> : null}
               </div>
             </div>
           </section>
@@ -3518,7 +3500,7 @@ function App() {
                       ? isBroadcastLive
                         ? 'The desk is live. AndOne stays silent while you’re in rhythm, only surfacing prompts when it senses hesitation.'
                         : 'The feed is loaded and muted. Go live when you are ready.'
-                      : 'Pick a preset above or load a reel into Channel 3.'}
+                      : 'Pick a preset above or add an input to Channel 3.'}
                 </p>
               </div>
 
@@ -3535,9 +3517,6 @@ function App() {
                     onLoadedMetadata={(event) => {
                       setClipDurationMs(Math.round(event.currentTarget.duration * 1_000));
                     }}
-                    onTimeUpdate={(event) => {
-                      setClipPositionMs(Math.round(event.currentTarget.currentTime * 1_000));
-                    }}
                     onEnded={(event) => {
                       if (!hasStartedBroadcast || controls.playbackStatus !== 'playing') {
                         return;
@@ -3549,7 +3528,7 @@ function App() {
                       });
                     }}
                     onError={() => {
-                      setBoothError('The selected video feed could not be loaded. Try the other channel or reload the reel.');
+                      setBoothError('The selected video feed could not be loaded. Try the other channel or reload the input.');
                     }}
                   />
                 ) : (
@@ -3562,7 +3541,7 @@ function App() {
                   {!loadedClipUrl ? (
                     <div className="replay-copy">
                       <span className="live-chip">Ready for live desk</span>
-                      <h3>Choose a preset above or upload a backup reel.</h3>
+                      <h3>Choose a preset above or add a backup input.</h3>
                     </div>
                   ) : null}
                 </div>
