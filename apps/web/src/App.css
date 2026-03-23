@@ -389,17 +389,20 @@
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .live-workspace-card,
 .live-workspace-stack {
   min-width: 0;
+  height: 100%;
 }
 
 .live-workspace-stack {
   display: grid;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
   gap: 12px;
+  min-height: 300px;
 }
 
 .main-grid--debug {
@@ -1539,6 +1542,8 @@
 
 .booth-card--transcript {
   gap: 10px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 300px;
 }
 
 .metric-card {
@@ -1722,6 +1727,7 @@
   display: grid;
   gap: 8px;
   margin-top: 4px;
+  min-height: 148px;
   max-height: 40vh;
   overflow-y: auto;
   padding-right: 2px;
@@ -1890,6 +1896,7 @@
   padding: 12px;
   border-top: 1px solid rgba(45, 35, 29, 0.08);
   background: rgba(255, 255, 255, 0.4);
+  min-height: 72px;
 }
 
 .agent-trace-item__summary {
@@ -2036,6 +2043,10 @@
   gap: 14px;
 }
 
+.live-sidebar > .details-card {
+  margin-top: 6px;
+}
+
 .live-sidebar-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -2049,6 +2060,7 @@
 
 .live-card--wide {
   grid-column: 1 / -1;
+  min-height: 144px;
 }
 
 .live-overview-card {
