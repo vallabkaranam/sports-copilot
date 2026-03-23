@@ -929,6 +929,7 @@ function App() {
   const [assistEpisodeId, setAssistEpisodeId] = useState(0);
   const [isAssistEpisodeActive, setIsAssistEpisodeActive] = useState(false);
   const [latchedAssistEpisodeId, setLatchedAssistEpisodeId] = useState(0);
+  const [isStageContextOpen, setIsStageContextOpen] = useState(false);
   const [microphoneAvailability, setMicrophoneAvailability] =
     useState<MicrophoneAvailability>('supported');
   const shouldKeepMicLiveRef = useRef(false);
@@ -2706,7 +2707,7 @@ function App() {
     sessionContextMode === 'inherit-global'
       ? mergedContextDocuments.map((document) => document.id)
       : sessionSelectedGlobalContextIds;
-  const armedGlobalContextDocs = mergedContextDocuments.filter((document) =>
+  const sessionGlobalContextDocs = mergedContextDocuments.filter((document) =>
     activeGlobalContextIds.includes(document.id),
   );
   const sessionAutoArtifacts = useMemo(
@@ -2741,15 +2742,40 @@ function App() {
   );
   const sessionContextSummary = mergeUniqueText([
     ...sessionAutoArtifacts.map((artifact) => artifact.text),
-    ...armedGlobalContextDocs.map((document) => document.localEntry?.text ?? document.fileName),
+    ...sessionGlobalContextDocs.map((document) => document.localEntry?.text ?? document.fileName),
     ...sessionContextEntries.map((entry) => entry.text),
   ], 10).join(' | ');
   const sessionExpectedTopics = mergeUniqueText([
     ...buildExpectedTopics(worldState),
-    ...armedGlobalContextDocs.map((document) => document.localEntry?.fileName ?? document.fileName),
+    ...sessionGlobalContextDocs.map((document) => document.localEntry?.fileName ?? document.fileName),
     ...sessionContextEntries.map((entry) => entry.fileName),
     ...sessionContextEntries.map((entry) => getLocalContextPreview(entry)),
   ], 12);
+  const sessionContextPreviewItems = useMemo(
+    () => [
+      ...sessionAutoArtifacts.map((artifact) => ({
+        id: artifact.id,
+        title: artifact.title,
+        summary: artifact.summary,
+        kind: 'Auto',
+      })),
+      ...sessionGlobalContextDocs.map((document) => ({
+        id: `global-${document.id}`,
+        title: document.fileName,
+        summary: document.localEntry
+          ? getLocalContextPreview(document.localEntry)
+          : 'Included from the global context library.',
+        kind: 'Global',
+      })),
+      ...sessionContextEntries.map((entry) => ({
+        id: entry.id,
+        title: entry.fileName,
+        summary: getLocalContextPreview(entry),
+        kind: 'Session',
+      })),
+    ],
+    [sessionAutoArtifacts, sessionGlobalContextDocs, sessionContextEntries],
+  );
   const currentBoothFeatures = useMemo<BoothFeatureSnapshot>(
     () => ({
       timestamp: boothClockMs,
@@ -3083,10 +3109,10 @@ function App() {
     ? `${Math.max(boothSignal.audioLevel * 100, 3)}%`
     : '0%';
   const activeSessionContextCount =
-    sessionAutoArtifacts.length + armedGlobalContextDocs.length + sessionContextEntries.length;
+    sessionAutoArtifacts.length + sessionGlobalContextDocs.length + sessionContextEntries.length;
   const stageContextOverlayLabel =
     activeSessionContextCount > 0
-      ? `${activeSessionContextCount} context ${activeSessionContextCount === 1 ? 'item' : 'items'} armed`
+      ? `${activeSessionContextCount} context ${activeSessionContextCount === 1 ? 'item' : 'items'} loaded`
       : null;
   const stageDeliveryOverlayLabel =
     activeDeliverySource === 'synthetic-standby' ? 'AndOne has the call' : null;
@@ -3097,6 +3123,11 @@ function App() {
     activeDeliverySource === 'synthetic-standby'
       ? !isBroadcastLive
       : !isBroadcastLive || !isStandbyVoiceAvailable;
+  useEffect(() => {
+    if (activeSessionContextCount === 0) {
+      setIsStageContextOpen(false);
+    }
+  }, [activeSessionContextCount]);
   const postSessionReview = derivePostSessionReview(latestCompletedSession);
   const completedReviewSessions = useMemo(
     () =>
@@ -3974,8 +4005,43 @@ function App() {
                   ) : null}
 
                   {stageContextOverlayLabel ? (
-                    <div className="stage-context-chip" aria-label="Context loaded">
-                      {stageContextOverlayLabel}
+                    <div
+                      className={`stage-context-overlay ${isStageContextOpen ? 'stage-context-overlay--open' : ''}`}
+                      onMouseEnter={() => setIsStageContextOpen(true)}
+                      onMouseLeave={() => setIsStageContextOpen(false)}
+                    >
+                      <button
+                        type="button"
+                        className="stage-context-chip"
+                        aria-label="Session context loaded"
+                        aria-expanded={isStageContextOpen}
+                        aria-controls="stage-context-popover"
+                        onClick={() => setIsStageContextOpen((current) => !current)}
+                      >
+                        {stageContextOverlayLabel}
+                      </button>
+
+                      {isStageContextOpen ? (
+                        <div className="stage-context-popover" id="stage-context-popover">
+                          <p className="stage-context-popover__title">Loaded for this session</p>
+                          <div className="stage-context-popover__list">
+                            {sessionContextPreviewItems.slice(0, 6).map((item) => (
+                              <div className="stage-context-popover__item" key={item.id}>
+                                <strong>{item.title}</strong>
+                                <p>{item.summary}</p>
+                                <span>{item.kind}</span>
+                              </div>
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            className="text-button"
+                            onClick={() => navigateToRoute('debug')}
+                          >
+                            Open Sidekick Console
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
 
@@ -4611,7 +4677,7 @@ function App() {
                   <strong>{standbyVoiceStatusLabel}</strong>
                 </div>
                 <span className={`panel-tag ${isStandbyVoiceAvailable ? 'panel-tag--success' : ''}`}>
-                  {isStandbyVoiceAvailable ? 'Armed' : 'Setup'}
+                  {isStandbyVoiceAvailable ? 'Ready' : 'Setup'}
                 </span>
               </div>
               <p className="field-copy field-copy--tight">{standbySetupSummary}</p>
@@ -4697,7 +4763,7 @@ function App() {
                 <h2>{loadedClipName || 'Session pack'}</h2>
                 <p className="panel-copy">Choose what this broadcast will feed into the cue engine before you go live.</p>
               </div>
-              <span className="panel-tag">{activeSessionContextCount} items armed</span>
+              <span className="panel-tag">{activeSessionContextCount} in session</span>
             </div>
 
             <div className="review-stack">
@@ -4753,7 +4819,7 @@ function App() {
                 {mergedContextDocuments.length > 0 ? (
                   <div className="context-doc-list">
                     {mergedContextDocuments.map((document) => {
-                      const isArmed = activeGlobalContextIds.includes(document.id);
+                      const isInSession = activeGlobalContextIds.includes(document.id);
 
                       return (
                         <div className="context-fact-item" key={`session-${document.id}`}>
@@ -4773,10 +4839,10 @@ function App() {
                                   )
                                 }
                               >
-                                {isArmed ? 'Remove from session' : 'Add to session'}
+                                {isInSession ? 'Remove from session' : 'Add to session'}
                               </button>
                             ) : (
-                              <span>{isArmed ? 'Using global setup' : 'Not armed'}</span>
+                              <span>{isInSession ? 'Included' : 'Not included'}</span>
                             )}
                           </div>
                         </div>
@@ -4840,10 +4906,10 @@ function App() {
                 <p className="memory-title">What the cue engine will use</p>
                 <div className="reason-list">
                   <p>
-                    The cue engine receives the live match state, the auto-generated match artifacts, the armed global docs, and any session-only additions shown here.
+                    The cue engine receives the live match state, the auto-generated match artifacts, the selected global docs, and any session-only additions shown here.
                   </p>
                   <p>
-                    Armed topics: {sessionExpectedTopics.slice(0, 10).join(' · ') || 'Waiting for match context'}
+                    Session topics: {sessionExpectedTopics.slice(0, 10).join(' · ') || 'Waiting for match context'}
                   </p>
                   <p>{sessionContextSummary || 'Session context will appear here once the pack has real content.'}</p>
                 </div>

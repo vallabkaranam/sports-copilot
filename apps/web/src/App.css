@@ -908,8 +908,74 @@
   border-color: rgba(247, 242, 235, 0.2);
 }
 
-.stage-context-chip {
+.stage-context-overlay {
+  position: absolute;
   right: 14px;
+  top: 14px;
+  z-index: 2;
+}
+
+.stage-context-chip {
+  position: static;
+  right: auto;
+  top: auto;
+  cursor: pointer;
+}
+
+.stage-context-popover {
+  margin-top: 10px;
+  width: min(320px, calc(100vw - 48px));
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(247, 242, 235, 0.16);
+  background: rgba(22, 33, 41, 0.9);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(12px);
+}
+
+.stage-context-popover__title {
+  margin: 0 0 10px;
+  font-family: 'Sora', 'Avenir Next', sans-serif;
+  font-size: 0.8rem;
+  color: rgba(247, 242, 235, 0.92);
+}
+
+.stage-context-popover__list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.stage-context-popover__item {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(247, 242, 235, 0.06);
+  border: 1px solid rgba(247, 242, 235, 0.08);
+}
+
+.stage-context-popover__item strong {
+  color: rgba(247, 242, 235, 0.94);
+  font-size: 0.8rem;
+}
+
+.stage-context-popover__item p {
+  margin: 0;
+  color: rgba(247, 242, 235, 0.72);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.stage-context-popover__item span {
+  color: rgba(247, 242, 235, 0.54);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.stage-context-popover .text-button {
+  color: rgba(247, 242, 235, 0.88);
 }
 
 .replay-copy {
@@ -2569,6 +2635,15 @@
     max-width: calc(100% - 24px);
     padding: 7px 10px;
     font-size: 0.68rem;
+  }
+
+  .stage-context-overlay {
+    right: 12px;
+    top: 12px;
+  }
+
+  .stage-context-popover {
+    width: min(280px, calc(100vw - 40px));
   }
 
   .booth-summary--review {
