@@ -2594,7 +2594,11 @@ function App() {
     hasStartedBroadcast && (controls.playbackStatus === 'playing' || isMicListening);
   const selectedProgramSlot = PROGRAM_FEED_SLOTS.find((slot) => slot.id === selectedProgramFeedId) ?? null;
   const feedHeading = selectedProgramSlot
-    ? `${selectedProgramSlot.label} · ${loadedClipName}`
+    ? selectedProgramSlot.source === 'upload'
+      ? storedProgramFeeds[selectedProgramSlot.id]?.fileName
+        ? `${selectedProgramSlot.label} · ${storedProgramFeeds[selectedProgramSlot.id]?.fileName}`
+        : `${selectedProgramSlot.label} · Add input`
+      : `${selectedProgramSlot.label} · ${selectedProgramSlot.presetFileName ?? loadedClipName}`
     : 'Select a program feed';
   const preMatchCueSummary = useMemo(() => buildPreMatchCueSummary(worldState), [worldState]);
   const replayToastSignature = `${activeAssist.type}:${activeAssist.text}:${shouldSurfaceAssist}:${controls.restartToken}`;
