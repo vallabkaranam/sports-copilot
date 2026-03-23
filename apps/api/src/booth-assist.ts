@@ -111,7 +111,7 @@ function buildCueExplainability(params: {
     agentName: 'context-agent',
     output:
       params.contextBundle?.summary ||
-      (params.selectedFacts[0]?.text ?? 'No context bundle items were selected.'),
+      (params.selectedFacts[0]?.text ?? 'Using the live booth state as the context anchor.'),
     reasoningTrace: [
       `Context bundle items available: ${params.contextBundle?.items.length ?? 0}.`,
       `Retrieved facts considered: ${params.selectedFacts.length}.`,
@@ -128,7 +128,7 @@ function buildCueExplainability(params: {
             .slice(0, 2)
             .map((fact) => fact.text)
             .join(' | ')
-        : 'No supporting facts were selected.',
+        : 'Falling back to the live booth state because explicit retrieval facts were thin.',
     reasoningTrace: params.selectedFacts.length
       ? params.selectedFacts.slice(0, 3).map(
           (fact) =>
@@ -136,7 +136,7 @@ function buildCueExplainability(params: {
               fact.metadata?.userProvided ? ' and comes from uploaded context.' : ''
             }`,
         )
-      : ['Grounding fell back to the current booth state because retrieval was thin.'],
+      : ['Grounding fell back to the current booth state because explicit retrieval facts were thin.'],
     sourcesUsed: params.selectedFacts.slice(0, 4).map((fact) => fact.sourceChip),
     state: params.selectedFacts.length > 0 ? 'active' : 'waiting',
   };
@@ -213,9 +213,14 @@ function buildPrompt(params: {
     'Your job is to offer one short, broadcaster-friendly line that gets the speaker moving again without taking over.',
     'Use only the supplied facts and context. Never invent a stat, event, player detail, or narrative.',
     'Treat liveStreamContext as the freshest rolling summary of the last several seconds of play.',
+    'Never mention the speaker, transcript, hesitation, filler words, or coaching process inside the cue text.',
+    'Do not write meta lines such as "pick up from there", "use this", "go back to", "you said", or "reset with".',
+    'If the hesitation came from filler or a broken restart, ignore the filler fragment and anchor the cue to the last substantive live idea or grounded fact.',
+    'Use transcript fragments only to infer intent. Use retrieved facts, live events, live stream context, stats, and pre-match context as the truth sources for the cue itself.',
     'If the facts are thin, generate a generic bridge line that stays grounded in the current moment instead of hallucinating.',
     'Prefer the rolling context bundle first when it has relevant items, because it represents the freshest session rack.',
     'When multiple source families are available, blend them naturally: live moment first, then stat/social/setup support when relevant.',
+    'Prefer the freshest live event or live stream context over stale transcript paraphrase whenever those sources conflict in tone.',
     'Avoid generic phrasing like "reset with one clean line" or "go back to the moment" unless the supplied facts are truly too thin for anything more specific.',
     'If you can ground the cue in a live event plus one supporting source, do that instead of producing a vague bridge.',
     'Keep the cue to a single line, ideally 8-18 words, and keep whyNow short.',
@@ -362,6 +367,7 @@ export async function generateBoothCueWithOpenAI(params: {
     const selectedFacts = retrievedFacts.filter((fact) =>
       parsed.sourceFactIds?.includes(fact.id),
     );
+    const groundedFacts = selectedFacts.length > 0 ? selectedFacts : retrievedFacts.slice(0, 2);
     const assist: AssistCard = {
       ...createEmptyAssistCard(),
       type: parsed.type === 'none' ? 'context' : parsed.type,
@@ -375,7 +381,7 @@ export async function generateBoothCueWithOpenAI(params: {
             : 'low',
       confidence: clamp(typeof parsed.confidence === 'number' ? parsed.confidence : 0.64),
       whyNow: parsed.whyNow.trim(),
-      sourceChips: dedupeSourceChips(selectedFacts),
+      sourceChips: dedupeSourceChips(groundedFacts),
     };
 
     return {
@@ -387,7 +393,7 @@ export async function generateBoothCueWithOpenAI(params: {
             ? 1600
             : 2400,
       explainability: buildCueExplainability({
-        selectedFacts,
+        selectedFacts: groundedFacts,
         model,
         assist,
         features: params.features,

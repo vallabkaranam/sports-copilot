@@ -37,6 +37,12 @@ const STOP_WORDS = new Set([
   'with',
 ]);
 
+const FILLER_PATTERNS = [
+  /\b(?:um+|uh+|erm|err|ah+|eh+)\b/gi,
+  /\b(?:you know|i mean|like|kind of|sort of|basically)\b/gi,
+  /\b(?:line)\b/gi,
+];
+
 const CUE_INSTRUCTION_PREFIXES = [
   'bring in the fan reaction:',
   'go back to the setup:',
@@ -84,6 +90,15 @@ function normalizeText(text: string) {
   return text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function stripFillerLanguage(text: string) {
+  let next = text;
+  for (const pattern of FILLER_PATTERNS) {
+    next = next.replace(pattern, ' ');
+  }
+
+  return next.replace(/\s+/g, ' ').replace(/\s+([,.;!?])/g, '$1').trim();
+}
+
 function tokenize(text: string) {
   return normalizeText(text)
     .split(' ')
@@ -107,6 +122,29 @@ function quoteExcerpt(text: string) {
   }
 
   return `"${normalized.slice(0, 45).trimEnd()}..."`;
+}
+
+function extractRelevantBroadcastThread(text: string) {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return '';
+  }
+
+  const clauseCandidates = normalized
+    .split(/[.!?]+/)
+    .flatMap((sentence) => sentence.split(/(?:,| - | — )/))
+    .map((clause) => stripFillerLanguage(clause).trim())
+    .filter(Boolean);
+
+  for (let index = clauseCandidates.length - 1; index >= 0; index -= 1) {
+    const clause = clauseCandidates[index];
+    const tokenCount = tokenize(clause).length;
+    if (tokenCount >= 3) {
+      return clause;
+    }
+  }
+
+  return stripFillerLanguage(normalized);
 }
 
 function cleanFactText(text: string) {
@@ -388,6 +426,15 @@ function sentenceCase(text: string) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+function ensureSentence(text: string) {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+
+  return /[.!?]$/.test(trimmed) ? sentenceCase(trimmed) : `${sentenceCase(trimmed)}.`;
+}
+
 function trimFactSentence(text: string) {
   return cleanFactText(text).replace(/[.]+$/, '').trim();
 }
@@ -401,11 +448,11 @@ function buildGroundedFallback(params: {
   const [primaryFact, secondaryFact] = selectedFacts;
 
   if (!primaryFact) {
-    const lineExcerpt = params.currentLine ? quoteExcerpt(params.currentLine) : 'the last live beat';
+    const lineExcerpt = params.currentLine ? quoteExcerpt(params.currentLine) : 'the live phase';
     return {
       type: 'transition' as const,
-      text: `Pick up from ${lineExcerpt} and land the next concrete detail.`,
-      whyNow: 'No strong external fact is ready yet, so use the live thread you already established.',
+      text: 'Still with the same phase of play here as the next opening develops.',
+      whyNow: `Grounding is thin, so the cue stays with ${lineExcerpt} instead of inventing a new beat.`,
       sourceFacts: [] as RetrievedFact[],
     };
   }
@@ -415,25 +462,11 @@ function buildGroundedFallback(params: {
   const primaryFamily = getFactFamily(primaryFact);
   const secondaryFamily = secondaryFact ? getFactFamily(secondaryFact) : null;
 
-  const leadText =
-    params.intent === 'stats' && primaryFamily === 'stats'
-      ? `Use the number: ${primaryText}.`
-      : params.intent === 'social' && primaryFamily === 'social'
-        ? `Use the reaction: ${primaryText}.`
-        : params.intent === 'setup' && primaryFamily === 'setup'
-          ? `Bring in the setup: ${primaryText}.`
-          : `Use the live detail: ${primaryText}.`;
+  const leadText = ensureSentence(primaryText);
 
-  const supportText =
-    secondaryText && secondaryFamily === 'social'
-      ? `Then layer in the reaction: ${secondaryText}.`
-      : secondaryText && secondaryFamily === 'stats'
-        ? `Then connect it to the number: ${secondaryText}.`
-        : secondaryText && secondaryFamily === 'setup'
-          ? `Then tie it back to the setup: ${secondaryText}.`
-          : secondaryText
-            ? `Then land the follow-through: ${secondaryText}.`
-            : '';
+  const supportText = secondaryText
+    ? ensureSentence(secondaryText)
+    : '';
 
   const type: AssistCard['type'] =
     primaryFamily === 'stats'
@@ -460,7 +493,8 @@ export function getBoothAssistQuery({
   boothTranscript: TranscriptEntry[];
   interimTranscript: string;
 }) {
-  return interimTranscript.trim() || boothTranscript[boothTranscript.length - 1]?.text.trim() || '';
+  const rawText = interimTranscript.trim() || boothTranscript[boothTranscript.length - 1]?.text.trim() || '';
+  return extractRelevantBroadcastThread(rawText);
 }
 
 function createSyntheticFact(
@@ -926,11 +960,12 @@ export function rankBoothAssistFacts({
 
 function buildHintFromFact(fact: RetrievedFact) {
   const cleanText = cleanFactText(fact.text);
+  const naturalLine = ensureSentence(cleanText);
 
   if (fact.source.includes('social:')) {
     return {
       type: 'context' as const,
-      text: `Bring in the fan reaction: ${cleanText}.`,
+      text: naturalLine,
       whyNow: 'You paused on a crowd-reaction angle, so use the live social pulse.',
     };
   }
@@ -938,7 +973,7 @@ function buildHintFromFact(fact: RetrievedFact) {
   if (fact.metadata?.chunkCategory === 'recent-form' || fact.metadata?.chunkCategory === 'trend') {
     return {
       type: 'context' as const,
-      text: `Go back to the setup: ${cleanText}.`,
+      text: naturalLine,
       whyNow: 'You were leaning into the match setup and left a pause.',
     };
   }
@@ -946,7 +981,7 @@ function buildHintFromFact(fact: RetrievedFact) {
   if (fact.metadata?.chunkCategory === 'head-to-head') {
     return {
       type: 'context' as const,
-      text: `Use the rivalry context: ${cleanText}.`,
+      text: naturalLine,
       whyNow: 'A short history note can bridge this hesitation cleanly.',
     };
   }
@@ -954,7 +989,7 @@ function buildHintFromFact(fact: RetrievedFact) {
   if (fact.metadata?.chunkCategory === 'venue' || fact.metadata?.chunkCategory === 'weather') {
     return {
       type: 'transition' as const,
-      text: `Set the scene: ${cleanText}.`,
+      text: naturalLine,
       whyNow: 'You paused while scene-setting, so anchor the environment.',
     };
   }
@@ -962,7 +997,7 @@ function buildHintFromFact(fact: RetrievedFact) {
   if (fact.source.includes('stats:')) {
     return {
       type: 'stat' as const,
-      text: `Use the number: ${cleanText}.`,
+      text: naturalLine,
       whyNow: 'A single stat can rescue the pause without forcing a big reset.',
     };
   }
@@ -970,14 +1005,14 @@ function buildHintFromFact(fact: RetrievedFact) {
   if (fact.source.includes('event-feed:')) {
     return {
       type: 'transition' as const,
-      text: `Pick up the live moment: ${cleanText}.`,
+      text: naturalLine,
       whyNow: 'Tie the call back to the last live action you were describing.',
     };
   }
 
   return {
     type: 'context' as const,
-    text: cleanText,
+    text: naturalLine,
     whyNow: 'Use the strongest grounded detail to restart the call.',
   };
 }

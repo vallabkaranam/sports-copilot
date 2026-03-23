@@ -7,7 +7,7 @@ import {
   RetrievedFact,
   TranscriptEntry,
 } from '@sports-copilot/shared-types';
-import { buildBoothAssist, deriveExcludedCueTexts, rankBoothAssistFacts } from './boothAssist';
+import { buildBoothAssist, deriveExcludedCueTexts, getBoothAssistQuery, rankBoothAssistFacts } from './boothAssist';
 import type { BoothSignal } from './boothSignal';
 
 function makeSignal(overrides: Partial<BoothSignal> = {}): BoothSignal {
@@ -239,7 +239,7 @@ describe('buildBoothAssist', () => {
       },
     });
 
-    expect(assist.text.toLowerCase()).toMatch(/reaction|fan pulse|crowd/);
+    expect(assist.text).toBe('Fans are calling that save unbelievable.');
     expect(assist.sourceChips[0]?.source).toContain('social');
   });
 
@@ -280,7 +280,7 @@ describe('buildBoothAssist', () => {
       },
     });
 
-    expect(assist.text.toLowerCase()).toMatch(/setup|match frame|opening thought/);
+    expect(assist.text).toBe('Barcelona recent form: 3-1-1 across the last 5.');
     expect(assist.sourceChips[0]?.metadata?.chunkCategory).toBe('recent-form');
   });
 
@@ -312,7 +312,7 @@ describe('buildBoothAssist', () => {
     });
 
     expect(assist.type).toBe('stat');
-    expect(assist.text.toLowerCase()).toMatch(/number|stat|metric/);
+    expect(assist.text).toBe('Barcelona possession: 58%.');
   });
 
   it('uses control stats for a Rangers control line instead of away corners', () => {
@@ -709,8 +709,17 @@ describe('buildBoothAssist', () => {
     });
 
     expect(assist.type).toBe('transition');
-    expect(assist.text).toContain('Pick up from');
+    expect(assist.text).toBe('Still with the same phase of play here as the next opening develops.');
     expect(assist.sourceChips).toHaveLength(0);
+  });
+
+  it('ignores filler-heavy fragments and keeps the last relevant live idea in the query', () => {
+    expect(
+      getBoothAssistQuery({
+        boothTranscript: makeTranscript('Madrid can break here, Vinicius is, um... Vinicius is...'),
+        interimTranscript: '',
+      }),
+    ).toBe('Madrid can break here');
   });
 
   it('derives excluded cue texts only when the transcript has already covered them', () => {

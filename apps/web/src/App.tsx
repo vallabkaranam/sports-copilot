@@ -133,7 +133,7 @@ function getAppRouteFromLocation(): AppRoute {
   }
 
   const route = window.location.hash.replace(/^#\/?/, '').trim().toLowerCase();
-  if (route === 'archive' || route === 'reviews') {
+  if (route === 'archive' || route === 'reviews' || route === 'analyze') {
     return 'archive';
   }
   if (route === 'debug') {
@@ -150,11 +150,11 @@ function formatStandbyVoiceStatus(status: StandbyVoiceStatus) {
     case 'processing':
       return 'Processing sample';
     case 'ready':
-      return 'Standby voice ready';
+      return 'Takeover ready';
     case 'failed':
-      return 'Standby voice unavailable';
+      return 'Takeover unavailable';
     default:
-      return 'Standby voice off';
+      return 'Takeover off';
   }
 }
 
@@ -163,10 +163,24 @@ function setAppRouteHash(route: AppRoute) {
     return;
   }
 
-  const nextHash = `#/${route}`;
+  const nextHash = route === 'archive' ? '#/analyze' : `#/${route}`;
   if (window.location.hash !== nextHash) {
     window.location.hash = nextHash;
   }
+}
+
+function formatSessionStartedAt(timestamp: string) {
+  const parsed = Date.parse(timestamp);
+  if (Number.isNaN(parsed)) {
+    return 'Recent run';
+  }
+
+  return new Date(parsed).toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
 
 function normalizeAgentName(agentName: string) {
@@ -657,7 +671,7 @@ function derivePostSessionReview(session: BoothSessionRecord | null) {
   ];
 
   return {
-    headline: 'Session review is ready.',
+    headline: 'Session analysis is ready.',
     summary: `Saved ${session.sampleCount} live samples and ${session.assistCount} prompt${
       session.assistCount === 1 ? '' : 's'
     } for this run.`,
@@ -1474,7 +1488,7 @@ function App() {
       setLatestCompletedSessionReview(review.review);
     } catch (_error) {
       setLatestCompletedSessionReview(null);
-      setBoothError('The AI session review is still processing. Try this saved session again in a moment.');
+      setBoothError('The AI session analysis is still processing. Try this saved run again in a moment.');
     } finally {
       setIsLoadingReview(false);
     }
@@ -1509,7 +1523,7 @@ function App() {
         const review = await fetchBoothSessionReview(response.session.id);
         setLatestCompletedSessionReview(review.review);
       } catch (_error) {
-        setBoothError('The live session was saved, but the AI session review is still loading.');
+        setBoothError('The live session was saved, but the AI session analysis is still loading.');
       }
 
       try {
@@ -2187,6 +2201,7 @@ function App() {
           setSubbedCue(null);
           setSubbedCueRequestedAt(0);
           spokenSyntheticCueTextsRef.current = [];
+          speakStandbyNarration('AndOne is on air. I have the call while you reset.');
         } else {
           setHandoffState('restoring_live');
           cancelSyntheticSpeech();
@@ -2677,6 +2692,8 @@ function App() {
     contextDocuments.length > 0
       ? `${contextDocuments.length} context ${contextDocuments.length === 1 ? 'doc' : 'docs'} armed`
       : null;
+  const stageDeliveryOverlayLabel =
+    activeDeliverySource === 'synthetic-standby' ? 'AndOne on air' : null;
   const standbyToggleDirection = activeDeliverySource === 'synthetic-standby' ? 'sub_back' : 'sub_in';
   const standbyToggleLabel =
     activeDeliverySource === 'synthetic-standby' ? "I'm back on mic" : 'Let AndOne take over';
@@ -2721,7 +2738,7 @@ function App() {
   const reviewStatusLabel = isLoadingReview
     ? 'Analyzing'
     : latestCompletedSessionReview
-      ? 'AI review ready'
+      ? 'AI analysis ready'
       : latestCompletedSession
         ? 'Saved trace ready'
         : 'Standby';
@@ -2850,6 +2867,15 @@ function App() {
     }
 
     if (
+      speakerHasRecovered &&
+      hasLatchedAssist &&
+      !assistIsLocked
+    ) {
+      setAssistVisibilityPhase((current) => (current === 'hidden' ? 'hidden' : 'weaning'));
+      return;
+    }
+
+    if (
       !nextTriggeredAssist &&
       hasLatchedAssist &&
       !assistIsLocked &&
@@ -2868,6 +2894,7 @@ function App() {
     latchedAssist.type,
     latchedAssist.whyNow,
     nextTriggeredAssist,
+    speakerHasRecovered,
   ]);
 
   useEffect(() => {
@@ -3115,7 +3142,8 @@ function App() {
       !boothHasLiveInput ||
       !isCueEndpointAvailable ||
       !liveBoothShouldSurfaceAssist ||
-      boothInterpretation?.state === 'weaning-off'
+      boothInterpretation?.state === 'weaning-off' ||
+      speakerHasRecovered
     ) {
       if (generatedCue) {
         setGeneratedCue(null);
@@ -3199,6 +3227,7 @@ function App() {
     rankedBoothAssistFacts,
     preMatchCueSummary,
     recentCueTexts,
+    speakerHasRecovered,
     worldState.contextBundle,
     worldState.liveStreamContext,
     worldState.orchestration?.agentWeights,
@@ -3344,7 +3373,7 @@ function App() {
               className={appRoute === 'archive' ? 'ghost-button ghost-button--active' : 'ghost-button'}
               onClick={() => navigateToRoute('archive')}
             >
-              Archive
+              Analyze
             </button>
             <button
               type="button"
@@ -3477,7 +3506,7 @@ function App() {
                 </button>
                 <p className="stage-primary-copy">
                   {isFinalizingSession
-                    ? 'Saving the session and building the review.'
+                    ? 'Saving the session and building the analysis.'
                     : loadedClipUrl
                       ? isBroadcastLive
                         ? 'The desk is live. AndOne stays silent while you’re in rhythm, only surfacing prompts when it senses hesitation.'
@@ -3520,6 +3549,12 @@ function App() {
                 <div className="replay-stage__overlay" />
 
                 <div className="replay-stage__content">
+                  {stageDeliveryOverlayLabel ? (
+                    <div className="stage-delivery-chip" aria-label="Delivery mode">
+                      {stageDeliveryOverlayLabel}
+                    </div>
+                  ) : null}
+
                   {stageContextOverlayLabel ? (
                     <div className="stage-context-chip" aria-label="Context loaded">
                       {stageContextOverlayLabel}
@@ -3868,21 +3903,21 @@ function App() {
         </>
       ) : appRoute === 'archive' ? (
         <div className="main-grid main-grid--reviews">
-          <section className="panel">
+          <section className="panel analyze-sidebar">
             <div className="panel-header">
               <div>
-                <p className="panel-kicker"><span className="panel-kicker__icon" aria-hidden="true">🗂</span>Saved sessions</p>
-                <h2>Completed sessions</h2>
+                <p className="panel-kicker"><span className="panel-kicker__icon" aria-hidden="true">📈</span>Analyze</p>
+                <h2>Completed runs</h2>
                 <p className="panel-copy">
-                  Saved sessions only. Open live runs stay out of the archive until they are finished.
+                  Finished runs only. Live sessions stay out of analysis until they are ended and saved.
                 </p>
               </div>
-              <span className="panel-tag">{completedReviewSessions.length} sessions</span>
+              <span className="panel-tag">{completedReviewSessions.length} runs</span>
             </div>
 
             <div className="commentary-metadata commentary-metadata--review">
               <div>
-                <p className="control-label">Completed</p>
+                <p className="control-label">Completed runs</p>
                 <strong>{completedReviewAnalytics.totalSessions}</strong>
               </div>
               <div>
@@ -3902,39 +3937,42 @@ function App() {
             <div className="timeline-list">
               {activeSavedSessions.length > 0 ? (
                 <div className="inline-note">
-                  {activeSavedSessions.length} active run{activeSavedSessions.length === 1 ? '' : 's'} are still open in the saved session store and hidden from this review list.
+                  {activeSavedSessions.length} live run{activeSavedSessions.length === 1 ? '' : 's'} {activeSavedSessions.length === 1 ? 'is' : 'are'} still open and will appear here after the session is finished.
                 </div>
               ) : null}
 
               {completedReviewSessions.length > 0 ? (
                 completedReviewSessions.map((session) => (
                   <article
-                    className={`timeline-item ${selectedReviewSessionId === session.id ? 'timeline-item--hot' : ''}`}
+                    className={`timeline-item analyze-session-card ${selectedReviewSessionId === session.id ? 'timeline-item--hot' : ''}`}
                     key={session.id}
                   >
-                    <div className="timeline-time">
-                      <span>{session.clipName}</span>
-                      <small>{session.status}</small>
+                    <div className="analyze-session-card__header">
+                      <div className="analyze-session-card__identity">
+                        <strong>{session.clipName}</strong>
+                        <small>{formatSessionStartedAt(session.startedAt)}</small>
+                      </div>
+                      <span className="panel-tag">{selectedReviewSessionId === session.id ? 'Selected' : 'Saved'}</span>
                     </div>
-                    <div className="timeline-item__body">
-                      <p>
-                        Peak {formatPercent(session.maxHesitationScore)} · longest pause{' '}
-                        {formatDurationMs(session.longestPauseMs)} · {session.assistCount} prompt
-                        {session.assistCount === 1 ? '' : 's'}
-                      </p>
+                    <div className="analyze-session-card__metrics">
+                      <span>Peak {formatPercent(session.maxHesitationScore)}</span>
+                      <span>Longest pause {formatDurationMs(session.longestPauseMs)}</span>
+                      <span>{session.assistCount} prompt{session.assistCount === 1 ? '' : 's'}</span>
+                    </div>
+                    <div className="analyze-session-card__actions">
                       <button
                         type="button"
                         className="text-button"
                         onClick={() => void loadSessionReview(session.id)}
                       >
-                        {selectedReviewSessionId === session.id ? 'Reload review' : 'Open session'}
+                        {selectedReviewSessionId === session.id ? 'Refresh analysis' : 'Open analysis'}
                       </button>
                     </div>
                   </article>
                 ))
               ) : (
                 <p className="transcript-line transcript-line--muted">
-                  End a live session to save a completed run here.
+                  End a live session to save a run for analysis here.
                 </p>
               )}
             </div>
@@ -3943,12 +3981,12 @@ function App() {
           <section className="panel review-panel">
             <div className="panel-header">
               <div>
-                <p className="panel-kicker"><span className="panel-kicker__icon" aria-hidden="true">📋</span>Session review</p>
-                <h2>{latestCompletedSession?.clipName ?? 'No session selected'}</h2>
+                <p className="panel-kicker"><span className="panel-kicker__icon" aria-hidden="true">🧠</span>Analyze run</p>
+                <h2>{latestCompletedSession?.clipName ?? 'No run selected'}</h2>
                 <p className="panel-copy">
                   {latestCompletedSession
-                    ? 'Saved trace and model review, side by side.'
-                    : 'Choose a completed session to inspect its saved signals and review.'}
+                    ? 'Saved trace and model analysis, side by side.'
+                    : 'Choose a completed run to inspect the hesitation trace and model analysis.'}
                 </p>
               </div>
               <span className="panel-tag">{reviewStatusLabel}</span>
@@ -3956,7 +3994,7 @@ function App() {
 
             {latestCompletedSession ? (
               <>
-                <div className="booth-summary booth-summary--review">
+                <div className="booth-summary booth-summary--review analyze-summary">
                   <div>
                     <p className="control-label">Peak hesitation</p>
                     <strong>{formatPercent(latestCompletedSession.maxHesitationScore)}</strong>
@@ -3981,7 +4019,7 @@ function App() {
                     className="text-button"
                     onClick={() => void loadSessionReview(latestCompletedSession.id)}
                   >
-                    Reload AI review
+                    Refresh AI analysis
                   </button>
                   <button
                     type="button"
@@ -3998,10 +4036,10 @@ function App() {
                       <div className="review-lead review-lead--trace">
                         <div className="review-lead__header">
                           <div>
-                            <p className="memory-title">Saved trace</p>
+                            <p className="memory-title">Session trace</p>
                             <h3>{postSessionReview.headline}</h3>
                           </div>
-                          <span className="panel-tag">Session data</span>
+                          <span className="panel-tag">Saved data</span>
                         </div>
                         <p className="field-copy field-copy--tight">{postSessionReview.summary}</p>
                       </div>
@@ -4030,10 +4068,10 @@ function App() {
                     <div className="review-lead review-lead--ai">
                       <div className="review-lead__header">
                         <div>
-                          <p className="memory-title">AI review</p>
+                          <p className="memory-title">AI analysis</p>
                           <h3>
                             {latestCompletedSessionReview?.headline ??
-                              (isLoadingReview ? 'Analyzing hesitation trace' : 'Awaiting AI review')}
+                              (isLoadingReview ? 'Analyzing hesitation trace' : 'Awaiting AI analysis')}
                           </h3>
                         </div>
                         <span className="panel-tag">
@@ -4043,8 +4081,8 @@ function App() {
                       <p className="field-copy field-copy--tight">
                         {latestCompletedSessionReview?.summary ??
                           (isLoadingReview
-                            ? 'AndOne is generating a grounded review from the saved booth session record.'
-                            : 'Reload the session review to fetch the latest OpenAI analysis.')}
+                            ? 'AndOne is generating a grounded analysis from the saved booth session record.'
+                            : 'Refresh the run to fetch the latest OpenAI analysis.')}
                       </p>
                     </div>
 
@@ -4053,7 +4091,7 @@ function App() {
                         <div className="review-loading-spinner" aria-hidden="true" />
                         <div>
                           <strong>OpenAI analysis in progress</strong>
-                          <p>The saved session trace is already here. The model review will slot in as soon as it returns.</p>
+                          <p>The saved trace is already here. The model analysis will slot in as soon as it returns.</p>
                         </div>
                       </div>
                     ) : latestCompletedSessionReview ? (
@@ -4088,8 +4126,8 @@ function App() {
                     ) : (
                       <div className="review-loading-card review-loading-card--idle">
                         <div>
-                          <strong>No AI review loaded yet</strong>
-                          <p>The session metrics are real and saved. Use “Reload AI review” to fetch the model-written analysis.</p>
+                          <strong>No AI analysis loaded yet</strong>
+                          <p>The run metrics are real and saved. Use “Refresh AI analysis” to fetch the model-written analysis.</p>
                         </div>
                       </div>
                     )}
@@ -4098,7 +4136,7 @@ function App() {
               </>
             ) : (
               <p className="transcript-line transcript-line--muted">
-                Pick a saved session to inspect its hesitation trace and AI review.
+                Pick a saved run to inspect its hesitation trace and AI analysis.
               </p>
             )}
           </section>
@@ -4402,7 +4440,7 @@ function App() {
                   Return to live
                 </button>
                 <button type="button" className="text-button" onClick={() => navigateToRoute('archive')}>
-                  Open archive
+                  Open Analyze
                 </button>
               </div>
             </div>

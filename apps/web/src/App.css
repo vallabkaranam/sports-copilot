@@ -335,7 +335,7 @@
 }
 
 .main-grid--reviews {
-  grid-template-columns: 380px 1fr;
+  grid-template-columns: minmax(300px, 340px) minmax(0, 1fr);
 }
 
 .main-grid--live {
@@ -837,10 +837,10 @@
   padding: 14px;
 }
 
+.stage-delivery-chip,
 .stage-context-chip {
   position: absolute;
   top: 14px;
-  right: 14px;
   z-index: 2;
   display: inline-flex;
   align-items: center;
@@ -855,6 +855,16 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   backdrop-filter: blur(10px);
+}
+
+.stage-delivery-chip {
+  left: 14px;
+  background: rgba(122, 83, 46, 0.82);
+  border-color: rgba(247, 242, 235, 0.2);
+}
+
+.stage-context-chip {
+  right: 14px;
 }
 
 .replay-copy {
@@ -2150,6 +2160,69 @@
   background: rgba(252, 248, 243, 0.98);
   min-height: 84px;
   align-items: start;
+}
+
+.analyze-sidebar {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+}
+
+.analyze-summary {
+  margin-bottom: 0;
+}
+
+.analyze-session-card {
+  grid-template-columns: 1fr;
+  gap: 12px;
+  min-height: 0;
+  padding: 16px 18px;
+}
+
+.analyze-session-card__header,
+.analyze-session-card__actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.analyze-session-card__identity {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.analyze-session-card__identity strong {
+  display: block;
+  font-family: 'Sora', 'Avenir Next', sans-serif;
+  font-size: 0.98rem;
+  color: var(--ink);
+}
+
+.analyze-session-card__identity small {
+  display: block;
+  color: var(--copy-soft);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.analyze-session-card__metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.analyze-session-card__metrics span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(31, 42, 51, 0.08);
+  background: rgba(249, 245, 239, 0.96);
+  color: var(--copy-strong);
+  font-size: 0.82rem;
 }
 
 .timeline-item--hot {

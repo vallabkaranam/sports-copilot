@@ -935,8 +935,8 @@ describe('App dashboard', () => {
     expect(container.textContent).toContain('Channel 1');
     expect(container.textContent).toContain('Channel 2');
     expect(container.textContent).toContain('Channel 3');
-    expect(container.textContent).toContain('Monitor');
-    expect(container.textContent).toContain('Preset match feed');
+    expect(container.textContent).toContain('Monitoring only');
+    expect(container.textContent).toContain('Channel 1 · Barca preset');
     expect(container.textContent).toContain('Barca preset');
     expect(container.textContent).toContain('Rangers preset');
     expect(container.textContent).not.toContain('Pre-match brief');
@@ -952,15 +952,15 @@ describe('App dashboard', () => {
     expect(playButton?.hasAttribute('disabled')).toBe(false);
     expect(container.textContent).toContain('Channel 1 · Barca preset');
     expect(container.textContent).toContain(
-      'Feed and microphone are ready. The Sidekick starts once you begin calling the action.',
+      'The sidekick will watch hesitation signals, live transcript flow, and confidence recovery once the session begins.',
     );
   });
 
   it('shows the standby voice setup inline on the live desk', async () => {
     await renderApp();
 
-    expect(container.textContent).toContain('Sub Me In');
-    expect(container.textContent).toContain('Standby voice off');
+    expect(container.textContent).toContain('Let AndOne take over');
+    expect(container.textContent).toContain('Takeover off');
     expect(container.textContent).toContain('Record sample');
   });
 
@@ -979,7 +979,7 @@ describe('App dashboard', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('Standby voice ready');
+    expect(container.textContent).toContain('Takeover ready');
 
     const goLiveButton = [...container.querySelectorAll('button')].find((button) =>
       button.textContent?.includes('Go live'),
@@ -992,7 +992,7 @@ describe('App dashboard', () => {
     });
 
     const subMeInButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Sub Me In'),
+      button.textContent?.includes('Let AndOne take over'),
     );
 
     await act(async () => {
@@ -1002,7 +1002,7 @@ describe('App dashboard', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('Standby voice is on air.');
+    expect(container.textContent).toContain('AndOne is covering the booth.');
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(4_000);
@@ -1013,7 +1013,7 @@ describe('App dashboard', () => {
     expect(speechSynthesisSpeakMock).toHaveBeenCalled();
 
     const subMeBackInButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Sub Me Back In'),
+      button.textContent?.includes("I'm back on mic"),
     );
 
     await act(async () => {
@@ -1686,8 +1686,8 @@ describe('App dashboard', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('Saved sessions');
-    expect(container.textContent).toContain('Session review');
+    expect(container.textContent).toContain('Analyze');
+    expect(container.textContent).toContain('Analyze run');
     expect(container.textContent).toContain('Peak hesitation');
     expect(container.textContent).toContain('The saved booth trace shows a long pause, a quick assist, and a solid recovery.');
     expect(container.textContent).not.toContain('Assist live on this beat.');
