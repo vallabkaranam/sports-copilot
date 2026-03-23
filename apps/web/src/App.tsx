@@ -3180,38 +3180,6 @@ function App() {
     boothSignal.wakePhraseDetected ? 'line' : null,
   ].filter(Boolean) as string[];
   const recentFillerWords = [...new Set(boothSignal.fillerWords.map((word) => word.toLowerCase()))].slice(-2);
-  const monitoredSignals = [
-    {
-      label: 'Pause',
-      detail: boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS ? formatDurationMs(Math.round(boothSignal.pauseDurationMs)) : '--',
-      active: boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS,
-    },
-    {
-      label: 'Fillers',
-      detail:
-        boothSignal.fillerCount > 0
-          ? recentFillerWords.length > 0
-            ? recentFillerWords.join(' · ')
-            : `${boothSignal.fillerCount} hit${boothSignal.fillerCount === 1 ? '' : 's'}`
-          : '--',
-      active: boothSignal.fillerCount > 0,
-    },
-    {
-      label: 'Restart',
-      detail: boothSignal.repeatedOpeningCount > 0 ? `${boothSignal.repeatedOpeningCount}x` : '--',
-      active: boothSignal.repeatedOpeningCount > 0,
-    },
-    {
-      label: 'Open line',
-      detail: boothSignal.unfinishedPhrase ? 'Open' : '--',
-      active: boothSignal.unfinishedPhrase,
-    },
-    {
-      label: 'Wake cue',
-      detail: boothSignal.wakePhraseDetected ? 'Heard' : '--',
-      active: boothSignal.wakePhraseDetected,
-    },
-  ];
   const standbySetupSummary =
     standbyVoiceStatus === 'ready'
       ? `A ${Math.round(standbyVoiceSampleDurationMs / 1000)}s handoff voice sample is ready.`
@@ -3250,6 +3218,41 @@ function App() {
     liveLaunchCountdown !== null ||
     (!isBroadcastLive && (!isBroadcastReady || isUpdatingControls || !isSystemReady || isUploadingContext));
   const hasStartedMonitoring = hasStartedBroadcast;
+  const monitoredSignals = [
+    {
+      label: 'Pause',
+      detail:
+        hasStartedMonitoring && boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS
+          ? formatDurationMs(Math.round(boothSignal.pauseDurationMs))
+          : '--',
+      active: hasStartedMonitoring && boothSignal.pauseDurationMs >= LONG_PAUSE_START_MS,
+    },
+    {
+      label: 'Fillers',
+      detail:
+        hasStartedMonitoring && boothSignal.fillerCount > 0
+          ? recentFillerWords.length > 0
+            ? recentFillerWords.join(' · ')
+            : `${boothSignal.fillerCount} hit${boothSignal.fillerCount === 1 ? '' : 's'}`
+          : '--',
+      active: hasStartedMonitoring && boothSignal.fillerCount > 0,
+    },
+    {
+      label: 'Restart',
+      detail: hasStartedMonitoring && boothSignal.repeatedOpeningCount > 0 ? `${boothSignal.repeatedOpeningCount}x` : '--',
+      active: hasStartedMonitoring && boothSignal.repeatedOpeningCount > 0,
+    },
+    {
+      label: 'Open line',
+      detail: hasStartedMonitoring && boothSignal.unfinishedPhrase ? 'Open' : '--',
+      active: hasStartedMonitoring && boothSignal.unfinishedPhrase,
+    },
+    {
+      label: 'Wake cue',
+      detail: hasStartedMonitoring && boothSignal.wakePhraseDetected ? 'Heard' : '--',
+      active: hasStartedMonitoring && boothSignal.wakePhraseDetected,
+    },
+  ];
   const activeAssistSupportCopy = isAssistWeaning
     ? 'Confidence is returning. AndOne is backing off.'
     : activeAssist.whyNow;

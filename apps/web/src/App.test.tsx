@@ -968,6 +968,11 @@ describe('App dashboard', () => {
     expect(container.textContent).toContain(
       'AndOne stays silent while you’re in rhythm, surfaces a cue when it senses hesitation, then fades once you’re back in flow.',
     );
+    expect(container.textContent).toContain('Pause--');
+    expect(container.textContent).toContain('Fillers--');
+    expect(container.textContent).toContain('Restart--');
+    expect(container.textContent).toContain('Open line--');
+    expect(container.textContent).toContain('Wake cue--');
   });
 
   it('counts down before the live session actually opens', async () => {
